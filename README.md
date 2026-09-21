@@ -14,19 +14,17 @@ Open http://127.0.0.1:4173. Run `npm run check` for source and interaction-state
 
 ## Screens
 
-Landing (`#landing`), Home (`#home`), AI Assistant (`#assistant`), Document Insight (`#documents`), Image Analysis (`#images`), Business Solutions (`#solutions`), and Chat History (`#history`). Each workspace has its own information architecture and interaction model. New Chat resets the current conversation and opens AI Assistant.
+Landing (`#landing`), Home (`#home`), AI Assistant (`#assistant`), Document Insight (`#documents`), Image Analysis (`#images`), Chat History (`#history`). New Chat resets the current conversation and opens AI Assistant.
 
 ## Frontend behavior
 
-- Responsive navigation, global search routing, detailed dialogs, and mobile layouts.
-- Three AI Assistant modes with structured, context-aware response patterns.
-- Document summary, key point, risk and action views plus validated local file selection.
-- Visual reports for infrastructure, screenshots, diagrams, URLs and local image previews.
-- Filterable Business Solutions catalog with a three-item comparison workflow.
-- Searchable, filterable conversation history stored in browser localStorage.
-- Feature-detected WebMCP navigation across every screen.
+- Responsive navigation, search routing, document tabs and dialogs.
+- Local document selection, file size/type validation and drag-and-drop.
+- Local image previews, image URL loading and example previews.
+- Chat UI with explicitly labelled preview responses; conversation history stays in browser localStorage.
+- Feature-detected WebMCP screen navigation.
 
-Live AI, authentication, document parsing, cloud storage connectors and server persistence are not configured. The supplied document and image scenarios are identified as guided content. Files selected from the device are not uploaded.
+Live AI, authentication, document parsing, cloud storage connectors and server persistence are not configured. The Document Insight analysis is explicitly labelled as an example. Files selected from the device are not uploaded.
 
 ## Assets and fidelity
 
