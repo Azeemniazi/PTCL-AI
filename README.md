@@ -14,7 +14,7 @@ Open http://127.0.0.1:4173. Run `npm run check` for source and interaction-state
 
 ## Screens
 
-Landing (`#landing`), Home (`#home`), AI Assistant (`#assistant`), Document Insight (`#documents`), Image Analysis (`#images`), Chat History (`#history`). New Chat resets the current conversation and opens AI Assistant.
+The public site includes Landing (`#landing`), Solutions (`#site-solutions`), AI Assistant overview (`#site-ai`), Industries (`#site-industries`), Resources (`#site-resources`), and About (`#site-about`). The original signed-in product remains unchanged at Home (`#home`), AI Assistant (`#assistant`), Document Insight (`#documents`), Image Analysis (`#images`), and Chat History (`#history`).
 
 ## Frontend behavior
 
