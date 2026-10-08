@@ -314,3 +314,42 @@
 .live-pill{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:20px;background:#e8f7ed;color:#0e6a39;font-size:11px;font-weight:600}
 .pulse-dot{width:7px;height:7px;border-radius:50%;background:#10a54a;animation:livePulse 1.4s infinite}
 @keyframes livePulse{0%{box-shadow:0 0 0 0 rgba(16,165,74,0.6)}70%{box-shadow:0 0 0 6px rgba(16,165,74,0)}100%{box-shadow:0 0 0 0 rgba(16,165,74,0)}}
+
+/* Authentication & User Management Styles */
+.login-page{min-height:100vh;display:flex;flex-direction:column;position:relative;background:var(--bg,#f8faf9)}
+.login-header{display:flex;justify-content:space-between;align-items:center;padding:24px 36px;z-index:2}
+.login-main{flex:1;display:flex;align-items:center;justify-content:center;padding:40px 20px;z-index:2}
+.login-card{width:100%;max-width:440px;background:#fff;border-radius:18px;border:1px solid rgba(0,102,59,0.14);box-shadow:0 12px 36px rgba(0,40,24,0.08);padding:36px;display:flex;flex-direction:column;gap:24px}
+.login-brand{text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px}
+.login-brand img{width:48px;height:auto}
+.login-brand h2{font-size:24px;font-weight:600;color:#102e20;margin:0}
+.login-brand h2 b{color:#00663b}
+.login-brand p{font-size:13px;color:#5a7366;margin:0}
+.login-alert{padding:10px 14px;border-radius:8px;background:#fde8e8;border:1px solid #f8b4b4;color:#9b1c1c;font-size:13px;line-height:1.4}
+.login-alert.success{background:#def7ec;border-color:#84e1bc;color:#03543f}
+.login-form{display:flex;flex-direction:column;gap:18px}
+.login-label{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;color:#203b2e;text-align:left}
+.input-with-icon{position:relative;display:flex;align-items:center}
+.input-with-icon svg{position:absolute;left:12px;width:18px;height:18px;color:#708a7c;pointer-events:none}
+.input-with-icon input,.input-with-icon select{width:100%;padding:11px 12px 11px 40px;border-radius:10px;border:1px solid #cfe0d7;font-size:14px;background:#fff;color:#183225;outline:none;transition:border-color .15s}
+.input-with-icon input:focus,.input-with-icon select:focus{border-color:#00663b;box-shadow:0 0 0 3px rgba(0,102,59,0.12)}
+.login-submit{width:100%;padding:13px;font-size:15px;font-weight:600;justify-content:center;border-radius:10px;display:flex;align-items:center;gap:8px;cursor:pointer}
+.login-footnote{text-align:center;color:#6f887b;font-size:12px;border-top:1px solid #edf4ef;padding-top:16px}
+
+/* Role Badges */
+.role-badge{display:inline-block;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px}
+.role-badge.dev{background:#f3e8ff;color:#6b21a8;border:1px solid #d8b4fe}
+.role-badge.admin{background:#dbeafe;color:#1e40af;border:1px solid #93c5fd}
+.role-badge.user{background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd}
+
+/* Settings Tabs and User Management Tables */
+.settings-tabs{display:flex;gap:8px;border-bottom:1px solid #dde8e1;margin-bottom:20px}
+.settings-tab-btn{padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;font-size:14px;font-weight:600;color:#5a7366;cursor:pointer}
+.settings-tab-btn.active{color:#00663b;border-bottom-color:#00663b}
+.settings-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px}
+.user-mgmt-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:14px}
+.user-mgmt-table th{background:#f0f6f2;padding:9px 12px;text-align:left;color:#1d3d2e;font-weight:600;border-bottom:1px solid #d2e2d8}
+.user-mgmt-table td{padding:10px 12px;border-bottom:1px solid #edf4f0;color:#284336;vertical-align:middle}
+.user-mgmt-actions{display:flex;gap:6px}
+.must-change-password-box{max-width:440px;padding:6px 0}
+

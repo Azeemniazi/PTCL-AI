@@ -7,7 +7,7 @@ export const config = {
   nodeEnv: process.env.NODE_ENV ?? 'development',
   port: number(process.env.PORT, 4173),
   publicBaseUrl: process.env.PUBLIC_BASE_URL ?? 'http://127.0.0.1:4173',
-  authMode: process.env.AUTH_MODE ?? (process.env.NODE_ENV === 'production' ? 'entra' : 'dev'),
+  authMode: process.env.AUTH_MODE ?? 'local',
   sessionSecret: process.env.SESSION_SECRET ?? 'development-only-session-secret-change-me',
   entra: {
     tenantId: process.env.ENTRA_TENANT_ID ?? '', clientId: process.env.ENTRA_CLIENT_ID ?? '',
@@ -41,9 +41,15 @@ export function validateProductionConfig() {
   const required = z.object({
     DATABASE_URL: z.string().min(1), REDIS_URL: z.string().min(1),
     SESSION_SECRET: z.string().min(32), MEETING_URL_ENCRYPTION_KEY: z.string().min(32),
-    ENTRA_TENANT_ID: z.string().min(1), ENTRA_CLIENT_ID: z.string().min(1),
-    ENTRA_CLIENT_SECRET: z.string().min(1), VEXA_BASE_URL: z.string().url(),
+    VEXA_BASE_URL: z.string().url(),
     VEXA_API_KEY: z.string().min(1), VEXA_WEBHOOK_SECRET: z.string().min(16)
   });
   required.parse(process.env);
+  if (config.authMode === 'entra') {
+    z.object({
+      ENTRA_TENANT_ID: z.string().min(1),
+      ENTRA_CLIENT_ID: z.string().min(1),
+      ENTRA_CLIENT_SECRET: z.string().min(1)
+    }).parse(process.env);
+  }
 }

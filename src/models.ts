@@ -1,8 +1,25 @@
-export type Role = 'member' | 'admin';
+export type Role = 'dev' | 'admin' | 'user' | 'member';
 export type MeetingStatus = 'launching'|'lobby'|'joined'|'recording'|'stopping'|'processing'|'completed'|'failed'|'deleted';
 export const activeStatuses: MeetingStatus[] = ['launching','lobby','joined','recording','stopping','processing'];
 
-export interface User {id:string; tenantId:string; objectId:string; email:string; displayName:string; role:Role}
+export interface User {
+  id: string;
+  username: string;
+  tenantId?: string;
+  objectId?: string;
+  email?: string;
+  displayName: string;
+  role: Role;
+  mustChangePassword?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface UserWithSecret extends User {
+  passwordHash: string;
+  salt: string;
+}
+
 export interface Participant {id:string; meetingId:string; externalId?:string; displayName:string; joinedAt:string; leftAt?:string}
 export interface TranscriptSegment {id:string; meetingId:string; speakerName?:string; startMs:number; endMs:number; text:string; confidence?:number}
 export interface Snapshot {id:string; meetingId:string; objectKey:string; capturedAtMs:number; perceptualHash?:string}
