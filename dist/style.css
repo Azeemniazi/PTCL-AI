@@ -283,3 +283,34 @@
 .about-principles-minimal,.architecture-line{margin-right:20px;margin-left:20px}.about-principles-minimal h2{font-size:32px}
 .minimal-footer{grid-template-columns:1fr;padding:28px 20px}.minimal-footer>span:last-child{display:none}
 }
+
+
+/* Chat Markdown and Streaming Styles */
+.chat-text{word-break:break-word;font-size:14px;line-height:1.65;color:#203328}
+.message.user .chat-text{color:#1e4a33}
+.chat-text strong{font-weight:700;color:#0d261a}
+.chat-text em{font-style:italic}
+.chat-p{margin:4px 0}
+.chat-h2{font-size:16px;font-weight:700;margin:12px 0 6px;color:#133d2a;padding-bottom:3px;border-bottom:1px solid #e3ede7}
+.chat-h3{font-size:14px;font-weight:700;margin:10px 0 4px;color:#1b5037}
+.chat-h4{font-size:13px;font-weight:700;margin:8px 0 3px;color:#246043}
+.chat-h5{font-size:12px;font-weight:700;margin:6px 0 2px;color:#2e7552}
+.chat-list{margin:6px 0;padding-left:22px;display:flex;flex-direction:column;gap:4px}
+.chat-list li{margin:2px 0;line-height:1.55}
+.chat-gap{height:8px}
+.chat-hr{border:0;height:1px;background:#dcebe2;margin:12px 0}
+.chat-quote{margin:8px 0;padding:6px 12px;border-left:3px solid var(--green,#10a54a);background:#f2faf5;border-radius:0 6px 6px 0;color:#335645;font-style:italic}
+.chat-inline-code{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;background:#eaf2ed;color:#195938;padding:2px 5px;border-radius:4px;font-size:12px}
+.chat-code-block{margin:8px 0;padding:12px;background:#182820;color:#e6f3ec;border-radius:8px;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:12px}
+.table-wrap{margin:10px 0;overflow-x:auto;border-radius:8px;border:1px solid #dce8e1}
+.chat-table{width:100%;border-collapse:collapse;font-size:12px;text-align:left}
+.chat-table th{background:#eef6f1;color:#173d2b;padding:8px 10px;font-weight:600;border-bottom:1px solid #dce8e1}
+.chat-table td{padding:7px 10px;border-bottom:1px solid #edf4f0}
+.chat-table tr:last-child td{border-bottom:0}
+
+/* Streaming Typewriter Cursor & Live Pill */
+.typing-cursor{display:inline-block;width:7px;height:14px;margin-left:3px;vertical-align:middle;background:var(--green,#10a54a);border-radius:2px;animation:blinkCursor .8s infinite}
+@keyframes blinkCursor{0%,100%{opacity:1}50%{opacity:0}}
+.live-pill{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:20px;background:#e8f7ed;color:#0e6a39;font-size:11px;font-weight:600}
+.pulse-dot{width:7px;height:7px;border-radius:50%;background:#10a54a;animation:livePulse 1.4s infinite}
+@keyframes livePulse{0%{box-shadow:0 0 0 0 rgba(16,165,74,0.6)}70%{box-shadow:0 0 0 6px rgba(16,165,74,0)}100%{box-shadow:0 0 0 0 rgba(16,165,74,0)}}

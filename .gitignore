@@ -1,7 +1,14 @@
 .sites-runtime/
 node_modules/
+build/
+.tmp-cookies.txt
+secrets/
+/vendor/cloudcore-vexa/
 *.tar.gz
 *.zip
 .env
 .env.*
+vexa-cloud.env
+*.env
 !.env.example
+
