@@ -9,28 +9,33 @@ import rateLimit from 'express-rate-limit';
 import { RedisStore } from 'connect-redis';
 import pino from 'pino';
 import { pinoHttp } from 'pino-http';
-import { configureAuth, requireUser } from './auth.js';
+import { configureAuth, requireUser, requireRole } from './auth.js';
 import { askMeetingAssistant, askMeetingAssistantStream, generateMom } from './ai.js';
 import { artifacts } from './artifacts.js';
 import { config, validateProductionConfig } from './config.js';
 import { purgeMeetingContent } from './cleanup.js';
-import { encryptMeetingUrl } from './crypto.js';
+import { encryptMeetingUrl, hashPassword, sanitizePrompt } from './crypto.js';
 import { meetingEngine, reconcileMeetingStatus, TEAMS_BOT_NAME, vexaEngineId } from './engine.js';
 import { enqueue, redisConnection } from './jobs.js';
-import { activeStatuses, type Meeting, type MeetingStatus, type User } from './models.js';
+import { activeStatuses, type Meeting, type MeetingStatus, type User, type Role } from './models.js';
 import { repository } from './repository.js';
 import { createMeetingSchema, momSchema, validateTeamsUrl } from './validation.js';
 
 validateProductionConfig();await repository.init();
 const app=express(),logger=pino({level:process.env.LOG_LEVEL??'info'}),root=resolve(dirname(fileURLToPath(import.meta.url)),'../dist');
 app.set('trust proxy',1);app.use(pinoHttp({logger}));app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'","'unsafe-inline'",'https://fonts.googleapis.com'],fontSrc:["'self'",'https://fonts.gstatic.com'],imgSrc:["'self'",'data:','blob:'],connectSrc:["'self'"],upgradeInsecureRequests:null}},hsts:false}));app.use(express.json({limit:'1mb',verify:(req,_res,buffer)=>{(req as express.Request&{rawBody?:Buffer}).rawBody=Buffer.from(buffer)}}));
-app.use(session({name:'cloudcore.sid',secret:config.sessionSecret,resave:false,saveUninitialized:false,store:redisConnection?new RedisStore({client:redisConnection}):undefined,cookie:{httpOnly:true,sameSite:'lax',secure:config.nodeEnv==='production',maxAge:8*60*60*1000}}));
+app.use(session({name:'cloudcore.sid',secret:config.sessionSecret,resave:false,saveUninitialized:false,store:redisConnection?new RedisStore({client:redisConnection}):undefined,cookie:{httpOnly:true,sameSite:'lax',secure:config.nodeEnv==='production'&&config.publicBaseUrl.startsWith('https://'),maxAge:8*60*60*1000}}));
 await configureAuth(app);
 
 const apiLimit=rateLimit({windowMs:60_000,limit:120,standardHeaders:true,legacyHeaders:false});app.use('/api',apiLimit);
 app.get('/healthz',(_req,res)=>res.json({status:'ok'}));
 app.get('/readyz',async(_req,res)=>{try{await repository.healthy();if(redisConnection)await redisConnection.ping();res.json({status:'ready'})}catch{res.status(503).json({status:'not_ready'})}});
-app.get('/api/me',requireUser,async(req,res)=>res.json({user:req.session.user,authMode:config.authMode,capacity:{active:await repository.activeCount(),maximum:config.maxActiveMeetings}}));
+app.get('/api/me',async(req,res)=>{if(!req.session.user)return res.json({authenticated:false,user:null,authMode:config.authMode});return res.json({authenticated:true,user:req.session.user,authMode:config.authMode,capacity:{active:await repository.activeCount(),maximum:config.maxActiveMeetings}})});
+
+app.get('/api/admin/users',requireRole(['dev','admin']),async(_req,res)=>{try{const users=await repository.listUsers();return res.json({users})}catch(error){return res.status(500).json({error:{code:'internal_error',message:'Failed to list users.'}})}});
+app.post('/api/admin/users',requireRole(['dev','admin']),async(req,res)=>{try{const actor=req.session.user!;const{username,password,displayName,role}=req.body??{};if(!username||typeof username!=='string'||!/^[a-zA-Z0-9_.-]{3,30}$/.test(username.trim()))return res.status(400).json({error:{code:'invalid_username',message:'Username must be 3-30 alphanumeric characters (or _.-).'}});if(!password||typeof password!=='string'||password.length<6)return res.status(400).json({error:{code:'invalid_password',message:'Password must be at least 6 characters.'}});const cleanDisplay=sanitizePrompt(typeof displayName==='string'&&displayName.trim()?displayName.trim():username.trim()).slice(0,50);let targetRole:Role='user';let mustChangePassword=true;if(actor.role==='admin'){targetRole='user';mustChangePassword=true}else if(actor.role==='dev'){if(role==='admin'||role==='user')targetRole=role;mustChangePassword=req.body.mustChangePassword!==undefined?Boolean(req.body.mustChangePassword):(targetRole==='user')}const existing=await repository.findUserByUsername(username);if(existing)return res.status(409).json({error:{code:'user_exists',message:`User '${username}' already exists.`}});const hashed=await hashPassword(password);const created=await repository.createUser({username:username.trim().toLowerCase(),passwordHash:hashed.hash,salt:hashed.salt,displayName:cleanDisplay,role:targetRole,mustChangePassword});return res.json({status:'ok',user:created})}catch(error){console.error('Error creating user:',error);return res.status(500).json({error:{code:'internal_error',message:'Failed to create user.'}})}});
+app.delete('/api/admin/users/:id',requireRole(['dev','admin']),async(req,res)=>{try{const actor=req.session.user!;const targetId=String(req.params.id);const target=await repository.findUserById(targetId);if(!target)return res.status(404).json({error:{code:'user_not_found',message:'User not found.'}});if(target.id===actor.id)return res.status(400).json({error:{code:'cannot_delete_self',message:'You cannot delete your own account.'}});if(target.role==='dev')return res.status(403).json({error:{code:'forbidden',message:'Dev accounts cannot be deleted.'}});if(actor.role==='admin'&&target.role==='admin')return res.status(403).json({error:{code:'forbidden',message:'Admins cannot delete other admin accounts.'}});await repository.deleteUser(target.id);return res.json({status:'ok',message:'User deleted.'})}catch(error){console.error('Error deleting user:',error);return res.status(500).json({error:{code:'internal_error',message:'Failed to delete user.'}})}});
+app.post('/api/admin/users/:id/reset-password',requireRole(['dev','admin']),async(req,res)=>{try{const actor=req.session.user!;const targetId=String(req.params.id);const{newPassword}=req.body??{};if(!newPassword||typeof newPassword!=='string'||newPassword.length<6)return res.status(400).json({error:{code:'invalid_password',message:'Password must be at least 6 characters.'}});const target=await repository.findUserById(targetId);if(!target)return res.status(404).json({error:{code:'user_not_found',message:'User not found.'}});if(target.role==='dev'&&actor.role!=='dev')return res.status(403).json({error:{code:'forbidden',message:'Only devs can reset dev account passwords.'}});if(actor.role==='admin'&&target.role==='admin'&&target.id!==actor.id)return res.status(403).json({error:{code:'forbidden',message:'Admins cannot reset passwords for other admins.'}});const hashed=await hashPassword(newPassword);const mustChange=actor.role==='admin'?true:Boolean(req.body.mustChangePassword??true);await repository.updateUserPassword(target.id,hashed.hash,hashed.salt,mustChange);return res.json({status:'ok',message:'Password updated successfully.'})}catch(error){console.error('Error resetting password:',error);return res.status(500).json({error:{code:'internal_error',message:'Failed to reset password.'}})}});
 
 app.get('/api/ai/health',requireUser,async(_req,res)=>{
   if(!config.ai.baseUrl)return res.json({connected:false,message:'AI_BASE_URL is not configured.'});
@@ -50,6 +55,8 @@ app.post('/api/chat',requireUser,async(req,res)=>{
     if(!config.ai.baseUrl)return res.status(503).json({error:{code:'ai_disconnected',message:'Internal AI service is not configured.'}});
     const {message,max_tokens=1500,stream=false}=req.body??{};
     if(!message||typeof message!=='string')return res.status(400).json({error:{code:'invalid_request',message:'Message is required.'}});
+    const cleanMessage=sanitizePrompt(message);
+    if(!cleanMessage)return res.status(400).json({error:{code:'invalid_request',message:'Valid message is required.'}});
     const streamRequested=stream===true||req.query.stream==='true'||req.header('accept')?.includes('text/event-stream');
     const base=config.ai.baseUrl.replace(/\/+$/, '');
     const cleanUrl=base.endsWith('/v1')?`${base}/chat/completions`:`${base}/v1/chat/completions`;
@@ -64,7 +71,7 @@ app.post('/api/chat',requireUser,async(req,res)=>{
           stream:true,
           messages:[
             {role:'system',content:systemPrompt},
-            {role:'user',content:message}
+            {role:'user',content:cleanMessage}
           ],
           max_tokens:Number(max_tokens)||1500
         })
@@ -100,7 +107,7 @@ app.post('/api/chat',requireUser,async(req,res)=>{
         model:config.ai.momModel||'qwen2.5-7b',
         messages:[
           {role:'system',content:systemPrompt},
-          {role:'user',content:message}
+          {role:'user',content:cleanMessage}
         ],
         max_tokens:Number(max_tokens)||1500
       })
@@ -509,8 +516,8 @@ app.get('/api/meetings/:id/live-screenshot',requireUser,async(req,res)=>{const m
 app.post('/api/meetings/:id/chat',requireUser,async(req,res,next)=>{try{
   const meeting=await repository.getMeetingDetail(String(req.params.id),res.locals.user);
   if(!meeting)return res.status(404).json({error:{code:'not_found',message:'Meeting not found.'}});
-  const query=String(req.body?.query??req.body?.message??'').trim();
-  if(!query)return res.status(400).json({error:{code:'invalid_request',message:'Query is required.'}});
+  const query=sanitizePrompt(String(req.body?.query??req.body?.message??'').trim());
+  if(!query)return res.status(400).json({error:{code:'invalid_request',message:'Valid query is required.'}});
   const attendees=(meeting.participants||[]).map(p=>p.displayName);
   const explicitNonStream=req.query.stream==='false'||req.body?.stream===false;
   const streamRequested=!explicitNonStream&&(req.query.stream==='true'||req.body?.stream===true||!req.header('accept')?.includes('application/json')||req.header('accept')?.includes('text/event-stream'));

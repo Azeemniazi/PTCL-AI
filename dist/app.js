@@ -1,18 +1,18 @@
 const $=s=>document.querySelector(s);
-const icons={cloud:'M7 18a5 5 0 0 1-1-9.9 7 7 0 0 1 13-1A5.5 5.5 0 0 1 18 18Z',home:'m3 10 9-7 9 7M5 9v12h5v-7h4v7h5V9',chat:'M21 11a9 9 0 0 1-9 9 10 10 0 0 1-4-.8L3 21l1.7-5A9 9 0 1 1 21 11ZM8 11h.01M12 11h.01M16 11h.01',file:'M14 2H5v20h14V7Zm0 0v6h5M8 12h8M8 16h8',image:'M4 3h16a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1ZM3 17l6-6 5 5 3-3 4 4M8 7h.01',history:'M3 12a9 9 0 1 0 3-7M3 3v6h6M12 7v6l4 2',plus:'M12 4v16M4 12h16',arrow:'M5 12h14m-6-6 6 6-6 6',chevron:'m9 5 7 7-7 7',search:'M21 21l-5-5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0',bell:'M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4',user:'M20 21v-2a7 7 0 0 0-14 0v2M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0',grid:'M3 3h6v6H3ZM15 3h6v6h-6ZM3 15h6v6H3ZM15 15h6v6h-6Z',shield:'m12 2 9 4v6c0 6-9 10-9 10S3 18 3 12V6Zm-4 9 3 3 5-6',signal:'M12 20V10M8 16a6 6 0 0 1 0-9M16 16a6 6 0 0 0 0-9M5 19a10 10 0 0 1 0-15M19 19a10 10 0 0 0 0-15',chip:'M6 6h12v12H6ZM9 9h6v6H9ZM9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4',users:'M16 21v-2a5 5 0 0 0-10 0v2M15 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0M18 4a4 4 0 0 1 0 7M20 15a5 5 0 0 1 2 4v2M3 15a5 5 0 0 0-2 4',building:'M5 22V4l14-2v20M9 7h2M14 6h2M9 11h2M14 10h2M9 15h2M14 14h2M10 22v-4h4v4',chart:'M5 21v-6M12 21V9M19 21V3',play:'m8 4 12 8-12 8Z',upload:'M12 16V3m-5 5 5-5 5 5M4 15v6h16v-6',paperclip:'m8 13 7-7a3 3 0 0 1 4 4l-9 9a5 5 0 0 1-7-7L13 2M7 14l9-9',spark:'m12 2 3 7 7 3-7 3-3 7-3-7-7-3 7-3ZM20 2v4M18 4h4',settings:'m9 3-1 3-3 1-2 4 2 2v4l4 3 3-1 3 1 4-3v-4l2-2-2-4-3-1-1-3Zm7 9a4 4 0 1 1-8 0 4 4 0 0 1 8 0',help:'M9 8a3 3 0 1 1 4 3c-1 0-1 2-1 3M12 18h.01M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0',logout:'M10 3H3v18h7M8 12h14m-5-5 5 5-5 5',folder:'M3 6V3h6l3 3h9v14H3Z',check:'m5 12 4 4L19 6',link:'m10 14 4-4M8 16l-2 2a4 4 0 0 1-6-6l5-5a4 4 0 0 1 6 0M16 8l2-2a4 4 0 0 1 6 6l-5 5a4 4 0 0 1-6 0',bulb:'M9 18h6M9 22h6M8 14a7 7 0 1 1 8 0l-1 4H9Z',box:'m12 2 10 5v10l-10 5-10-5V7Zm0 10v10M2 7l10 5 10-5',download:'M12 3v13m-5-5 5 5 5-5M3 17v5h18v-5',trash:'M3 6h18M8 6V3h8v3M5 6l1 16h12l1-16M10 10v8M14 10v8',menu:'M3 6h18M3 12h18M3 18h18',close:'m6 6 12 12M6 18 18 6',sliders:'M6 3v18M12 3v18M18 3v18M3 8h6M9 16h6M15 7h6',video:'M15 10l5-3v10l-5-3ZM3 6h12v12H3Z',clock:'M12 7v5l3 2M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0'};
+const icons={cloud:'M7 18a5 5 0 0 1-1-9.9 7 7 0 0 1 13-1A5.5 5.5 0 0 1 18 18Z',home:'m3 10 9-7 9 7M5 9v12h5v-7h4v7h5V9',chat:'M21 11a9 9 0 0 1-9 9 10 10 0 0 1-4-.8L3 21l1.7-5A9 9 0 1 1 21 11ZM8 11h.01M12 11h.01M16 11h.01',file:'M14 2H5v20h14V7Zm0 0v6h5M8 12h8M8 16h8',image:'M4 3h16a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1ZM3 17l6-6 5 5 3-3 4 4M8 7h.01',history:'M3 12a9 9 0 1 0 3-7M3 3v6h6M12 7v6l4 2',plus:'M12 4v16M4 12h16',arrow:'M5 12h14m-6-6 6 6-6 6',chevron:'m9 5 7 7-7 7',search:'M21 21l-5-5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0',bell:'M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4',user:'M20 21v-2a7 7 0 0 0-14 0v2M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0',lock:'M19 11H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2Zm-7 4v3M7 11V7a5 5 0 0 1 10 0v4',grid:'M3 3h6v6H3ZM15 3h6v6h-6ZM3 15h6v6H3ZM15 15h6v6h-6Z',shield:'m12 2 9 4v6c0 6-9 10-9 10S3 18 3 12V6Zm-4 9 3 3 5-6',signal:'M12 20V10M8 16a6 6 0 0 1 0-9M16 16a6 6 0 0 0 0-9M5 19a10 10 0 0 1 0-15M19 19a10 10 0 0 0 0-15',chip:'M6 6h12v12H6ZM9 9h6v6H9ZM9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4',users:'M16 21v-2a5 5 0 0 0-10 0v2M15 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0M18 4a4 4 0 0 1 0 7M20 15a5 5 0 0 1 2 4v2M3 15a5 5 0 0 0-2 4',building:'M5 22V4l14-2v20M9 7h2M14 6h2M9 11h2M14 10h2M9 15h2M14 14h2M10 22v-4h4v4',chart:'M5 21v-6M12 21V9M19 21V3',play:'m8 4 12 8-12 8Z',upload:'M12 16V3m-5 5 5-5 5 5M4 15v6h16v-6',paperclip:'m8 13 7-7a3 3 0 0 1 4 4l-9 9a5 5 0 0 1-7-7L13 2M7 14l9-9',spark:'m12 2 3 7 7 3-7 3-3 7-3-7-7-3 7-3ZM20 2v4M18 4h4',settings:'m9 3-1 3-3 1-2 4 2 2v4l4 3 3-1 3 1 4-3v-4l2-2-2-4-3-1-1-3Zm7 9a4 4 0 1 1-8 0 4 4 0 0 1 8 0',help:'M9 8a3 3 0 1 1 4 3c-1 0-1 2-1 3M12 18h.01M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0',logout:'M10 3H3v18h7M8 12h14m-5-5 5 5-5 5',folder:'M3 6V3h6l3 3h9v14H3Z',check:'m5 12 4 4L19 6',link:'m10 14 4-4M8 16l-2 2a4 4 0 0 1-6-6l5-5a4 4 0 0 1 6 0M16 8l2-2a4 4 0 0 1 6 6l-5 5a4 4 0 0 1-6 0',bulb:'M9 18h6M9 22h6M8 14a7 7 0 1 1 8 0l-1 4H9Z',box:'m12 2 10 5v10l-10 5-10-5V7Zm0 10v10M2 7l10 5 10-5',download:'M12 3v13m-5-5 5 5 5-5M3 17v5h18v-5',trash:'M3 6h18M8 6V3h8v3M5 6l1 16h12l1-16M10 10v8M14 10v8',menu:'M3 6h18M3 12h18M3 18h18',close:'m6 6 12 12M6 18 18 6',sliders:'M6 3v18M12 3v18M18 3v18M3 8h6M9 16h6M15 7h6',video:'M15 10l5-3v10l-5-3ZM3 6h12v12H3Z',clock:'M12 7v5l3 2M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0'};
 function icon(n,cl=''){return `<svg class="icon ${cl}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${icons[n]||icons.spark}"/></svg>`}
 function mark(cl=''){return `<img class="brand-mark ${cl}" src="assets/cloudcore-mark.png" alt="" aria-hidden="true">`}
 function brand(){return `<a class="brand" href="#landing" aria-label="CloudCore AI landing page">${mark()}<span><strong>CloudCore <b>AI</b></strong><small>A product of PTCL Smart Cloud</small></span></a>`}
 function wave(cl=''){return `<svg class="wave ${cl}" viewBox="0 0 1400 260" preserveAspectRatio="none" aria-hidden="true">${Array.from({length:34},(_,i)=>`<path d="M-100 ${95+i*2} C210 ${-150+i*9}, 350 ${400-i*2}, 680 ${135+i} S 850 ${-40+i*6}, 1100 ${100+i*3} S1350 ${260-i*4},1500 ${55+i*3}"/>`).join('')}</svg>`}
 function footer(){return `<footer class="page-footer"><span>Technology that moves Pakistan forward.</span><i></i><span>${mark('footer-mark')} A product of PTCL Smart Cloud</span></footer>`}
-function landing(){return `<div class="landing"><div class="hero-backdrop"></div><header class="landing-header">${brand()}<nav aria-label="Main navigation"><a class="active" href="#landing">Home</a><a href="#site-solutions">Solutions</a><a href="#site-ai">AI Assistant</a><a href="#site-industries">Industries</a><a href="#site-resources">Resources</a><a href="#site-about">About</a></nav><a class="landing-search" href="#site-resources">${icon('search')}<span>Search solutions, insights, or support...</span></a><button class="icon-button notification" aria-label="Notifications" data-action="notifications">${icon('bell')}<i></i></button><a class="sign-in" href="#home">${icon('user')}<span>Sign In</span></a></header><main><section class="hero"><div class="eyebrow">CLOUDCORE AI</div><h1>Smarter Connections<br><span>for a Stronger Tomorrow</span></h1><p>Your AI-powered partner for business solutions,<br>insights and support — from PTCL Smart Cloud.</p><div class="hero-actions"><a class="primary" href="#home">${icon('chat')} Chat with CloudCore AI ${icon('arrow')}</a><a class="explore" href="#site-solutions"><span>${icon('play')}</span> Explore Our Solutions</a></div><div class="hero-motto">People<br>Technology<br><b>A Brighter Pakistan</b><i></i></div><div class="signature">Connected<br><span>for a Better</span><br><em>Tomorrow</em></div></section><section class="service-strip" aria-label="Our solutions">${[['signal','Reliable Connectivity','Keep your business always on'],['cloud','Cloud & Data Solutions','Scale with confidence'],['shield','Cyber Security','A safer, stronger tomorrow'],['chip','AI-Powered Support','Instant answers. Real progress.']].map(([i,t,d])=>`<a href="#site-solutions" class="service-card"><span class="service-icon">${icon(i)}</span><span><strong>${t}</strong><small>${d}</small></span>${icon('chevron')}</a>`).join('')}</section><section class="impact" id="about">${wave()}<div class="impact-intro"><div class="eyebrow">POWERING PAKISTAN’S BUSINESS GROWTH</div><h2>Technology that moves<br><span>Pakistan forward.</span></h2><p>From intelligent connectivity to cloud, security and AI —<br>PTCL Smart Cloud helps organizations work smarter,<br>grow faster and build a more connected Pakistan.</p><a class="outline small" href="#site-about">Learn More ${icon('arrow')}</a></div><div class="stats">${[['users','10,000+','Business Customers'],['building','200+','Enterprise Partners'],['cloud','99.9%','Network Reliability'],['chart','A Stronger<br>Pakistan','Our Shared Purpose']].map(([i,t,d])=>`<article class="stat"><span>${icon(i)}</span><h3>${t}</h3><p>${d}</p><i></i></article>`).join('')}</div></section></main><footer class="landing-footer">${brand()}<span class="footer-credit">A product of PTCL Smart Cloud</span><div><button data-action="privacy">Privacy</button><button data-action="terms">Terms</button><a href="#site-about">Contact</a><span class="connected">A Connected Pakistan. <i></i></span></div></footer></div>`}
+function landing(){return `<div class="landing"><div class="hero-backdrop"></div><header class="landing-header">${brand()}<nav aria-label="Main navigation"><a class="active" href="#landing">Home</a><a href="#site-solutions">Solutions</a><a href="#site-ai">AI Assistant</a><a href="#site-industries">Industries</a><a href="#site-resources">Resources</a><a href="#site-about">About</a></nav><a class="landing-search" href="#site-resources">${icon('search')}<span>Search solutions, insights, or support...</span></a><button class="icon-button notification" aria-label="Notifications" data-action="notifications">${icon('bell')}<i></i></button><a class="sign-in" href="${appUser?'#home':'#login'}">${icon('user')}<span>${appUser?'Open Workspace':'Sign In'}</span></a></header><main><section class="hero"><div class="eyebrow">CLOUDCORE AI</div><h1>Smarter Connections<br><span>for a Stronger Tomorrow</span></h1><p>Your AI-powered partner for business solutions,<br>insights and support — from PTCL Smart Cloud.</p><div class="hero-actions"><a class="primary" href="${appUser?'#home':'#login'}">${icon('chat')} Chat with CloudCore AI ${icon('arrow')}</a><a class="explore" href="#site-solutions"><span>${icon('play')}</span> Explore Our Solutions</a></div><div class="hero-motto">People<br>Technology<br><b>A Brighter Pakistan</b><i></i></div><div class="signature">Connected<br><span>for a Better</span><br><em>Tomorrow</em></div></section><section class="service-strip" aria-label="Our solutions">${[['signal','Reliable Connectivity','Keep your business always on'],['cloud','Cloud & Data Solutions','Scale with confidence'],['shield','Cyber Security','A safer, stronger tomorrow'],['chip','AI-Powered Support','Instant answers. Real progress.']].map(([i,t,d])=>`<a href="#site-solutions" class="service-card"><span class="service-icon">${icon(i)}</span><span><strong>${t}</strong><small>${d}</small></span>${icon('chevron')}</a>`).join('')}</section><section class="impact" id="about">${wave()}<div class="impact-intro"><div class="eyebrow">POWERING PAKISTAN’S BUSINESS GROWTH</div><h2>Technology that moves<br><span>Pakistan forward.</span></h2><p>From intelligent connectivity to cloud, security and AI —<br>PTCL Smart Cloud helps organizations work smarter,<br>grow faster and build a more connected Pakistan.</p><a class="outline small" href="#site-about">Learn More ${icon('arrow')}</a></div><div class="stats">${[['users','10,000+','Business Customers'],['building','200+','Enterprise Partners'],['cloud','99.9%','Network Reliability'],['chart','A Stronger<br>Pakistan','Our Shared Purpose']].map(([i,t,d])=>`<article class="stat"><span>${icon(i)}</span><h3>${t}</h3><p>${d}</p><i></i></article>`).join('')}</div></section></main><footer class="landing-footer">${brand()}<span class="footer-credit">A product of PTCL Smart Cloud</span><div><button data-action="privacy">Privacy</button><button data-action="terms">Terms</button><a href="#site-about">Contact</a><span class="connected">A Connected Pakistan. <i></i></span></div></footer></div>`}
 
 
 const publicRoutes=['site-solutions','site-ai','site-industries','site-resources','site-about'];
 
 function marketingHeader(active){
   const items=[['landing','Home'],['site-solutions','Solutions'],['site-ai','AI Assistant'],['site-industries','Industries'],['site-resources','Resources'],['site-about','About']];
-  return `<header class="minimal-header">${brand()}<nav aria-label="Main navigation">${items.map(([id,label])=>`<a class="${active===id?'active':''}" href="#${id}">${label}</a>`).join('')}</nav><div class="minimal-header-tools"><a class="header-search" href="#site-resources" aria-label="Search resources">${icon('search')}</a><a class="minimal-signin" href="#home">Sign In</a></div></header>`;
+  return `<header class="minimal-header">${brand()}<nav aria-label="Main navigation">${items.map(([id,label])=>`<a class="${active===id?'active':''}" href="#${id}">${label}</a>`).join('')}</nav><div class="minimal-header-tools"><a class="header-search" href="#site-resources" aria-label="Search resources">${icon('search')}</a><a class="minimal-signin" href="${appUser?'#home':'#login'}">${appUser?'Open Workspace':'Sign In'}</a></div></header>`;
 }
 
 function marketingFooter(){
@@ -95,6 +95,12 @@ function route({preserveScroll=false}={}){
   const meetingUrlVal=document.querySelector('#meeting-form input[name="meetingUrl"]')?.value;
   const consentVal=document.querySelector('#meeting-form input[name="consent"]')?.checked;
   const chatPromptVal=document.querySelector('#meeting-chat-form input[name="chatPrompt"]')?.value;
+  if(r==='login'||(!appUser&&!publicRoutes.includes(r)&&r!=='landing'&&r!=='about')){
+    if(appUser){location.hash='home';return;}
+    $('#app').innerHTML=loginView();
+    bindLogin();
+    return;
+  }
   $('#app').innerHTML=r==='landing'||r==='about'?landing():publicRoutes.includes(r)?marketingPage(r):workspace(r);
   bind();
   if(r==='meetings'&&!selectedMeetingId){
@@ -152,7 +158,7 @@ function bind(){
 }
 let messages=[],currentChat=null,docFile=null,imageFile=null,imageURL='',docTab='Summary',imageMode='upload',historySearch='',selectedMeetingId=null,meetingTab='overview',meetingsTimer=null,meetingsLoading=false,meetingsError='',transcriptSearch='',meetingChats={},meetingChatLoading=false;
 let docIngesting=false,docJobStatus='',visionLoading=false,visionResult='';
-let appUser={displayName:'Azeem Niazi',email:'azeemniazi@cloudcore.local',role:'admin'},meetingsState={meetings:[],capacity:{active:0,maximum:2},detail:null,lastLoaded:0};
+let appUser=null,meetingsState={meetings:[],capacity:{active:0,maximum:2},detail:null,lastLoaded:0};
 let chats=[];try{chats=JSON.parse(localStorage.getItem('cloudcore-chats')||'[]')}catch{}
 const navs=[['home','home','Home'],['assistant','chat','AI Assistant'],['meetings','video','Meetings AI'],['documents','file','Document Insight'],['images','image','Image Analysis'],['history','history','Chat History']];
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
@@ -246,7 +252,7 @@ async function sendMeetingChat(meetingId,prompt){prompt=(prompt||'').trim();if(!
 function meetingDetailTab(m){if(meetingTab==='mom')return momView(m);if(meetingTab==='chat')return meetingChatView(m);if(meetingTab==='transcript'){const term=(transcriptSearch||'').trim().toLowerCase();const all=m.transcript||[];const list=term?all.filter(s=>(s.text||'').toLowerCase().includes(term)||(s.speakerName||'').toLowerCase().includes(term)):all;const isLive=activeMeetingStatuses.includes(m.status);return `<section class="panel transcript-panel"><div class="transcript-toolbar"><div class="transcript-search">${icon('search')}<input id="transcript-filter" type="search" placeholder="Search transcript or speaker..." value="${esc(transcriptSearch)}" aria-label="Search transcript"></div><div class="transcript-meta-strip">${isLive?`<span class="live-pill"><span class="pulse-dot"></span> Live Transcribing</span>`:''}<span>${list.length} of ${all.length} segments</span></div></div><div class="transcript-list">${list.length?list.map(s=>`<article><time>${formatMeetingTime(s.startMs)}</time><div><span class="speaker-tag">${icon('user')}${esc(s.speakerName||'Participant')}</span><p>${esc(s.text)}</p></div></article>`).join(''):`<div class="meeting-empty"><span>${icon('chat')}</span><h3>${term?'No matching transcript segments':'Transcript not available yet'}</h3><p>${term?'Try searching with different terms.':'Live segments appear here while the bot is recording.'}</p></div>`}</div></section>`}if(meetingTab==='snapshots'){const isLive=activeMeetingStatuses.includes(m.status);const snaps=m.snapshots||[];return `<section class="panel snapshot-section"><div class="panel-heading" style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;"><div><h2 style="font-size:18px;margin:0;">Meeting Screens & Snapshots</h2><p style="margin-top:4px;color:var(--muted);font-size:12px;">Live display from Teams bot and periodic screen captures.</p></div>${isLive?`<button class="outline" data-action="refresh-live-screenshot">${icon('history')} Refresh Live Screen</button>`:''}</div>${isLive?`<div class="live-bot-frame"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;"><span class="live-pill"><span class="pulse-dot"></span> Live Bot View (Teams Display)</span><small style="color:var(--muted);font-size:11px;">Display :99.0 · Updated live</small></div><div class="live-screen-wrap"><img id="live-bot-screen-img" src="/api/meetings/${encodeURIComponent(m.id)}/live-screenshot?t=${Date.now()}" alt="Live bot screen view" onerror="this.closest('.live-bot-frame').style.display='none';"></div></div>`:''}<div class="snapshot-grid">${snaps.length?snaps.map(s=>`<figure class="snapshot-card"><img src="/api/meetings/${encodeURIComponent(m.id)}/snapshots/${encodeURIComponent(s.id)}" alt="Screen snapshot at ${formatMeetingTime(s.capturedAtMs)}"><figcaption><span>${icon('image')} Shared Screen</span><time style="margin-left:auto;">${formatMeetingTime(s.capturedAtMs)}</time></figcaption></figure>`).join(''):(!isLive?`<div class="meeting-empty"><span>${icon('image')}</span><h3>No snapshots captured yet</h3><p>Screenshots taken during the session will appear here.</p></div>`:'')}</div></section>`}if(meetingTab==='audio'){const isRecording=activeMeetingStatuses.includes(m.status);return `<section class="panel audio-panel"><span class="feature-icon">${icon('signal')}</span><h2>Meeting Audio Recording</h2><p>Private encrypted recording stored securely. Accessible only to authorized CloudCore workspace members.</p>${isRecording?`<div class="audio-recording-notice"><span class="live-pill"><span class="pulse-dot"></span> Live Audio Recording In Progress</span><p>Teams bot is streaming and capturing 48kHz audio directly from the call. Full playback and export download are unlocked as soon as the meeting ends.</p></div>`:''}${m.recordingObjectKey?`<div class="audio-player-wrap"><audio controls preload="metadata" src="/api/meetings/${encodeURIComponent(m.id)}/audio"></audio><div class="audio-meta"><span>${icon('signal')} WebM Opus · 48kHz Stereo</span><a class="outline audio-download-btn" href="/api/meetings/${encodeURIComponent(m.id)}/audio" download="${esc(m.title||'meeting')}-audio.webm">${icon('download')} Download Audio</a></div></div>`:(!isRecording?'<div class="meeting-empty"><span>'+icon('signal')+'</span><h3>Audio not available</h3><p>Audio recording is only saved for meetings with recording enabled.</p></div>':'')}</section>`;}const recentSegments=(m.transcript||[]).slice(-3);return `<div class="meeting-overview"><section class="panel overview-metrics">${[['clock','Status',statusText(m.status)],['users','Participants',String((m.participants||[]).length)],['chat','Transcript segments',String((m.transcript||[]).length)],['image','Snapshots',String((m.snapshots||[]).length)]].map(([i,k,v])=>`<div><span>${icon(i)}</span><small>${k}</small><b>${esc(v)}</b></div>`).join('')}</section>${recentSegments.length?`<section class="panel live-preview-strip" style="grid-column:1/-1;"><div style="display:flex;justify-content:space-between;align-items:center;"><div style="display:flex;align-items:center;gap:8px;">${activeMeetingStatuses.includes(m.status)?`<span class="live-pill"><span class="pulse-dot"></span> Real-time Speech</span>`:icon('spark')}<h3 style="font-size:14px;margin:0;">Recent Discussion</h3></div><button class="outline small" data-action="meeting-tab" data-tab="chat">${icon('spark')} Ask AI about this</button></div><div class="recent-segments">${recentSegments.map(s=>`<div class="recent-seg"><time>${formatMeetingTime(s.startMs)}</time><strong>${esc(s.speakerName||'Speaker')}:</strong><span>${esc(s.text)}</span></div>`).join('')}</div></section>`:''}<section class="panel participant-panel"><div class="panel-heading">${icon('users')}<h2>Meeting Participants</h2></div>${(m.participants||[]).length?(m.participants||[]).map(p=>`<div class="participant-row"><span>${esc((p.displayName||'U').charAt(0).toUpperCase())}</span><div><b>${esc(p.displayName||'Participant')}</b>${p.speakerId?`<small style="display:block;color:#75867e;">ID: ${esc(p.speakerId)}</small>`:''}</div><span class="p-status ${p.leftAt?'left':'active'}">${!p.leftAt?'<i></i>':''}${p.leftAt?'Left':'In meeting'}</span></div>`).join(''):'<div class="meeting-empty">Participant details appear after the bot is admitted.</div>'}</section><section class="panel privacy-panel"><h2>${icon('shield')} Recording & Privacy Controls</h2><p>Audio and transcript expire on ${new Date(m.expiresAt).toLocaleDateString()}. The Teams link is removed within 24 hours of completion.</p><div style="margin-top:14px;display:flex;gap:8px;"><button class="outline small" data-action="meeting-tab" data-tab="transcript">${icon('chat')} Full Transcript</button><button class="outline small" data-action="meeting-tab" data-tab="chat">${icon('spark')} Ask AI Assistant</button></div></section></div>`}
 function lines(value){return value?value.split('\n').map(v=>v.trim()).filter(Boolean):[]}
 function momView(m){if(!m.mom)return `<section class="panel meeting-empty mom-empty"><span>${icon('spark')}</span><h3>${m.status==='processing'?'Preparing Minutes of Meeting':'MOM is not available'}</h3><p>${m.status==='processing'?'CloudCore AI is reviewing the final transcript.':'Finish the meeting, then generate the MOM from its transcript.'}</p>${['completed','failed'].includes(m.status)?`<button class="primary" data-action="regenerate-mom" data-id="${esc(m.id)}">Generate MOM</button>`:''}</section>`;const mom=m.mom;return `<form id="mom-form" class="panel mom-editor"><div class="mom-toolbar"><div><span class="eyebrow">MINUTES OF MEETING</span><h2>Review and edit</h2></div><button type="button" class="outline" data-action="copy-mom">Copy</button><button type="button" class="outline" data-action="download-mom">${icon('download')} Markdown</button><button type="button" class="outline" data-action="preview-mom">${icon('arrow')} Preview Report</button><button type="button" class="primary" data-action="print-mom">${icon('download')} Download PDF / Print</button><button class="primary" type="submit">Save changes</button></div><label>Executive summary<textarea name="summary" required>${esc(mom.summary)}</textarea></label><div class="mom-form-grid"><label>Attendees<small>One name per line</small><textarea name="attendees">${esc((mom.attendees||[]).join('\n'))}</textarea></label><label>Topics<small>Title | Notes</small><textarea name="topics">${esc((mom.topics||[]).map(x=>`${x.title} | ${x.notes}`).join('\n'))}</textarea></label><label>Decisions<small>One decision per line</small><textarea name="decisions">${esc((mom.decisions||[]).map(x=>x.decision).join('\n'))}</textarea></label><label>Action items<small>Task | Owner | Due date</small><textarea name="actionItems">${esc((mom.actionItems||[]).map(x=>`${x.task} | ${x.owner||''} | ${x.dueDate||''}`).join('\n'))}</textarea></label><label>Risks<textarea name="risks">${esc((mom.risks||[]).join('\n'))}</textarea></label><label>Open questions<textarea name="openQuestions">${esc((mom.openQuestions||[]).join('\n'))}</textarea></label></div></form>`}
-async function api(path,options={}){const response=await fetch(path,{...options,headers:{'content-type':'application/json',...(options.headers||{})}});let payload={};try{payload=await response.json()}catch{}if(response.status===401){location.href='/auth/login';throw Error('Authentication required.')}if(!response.ok)throw Error(payload.error?.message||`Request failed (${response.status}).`);return payload}
+async function api(path,options={}){const response=await fetch(path,{...options,headers:{'content-type':'application/json',...(options.headers||{})}});let payload={};try{payload=await response.json()}catch{}if(response.status===401){appUser=null;location.hash='login';route();throw Error('Authentication required.')}if(!response.ok)throw Error(payload.error?.message||`Request failed (${response.status}).`);return payload}
 function scheduleMeetingsPoll(){clearTimeout(meetingsTimer);meetingsTimer=null;if(!location.hash.startsWith('#meetings'))return;const isActive=selectedMeetingId&&activeMeetingStatuses.includes(meetingsState.detail?.status);const pollDelay=isActive?3000:6000;meetingsTimer=setTimeout(()=>refreshMeetings(),pollDelay)}
 function updateMeetingsLiveDom(){if(!location.hash.startsWith('#meetings'))return;if(!selectedMeetingId){const listEl=document.querySelector('.meeting-list');if(listEl){listEl.innerHTML=meetingsState.meetings.length?meetingsState.meetings.map(meetingRowView).join(''):`<div class="meeting-empty"><span>${icon('video')}</span><h3>No meetings yet</h3><p>Your recorded Teams meetings will appear here.</p></div>`;document.querySelectorAll('[data-action="open-meeting"]').forEach(el=>el.onclick=()=>{meetingTab='overview';meetingsState.detail=null;location.hash=`meetings/${el.dataset.id}`;refreshMeetings(true)})}const capI=document.querySelector('.capacity i');const capSm=document.querySelector('.capacity small');if(capI)capI.style.width=`${Math.min(100,meetingsState.capacity.active/meetingsState.capacity.maximum*100)}%`;if(capSm)capSm.textContent=`${meetingsState.capacity.active} of ${meetingsState.capacity.maximum} meeting slots active`;return}const m=meetingsState.detail;if(!m||m.id!==selectedMeetingId)return;const statusBadge=document.querySelector('.meeting-detail-head .meeting-status');if(statusBadge){statusBadge.className=`meeting-status ${esc(m.status)}`;statusBadge.innerHTML=`<i></i>${esc(statusText(m.status))}`}const stopBtn=document.querySelector('[data-action="stop-meeting"]');if(stopBtn&&(!activeMeetingStatuses.includes(m.status)||m.status==='processing')){stopBtn.remove()}const tabs=document.querySelectorAll('.meeting-tabs button');tabs.forEach(tabBtn=>{const tabName=tabBtn.dataset.tab;const countEl=tabBtn.querySelector('small');if(countEl){const count=tabName==='transcript'?(m.transcript||[]).length:tabName==='snapshots'?(m.snapshots||[]).length:tabName==='chat'?(meetingChats[m.id]||[]).length:'';countEl.textContent=count}});const active=document.activeElement;if(meetingTab==='chat'){if(meetingChatLoading||(meetingChats[m.id]||[]).some(item=>item.streaming))return;const msgBox=document.querySelector('.meeting-chat-messages');if(msgBox){const history=meetingChats[m.id]||[];const rendered=history.length?history.map(item=>`<div class="meeting-chat-bubble ${item.role}"><span class="chat-role">${item.role==='user'?'You':'CloudCore Meeting AI'}</span><div class="chat-text">${renderMarkdown(item.content)}</div></div>`).join(''):`<div class="meeting-chat-empty"><span class="icon">${icon('chat')}</span><h3>Ask questions about this meeting</h3><p>Ask "What is he saying?", "Who is speaking?", or "Summarize the key points". The AI analyzes live transcripts in real time.</p></div>`;if(msgBox.innerHTML!==rendered){const wasNear=isNearBottom(msgBox,60);const savedTop=msgBox.scrollTop;msgBox.innerHTML=rendered;if(wasNear)msgBox.scrollTop=msgBox.scrollHeight;else msgBox.scrollTop=savedTop}}}else if(meetingTab==='transcript'&&active?.id!=='transcript-filter'){const term=(transcriptSearch||'').trim().toLowerCase();const all=m.transcript||[];const list=term?all.filter(s=>(s.text||'').toLowerCase().includes(term)||(s.speakerName||'').toLowerCase().includes(term)):all;const isLive=activeMeetingStatuses.includes(m.status);const metaStrip=document.querySelector('.transcript-meta-strip');if(metaStrip)metaStrip.innerHTML=`${isLive?`<span class="live-pill"><span class="pulse-dot"></span> Live Transcribing</span>`:''}<span>${list.length} of ${all.length} segments</span>`;const listWrap=document.querySelector('.transcript-list');if(listWrap){const wasNear=isNearBottom(listWrap,60);const savedTop=listWrap.scrollTop;const rendered=list.length?list.map(s=>`<article><time>${formatMeetingTime(s.startMs)}</time><div><span class="speaker-tag">${icon('user')}${esc(s.speakerName||'Participant')}</span><p>${esc(s.text)}</p></div></article>`).join(''):`<div class="meeting-empty"><span>${icon('chat')}</span><h3>${term?'No matching transcript segments':'Transcript not available yet'}</h3><p>${term?'Try searching with different terms.':'Live segments appear here while the bot is recording.'}</p></div>`;if(listWrap.innerHTML!==rendered){listWrap.innerHTML=rendered;if(wasNear)listWrap.scrollTop=listWrap.scrollHeight;else listWrap.scrollTop=savedTop}}}else if(meetingTab==='snapshots'){const snaps=m.snapshots||[];const snapGrid=document.querySelector('.snapshot-grid');if(snapGrid&&snaps.length){snapGrid.innerHTML=snaps.map(s=>`<figure class="snapshot-card"><img src="/api/meetings/${encodeURIComponent(m.id)}/snapshots/${encodeURIComponent(s.id)}" alt="Screen snapshot at ${formatMeetingTime(s.capturedAtMs)}"><figcaption><span>${icon('image')} Shared Screen</span><time style="margin-left:auto;">${formatMeetingTime(s.capturedAtMs)}</time></figcaption></figure>`).join('')}}}
 async function refreshMeetings(force=false){if(meetingsLoading&&!force)return;if(meetingChatLoading||(meetingChats[selectedMeetingId]||[]).some(m=>m.streaming)){scheduleMeetingsPoll();return}meetingsLoading=true;try{if(!appUser){const identity=await api('/api/me');appUser=identity.user}if(selectedMeetingId){meetingsState.detail=await api(`/api/meetings/${encodeURIComponent(selectedMeetingId)}`)}else{const list=await api('/api/meetings');meetingsState={...meetingsState,...list}}meetingsState.lastLoaded=Date.now();meetingsError=''}catch(error){meetingsError=error.message}finally{meetingsLoading=false;if(meetingChatLoading||(meetingChats[selectedMeetingId]||[]).some(m=>m.streaming)){scheduleMeetingsPoll();return}if(location.hash.startsWith('#meetings')){const hasDetailDom=Boolean(document.querySelector('.meeting-detail-head'));if(selectedMeetingId&&hasDetailDom){updateMeetingsLiveDom()}else if(!selectedMeetingId){updateMeetingsLiveDom()}else{route({preserveScroll:true})}}scheduleMeetingsPoll()}}
@@ -560,9 +566,371 @@ function previewMomPdf(m){
     printMomPdf(m);
   }
 }
-function assistant(){return `${title('YOUR INTELLIGENT WORKSPACE','AI Assistant','Answers, ideas and a little help moving your business forward.')}<section class="chat-panel panel"><div class="chat-top">${mark('chat-brand-mark')}<strong>CloudCore AI</strong><span>Frontend preview</span><button class="icon-button" data-action="new-chat" aria-label="Start new chat">${icon('plus')}</button></div><div class="messages" aria-live="polite">${messages.length?messages.map(m=>`<div class="message ${m.role}"><span class="message-avatar">${m.role==='user'?'A':mark('message-mark')}</span><div ${m.streaming?'id="active-assistant-stream-bubble"':''} class="chat-text">${m.streaming&&!m.content?`<span class="live-pill"><span class="pulse-dot"></span> CloudCore AI is thinking...</span><span class="typing-cursor"></span>`:renderMarkdown(m.content)+(m.streaming?'<span class="typing-cursor"></span>':'')}</div></div>`).join(''):`<div class="chat-welcome"><span class="feature-icon ai-feature-mark">${mark()}</span><h2>What can I help you with?</h2><p>Bring your questions. Let’s find a way forward.</p><div class="chat-starters">${['Explore PTCL cloud solutions','Help me draft a proposal','How can I analyze a document?','What can Image Analysis do?'].map(t=>`<button data-action="suggestion" data-prompt="${t}">${t}${icon('arrow')}</button>`).join('')}</div></div>`}</div>${composer('chat')}<p class="chat-caption">CloudCore AI assistant · Real-time Qwen intelligence</p></section>`}
-function history(){const filtered=chats.filter(c=>c.title.toLowerCase().includes(historySearch.toLowerCase()));return `${title('YOUR CONVERSATIONS','Chat History','Pick up where you left off. Your conversations are saved on this device.')}<section class="panel history-panel"><div class="history-toolbar"><label>${icon('search')}<input id="history-search" aria-label="Search conversations" placeholder="Search your conversations..." value="${esc(historySearch)}"></label><button class="primary" data-action="new-chat">${icon('plus')}New Chat</button></div><div id="history-list">${filtered.length?filtered.map(c=>`<div class="history-row"><span class="mini-icon">${icon('chat')}</span><button class="history-open" data-action="open-chat" data-id="${c.id}"><b>${esc(c.title)}</b><small>${new Date(c.updated).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})} · ${c.messages.filter(m=>m.role==='user').length} messages</small></button><button class="icon-button" data-action="delete-chat" data-id="${c.id}" aria-label="Delete conversation">${icon('trash')}</button></div>`).join(''):`<div class="history-empty"><span class="feature-icon">${icon('history')}</span><h2>${historySearch?'No matching conversations':'Your next great idea starts here'}</h2><p>${historySearch?'Try searching with a different word.':'Start a conversation with CloudCore AI and find it here whenever you need it.'}</p><button class="outline" data-action="new-chat">Start a new chat ${icon('arrow')}</button></div>`}</div></section>`}
-function modal(content){$('#dialog-content').innerHTML=content;$('#dialog').showModal()}
+function modal(content,{uncloseable=false}={}){
+  $('#dialog-content').innerHTML=content;
+  const closeBtn=document.querySelector('.dialog-close');
+  if(closeBtn)closeBtn.style.display=uncloseable?'none':'block';
+  if($('#dialog')){
+    $('#dialog').classList.toggle('uncloseable',uncloseable);
+    $('#dialog').showModal();
+  }
+}
+
+function loginView(){
+  return `<div class="login-page">
+    <div class="hero-backdrop"></div>
+    <header class="login-header">
+      ${brand()}
+      <a class="outline small" href="#landing">${icon('arrow')} Back to Website</a>
+    </header>
+    <main class="login-main">
+      <div class="login-card panel">
+        <div class="login-brand">
+          ${mark('login-mark')}
+          <h2>Sign in to <b>CloudCore AI</b></h2>
+          <p>PTCL Smart Cloud Enterprise Workspace</p>
+        </div>
+        <form id="login-form" class="login-form">
+          <div id="login-error" class="login-alert" style="display:none;"></div>
+          <label class="login-label">
+            <span>Username</span>
+            <div class="input-with-icon">
+              ${icon('user')}
+              <input name="username" type="text" autocomplete="username" required placeholder="e.g. azeemniazi or muhammadali" autofocus>
+            </div>
+          </label>
+          <label class="login-label">
+            <span>Password</span>
+            <div class="input-with-icon">
+              ${icon('shield')}
+              <input name="password" type="password" autocomplete="current-password" required placeholder="Enter your password">
+            </div>
+          </label>
+          <button type="submit" class="primary login-submit" id="login-submit-btn">
+            ${icon('lock')} Sign In
+          </button>
+        </form>
+        <div class="login-footnote">
+          <small>Protected by PTCL Smart Cloud enterprise authentication.</small>
+        </div>
+      </div>
+    </main>
+    ${footer()}
+  </div>`;
+}
+
+function bindLogin(){
+  const form=document.querySelector('#login-form');
+  if(!form)return;
+  form.onsubmit=async(e)=>{
+    e.preventDefault();
+    const errBox=document.querySelector('#login-error'),submitBtn=document.querySelector('#login-submit-btn');
+    if(errBox){errBox.style.display='none';errBox.textContent='';}
+    if(submitBtn){submitBtn.disabled=true;submitBtn.textContent='Signing in...';}
+    const data=new FormData(form);
+    const username=String(data.get('username')||'').trim(),password=String(data.get('password')||'');
+    try{
+      const res=await fetch('/api/auth/login',{
+        method:'POST',
+        headers:{'content-type':'application/json'},
+        body:JSON.stringify({username,password})
+      });
+      const result=await res.json().catch(()=>({}));
+      if(!res.ok)throw Error(result.error?.message||'Invalid username or password.');
+      appUser=result.user;
+      toast(`Welcome back, ${appUser.displayName}!`);
+      if(appUser.mustChangePassword){
+        location.hash='home';
+        route();
+        checkMustChangePassword();
+      }else{
+        location.hash='home';
+        route();
+      }
+    }catch(err){
+      if(errBox){errBox.textContent=err.message;errBox.style.display='block';}
+      else toast(err.message);
+    }finally{
+      if(submitBtn){submitBtn.disabled=false;submitBtn.innerHTML=`${icon('lock')} Sign In`;}
+    }
+  };
+}
+
+function checkMustChangePassword(){
+  if(!appUser||!appUser.mustChangePassword)return;
+  modal(`
+    <div class="must-change-password-box">
+      <span class="feature-icon">${icon('shield')}</span>
+      <h2>Password Change Required</h2>
+      <p style="font-size:13px;color:#5a7366;margin:8px 0 16px;">Your account was initialized with a temporary password. For security, you must set a new personal password before using CloudCore AI.</p>
+      <form id="must-change-password-form" class="login-form">
+        <div id="must-change-err" class="login-alert" style="display:none;"></div>
+        <label class="login-label">
+          <span>Current Temporary Password</span>
+          <div class="input-with-icon">
+            ${icon('shield')}
+            <input name="currentPassword" type="password" required placeholder="Enter current temporary password">
+          </div>
+        </label>
+        <label class="login-label">
+          <span>New Password</span>
+          <div class="input-with-icon">
+            ${icon('shield')}
+            <input name="newPassword" type="password" minlength="6" required placeholder="Minimum 6 characters">
+          </div>
+        </label>
+        <label class="login-label">
+          <span>Confirm New Password</span>
+          <div class="input-with-icon">
+            ${icon('shield')}
+            <input name="confirmPassword" type="password" minlength="6" required placeholder="Re-enter new password">
+          </div>
+        </label>
+        <button type="submit" class="primary login-submit" id="must-change-btn">
+          ${icon('check')} Set Password & Continue
+        </button>
+      </form>
+    </div>
+  `,{uncloseable:true});
+
+  const form=document.querySelector('#must-change-password-form');
+  if(form){
+    form.onsubmit=async(e)=>{
+      e.preventDefault();
+      const errBox=document.querySelector('#must-change-err'),btn=document.querySelector('#must-change-btn');
+      if(errBox){errBox.style.display='none';errBox.textContent='';}
+      const f=new FormData(form);
+      const currentPassword=String(f.get('currentPassword')||''),newPassword=String(f.get('newPassword')||''),confirmPassword=String(f.get('confirmPassword')||'');
+      if(newPassword.length<6){if(errBox){errBox.textContent='New password must be at least 6 characters.';errBox.style.display='block';}return;}
+      if(newPassword!==confirmPassword){if(errBox){errBox.textContent='New password and confirmation do not match.';errBox.style.display='block';}return;}
+      if(newPassword===currentPassword){if(errBox){errBox.textContent='New password must be different from current password.';errBox.style.display='block';}return;}
+      if(btn){btn.disabled=true;btn.textContent='Updating...';}
+      try{
+        const res=await fetch('/api/auth/change-password',{
+          method:'POST',
+          headers:{'content-type':'application/json'},
+          body:JSON.stringify({currentPassword,newPassword})
+        });
+        const payload=await res.json().catch(()=>({}));
+        if(!res.ok)throw Error(payload.error?.message||'Failed to update password.');
+        appUser.mustChangePassword=false;
+        $('#dialog').close();
+        toast('Password updated successfully! Welcome to CloudCore AI.');
+        route();
+      }catch(err){
+        if(errBox){errBox.textContent=err.message;errBox.style.display='block';}
+        else toast(err.message);
+      }finally{
+        if(btn){btn.disabled=false;btn.innerHTML=`${icon('check')} Set Password & Continue`;}
+      }
+    };
+  }
+}
+
+async function openSettingsModal(activeTab='profile'){
+  let usersList=[];
+  const isPrivileged=appUser?.role==='dev'||appUser?.role==='admin';
+  if(isPrivileged){
+    try{
+      const res=await fetch('/api/admin/users');
+      if(res.ok){
+        const data=await res.json();
+        usersList=data.users||[];
+      }
+    }catch{}
+  }
+  const roleBadge=`<span class="role-badge ${esc(appUser?.role||'user')}">${esc(appUser?.role||'user')}</span>`;
+  const html=`<div style="max-width:700px;width:100%;text-align:left;">
+    <h2>Settings & Security</h2>
+    <div class="settings-tabs">
+      <button class="settings-tab-btn ${activeTab==='profile'?'active':''}" data-settings-tab="profile">My Profile & Password</button>
+      ${isPrivileged?`<button class="settings-tab-btn ${activeTab==='users'?'active':''}" data-settings-tab="users">User Management (${usersList.length})</button>`:''}
+    </div>
+    ${activeTab==='profile'?`
+      <div style="margin-bottom:20px;padding:14px;background:#f8faf9;border-radius:10px;display:flex;align-items:center;gap:14px;">
+        <span class="avatar">${esc((appUser?.displayName||'U').charAt(0))}</span>
+        <div>
+          <b>${esc(appUser?.displayName||'User')}</b> (${esc(appUser?.username||'')})
+          <div style="margin-top:4px;">Role: ${roleBadge} · <i>${esc(appUser?.email||'')}</i></div>
+        </div>
+      </div>
+      <h3>Change Your Password</h3>
+      <p style="font-size:13px;color:#5a7366;margin-bottom:14px;">Update your personal password. Minimum 6 characters.</p>
+      <form id="change-my-password-form" class="login-form">
+        <div id="self-pw-err" class="login-alert" style="display:none;"></div>
+        <label class="login-label">
+          <span>Current Password</span>
+          <div class="input-with-icon">${icon('shield')}<input name="currentPassword" type="password" required placeholder="Enter current password"></div>
+        </label>
+        <div class="settings-form-grid">
+          <label class="login-label">
+            <span>New Password</span>
+            <div class="input-with-icon">${icon('shield')}<input name="newPassword" type="password" minlength="6" required placeholder="At least 6 characters"></div>
+          </label>
+          <label class="login-label">
+            <span>Confirm New Password</span>
+            <div class="input-with-icon">${icon('shield')}<input name="confirmPassword" type="password" minlength="6" required placeholder="Re-enter new password"></div>
+          </label>
+        </div>
+        <button type="submit" class="primary" style="align-self:flex-start;">${icon('check')} Update Password</button>
+      </form>
+    `:`
+      <h3>Create New User Account</h3>
+      <p style="font-size:13px;color:#5a7366;margin-bottom:14px;">
+        ${appUser?.role==='dev'?'As a Dev, you can create Admin or User accounts with custom passwords.':'As an Admin, you can create User accounts with temporary one-time passwords.'}
+      </p>
+      <form id="create-user-form" style="margin-bottom:24px;padding:16px;background:#f8faf9;border-radius:10px;border:1px solid #dde8e1;">
+        <div id="create-user-err" class="login-alert" style="display:none;margin-bottom:12px;"></div>
+        <div class="settings-form-grid">
+          <label class="login-label">
+            <span>Username</span>
+            <div class="input-with-icon">${icon('user')}<input name="username" type="text" pattern="[a-zA-Z0-9_.-]{3,30}" required placeholder="e.g. employee1"></div>
+          </label>
+          <label class="login-label">
+            <span>Display Name</span>
+            <div class="input-with-icon">${icon('user')}<input name="displayName" type="text" required placeholder="e.g. Ali Ahmed"></div>
+          </label>
+        </div>
+        <div class="settings-form-grid">
+          <label class="login-label">
+            <span>Password</span>
+            <div class="input-with-icon">${icon('shield')}<input name="password" type="text" minlength="6" required placeholder="At least 6 characters"></div>
+          </label>
+          <label class="login-label">
+            <span>Account Role</span>
+            <div class="input-with-icon">${icon('users')}
+              ${appUser?.role==='dev'?`<select name="role"><option value="user">User (Standard)</option><option value="admin">Admin</option></select>`:`<input name="role" value="user" readonly style="background:#eef4f0;color:#557063;">`}
+            </div>
+          </label>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#284336;margin-bottom:14px;">
+          <input type="checkbox" name="mustChangePassword" ${appUser?.role==='admin'?'checked disabled':'checked'}>
+          <span>Require password change on first login (One-Time Password / OTP)</span>
+        </label>
+        <button type="submit" class="primary">${icon('plus')} Create Account</button>
+      </form>
+      <h3>Existing User Accounts</h3>
+      <div style="overflow-x:auto;">
+        <table class="user-mgmt-table">
+          <thead>
+            <tr>
+              <th>Username</th>
+              <th>Display Name</th>
+              <th>Role</th>
+              <th>PW Status</th>
+              <th>Created</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${usersList.map(u=>`<tr>
+              <td><b>${esc(u.username)}</b></td>
+              <td>${esc(u.displayName)}</td>
+              <td><span class="role-badge ${esc(u.role)}">${esc(u.role)}</span></td>
+              <td>${u.mustChangePassword?'<span style="color:#d97706;font-size:12px;font-weight:600;">Must change (OTP)</span>':'<span style="color:#059669;font-size:12px;">Active</span>'}</td>
+              <td><small>${new Date(u.createdAt).toLocaleDateString()}</small></td>
+              <td>
+                <div class="user-mgmt-actions">
+                  <button class="soft-button" style="padding:4px 8px;font-size:12px;" data-action="admin-reset-pw" data-id="${esc(u.id)}" data-user="${esc(u.username)}">Reset PW</button>
+                  ${(u.role!=='dev'&&!(appUser?.role==='admin'&&u.role==='admin')&&u.id!==appUser?.id)?`<button class="icon-button danger" style="padding:4px;" data-action="admin-delete-user" data-id="${esc(u.id)}" data-user="${esc(u.username)}" title="Delete user">${icon('trash')}</button>`:''}
+                </div>
+              </td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    `}
+  </div>`;
+  modal(html);
+
+  document.querySelectorAll('[data-settings-tab]').forEach(btn=>{btn.onclick=()=>openSettingsModal(btn.dataset.settingsTab)});
+  const selfPwForm=document.querySelector('#change-my-password-form');
+  if(selfPwForm){
+    selfPwForm.onsubmit=async(e)=>{
+      e.preventDefault();
+      const errBox=document.querySelector('#self-pw-err');if(errBox){errBox.style.display='none';errBox.textContent='';}
+      const f=new FormData(selfPwForm),currentPassword=String(f.get('currentPassword')||''),newPassword=String(f.get('newPassword')||''),confirmPassword=String(f.get('confirmPassword')||'');
+      if(newPassword.length<6){if(errBox){errBox.textContent='New password must be at least 6 characters.';errBox.style.display='block';}return;}
+      if(newPassword!==confirmPassword){if(errBox){errBox.textContent='Passwords do not match.';errBox.style.display='block';}return;}
+      try{
+        const res=await fetch('/api/auth/change-password',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({currentPassword,newPassword})});
+        const data=await res.json().catch(()=>({}));
+        if(!res.ok)throw Error(data.error?.message||'Failed to update password.');
+        toast('Your password has been changed successfully.');
+        $('#dialog').close();
+      }catch(err){if(errBox){errBox.textContent=err.message;errBox.style.display='block';}else toast(err.message);}
+    };
+  }
+  const createUserForm=document.querySelector('#create-user-form');
+  if(createUserForm){
+    createUserForm.onsubmit=async(e)=>{
+      e.preventDefault();
+      const errBox=document.querySelector('#create-user-err');if(errBox){errBox.style.display='none';errBox.textContent='';}
+      const f=new FormData(createUserForm),username=String(f.get('username')||'').trim(),displayName=String(f.get('displayName')||'').trim(),password=String(f.get('password')||''),role=String(f.get('role')||'user');
+      const mustChangePassword=appUser?.role==='admin'?true:Boolean(f.get('mustChangePassword'));
+      try{
+        const res=await fetch('/api/admin/users',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({username,displayName,password,role,mustChangePassword})});
+        const data=await res.json().catch(()=>({}));
+        if(!res.ok)throw Error(data.error?.message||'Failed to create user.');
+        toast(`User '${username}' created successfully.`);
+        openSettingsModal('users');
+      }catch(err){if(errBox){errBox.textContent=err.message;errBox.style.display='block';}else toast(err.message);}
+    };
+  }
+  document.querySelectorAll('[data-action="admin-reset-pw"]').forEach(btn=>{
+    btn.onclick=async()=>{
+      const targetUser=btn.dataset.user,targetId=btn.dataset.id;
+      const newPassword=window.prompt(`Enter new password for '${targetUser}' (min 6 characters):`);
+      if(!newPassword)return;
+      if(newPassword.length<6)return toast('Password must be at least 6 characters.');
+      try{
+        const res=await fetch(`/api/admin/users/${encodeURIComponent(targetId)}/reset-password`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({newPassword})});
+        const data=await res.json().catch(()=>({}));
+        if(!res.ok)throw Error(data.error?.message||'Failed to reset password.');
+        toast(`Password for '${targetUser}' reset successfully.`);
+        openSettingsModal('users');
+      }catch(err){toast(err.message);}
+    };
+  });
+  document.querySelectorAll('[data-action="admin-delete-user"]').forEach(btn=>{
+    btn.onclick=async()=>{
+      const targetUser=btn.dataset.user,targetId=btn.dataset.id;
+      if(!window.confirm(`Are you sure you want to permanently delete user '${targetUser}'?`))return;
+      try{
+        const res=await fetch(`/api/admin/users/${encodeURIComponent(targetId)}`,{method:'DELETE'});
+        const data=await res.json().catch(()=>({}));
+        if(!res.ok)throw Error(data.error?.message||'Failed to delete user.');
+        toast(`User '${targetUser}' deleted.`);
+        openSettingsModal('users');
+      }catch(err){toast(err.message);}
+    };
+  });
+}
+
+function openProfileModal(){
+  modal(`
+    <div style="text-align:center;padding:12px 0;">
+      <span class="avatar" style="width:54px;height:54px;font-size:24px;margin:0 auto 12px;">${esc((appUser?.displayName||'U').charAt(0))}</span>
+      <h2 style="margin-bottom:4px;">${esc(appUser?.displayName||'CloudCore user')}</h2>
+      <p style="color:#5a7366;font-size:13px;margin-bottom:8px;">${esc(appUser?.username||'')} · ${esc(appUser?.email||'')}</p>
+      <div><span class="role-badge ${esc(appUser?.role||'user')}">${esc(appUser?.role||'user')}</span></div>
+      <div style="display:flex;gap:10px;justify-content:center;margin-top:20px;">
+        <button class="primary" data-action="open-settings-modal">${icon('settings')} Settings</button>
+        <button class="outline danger" data-action="signout">${icon('logout')} Sign out</button>
+      </div>
+    </div>
+  `);
+  document.querySelectorAll('#dialog [data-action="open-settings-modal"]').forEach(el=>el.onclick=()=>openSettingsModal());
+  document.querySelectorAll('#dialog [data-action="signout"]').forEach(el=>el.onclick=()=>handleSignOut());
+}
+
+async function handleSignOut(){
+  try{await fetch('/api/auth/logout',{method:'POST'});}catch{}
+  appUser=null;
+  location.hash='landing';
+  route();
+  toast('You have signed out successfully.');
+}
 function saveChats(){try{localStorage.setItem('cloudcore-chats',JSON.stringify(chats))}catch{toast('Your browser could not save chat history.')}}
 function pollIngestJob(jobId,filename){const interval=setInterval(()=>{if(typeof fetch!=='function'){clearInterval(interval);return}fetch(`/api/jobs/${encodeURIComponent(jobId)}`).then(r=>r.json()).then(res=>{if(res.status==='finished'){clearInterval(interval);docIngesting=false;docJobStatus=`Successfully indexed "${filename}" into AI knowledge base! You can now query it in AI Assistant.`;toast(`"${filename}" indexed into AI knowledge base!`);route()}else if(res.status==='failed'){clearInterval(interval);docIngesting=false;docJobStatus=`Ingestion failed: ${res.error||'Unknown error'}`;toast(docJobStatus);route()}else{docJobStatus=`Processing document: ${res.status}...`;route()}}).catch(err=>{clearInterval(interval);docIngesting=false;docJobStatus=`Status check failed: ${err.message}`;route()})},3000)}
 async function sendMessage(t){
@@ -660,10 +1028,10 @@ async function sendMessage(t){
 }
 function selectDocument(file){if(!file)return;if(!/\.(pdf|docx|pptx|xlsx|txt|md)$/i.test(file.name))return toast('Please choose a PDF, DOCX, PPTX, XLSX or text file.');if(file.size>50*1048576)return toast('Please choose a document smaller than 50 MB.');docFile=file;location.hash='documents';route();toast('Document selected. Your file stays on this device.')}
 function selectImage(file){if(!file)return;if(!['image/jpeg','image/png','image/webp'].includes(file.type))return toast('Please choose a JPG, PNG or WEBP image.');if(file.size>20*1048576)return toast('Please choose an image smaller than 20 MB.');if(imageURL.startsWith('blob:'))URL.revokeObjectURL(imageURL);imageFile=file;imageURL=URL.createObjectURL(file);imageMode='upload';location.hash='images';route()}
-function actions(a,el){if(a==='new-chat'){messages=[];currentChat=null;location.hash='assistant';route()}else if(a==='suggestion'){const t=el.dataset.prompt;if(t==='Summarize this document')location.hash='documents';else if(t==='What is in this image?')location.hash='images';else sendMessage(t)}else if(a==='choose-document'||a==='attach-document')$('#document-input').click();else if(a==='choose-image'||a==='attach-image')$('#image-input').click();else if(a==='doc-tab'){docTab=el.dataset.tab;route()}else if(a==='image-mode'){imageMode=el.dataset.mode;route()}else if(a==='example-image'){imageFile=null;imageURL=el.dataset.example==='screenshot'?'assets/reference-home.png':el.dataset.example==='diagram'?'assets/diagram.svg':'assets/hero.png';imageMode='upload';route();toast('Example selected. Connect an AI service for image analysis.')}else if(a==='cloud-source')modal(`<h2>Connect ${el.dataset.source}</h2><p>Cloud storage connections will be available when the account integration is configured. For now, download your document and choose it from your device.</p><button class="primary" data-action="choose-document">Choose a local file</button>`);else if(a==='full-analysis'||a==='document-action')modal(`<span class="feature-icon">${icon('file')}</span><h2>${el.dataset.title||'Document Analysis'}</h2><p>${docFile?'Your document is selected. Connect an AI service to analyze its contents.':'Example analysis — PTCL Enterprise Proposal'}</p>${!docFile?`<p>${sampleSummary}</p><h3>Key points</h3><ul><li>Enterprise connectivity and cloud services</li><li>Flexible deployment options</li><li>Managed support and service-level agreements</li></ul>`:''}`);else if(a==='view-documents')modal(`<h2>Recent Documents</h2><p>${docFile?esc(docFile.name)+' — selected on this device.':'No documents uploaded yet. The proposal displayed is an example.'}</p>`);else if(a==='menu')$('.sidebar').classList.toggle('mobile-open');else if(a==='close-dialog')$('#dialog').close();else if(a==='open-chat'){const c=chats.find(c=>c.id===el.dataset.id);messages=[...c.messages];currentChat=c.id;location.hash='assistant'}else if(a==='delete-chat')modal(`<h2>Delete this conversation?</h2><p>This removes the conversation from this device.</p><div class="dialog-actions"><button class="outline" data-action="close-dialog">Cancel</button><button class="primary" data-action="confirm-delete" data-id="${el.dataset.id}">Delete conversation</button></div>`);else if(a==='confirm-delete'){chats=chats.filter(c=>c.id!==el.dataset.id);saveChats();route();toast('Conversation deleted.')}else if(a==='settings')modal('<h2>Settings</h2><p>Chat history is saved only in this browser. Files are previewed on your device.</p><h3>AI connection</h3><p>This frontend is ready for a backend integration. Live answers and file analysis are not connected yet.</p>');else if(a==='profile')modal(`<span class="avatar">A</span><h2>Welcome, Ali</h2><p>You’re exploring CloudCore AI in preview mode.</p><a href="#landing" class="outline">Back to website</a>`);else if(a==='help')modal('<h2>How can we help?</h2><p><b>AI Assistant:</b> Start a conversation and explore the chat interface.</p><p><b>Document Insight:</b> Upload a file and explore an example analysis.</p><p><b>Image Analysis:</b> Preview an uploaded image or use a direct image URL.</p><p><b>Chat History:</b> Reopen or delete conversations saved on this device.</p>');else if(a==='solutions')modal(`<h2>PTCL Business Solutions</h2><p>Explore connectivity, cloud, security and intelligent support.</p><div class="solution-list">${[['signal','Reliable Connectivity','Keep your business connected.'],['cloud','Cloud & Data Solutions','Infrastructure that grows with you.'],['shield','Cyber Security','Protect your business and its data.'],['chip','AI-Powered Support','Find the right support for your business.']].map(([i,t,d])=>`<div>${icon(i)}<span><b>${t}</b><p>${d}</p></span></div>`).join('')}</div>`);else if(a==='ingest-document-ai'){if(!docFile)return toast('Please choose a document first.');if(typeof fetch!=='function')return toast('AI service connection required.');docIngesting=true;docJobStatus='Uploading to AI platform...';route();const form=new FormData();form.append('file',docFile);fetch('/api/documents/upload',{method:'POST',body:form}).then(async r=>{if(!r.ok){const err=await r.json().catch(()=>({}));throw Error(err.error?.message||err.detail||`Upload failed (${r.status})`)}return r.json()}).then(data=>{toast(`Document queued (Job: ${data.job_id.slice(0,8)}). Ingesting...`);docJobStatus=`Ingestion queued (Job: ${data.job_id.slice(0,8)})...`;route();pollIngestJob(data.job_id,data.filename)}).catch(err=>{docIngesting=false;docJobStatus=`Ingestion failed: ${err.message}`;toast(docJobStatus);route()})}else if(a==='analyze-image-ai'){if(!imageFile&&!imageURL)return toast('Please choose or upload an image first.');if(typeof fetch!=='function')return toast('AI service connection required.');visionLoading=true;visionResult='';route();(async()=>{try{const form=new FormData();form.append('question','Please analyze this image thoroughly: identify all objects, extract visible text via OCR, describe layout and context, and highlight key actionable observations.');if(imageFile){form.append('image',imageFile)}else{const blob=await fetch(imageURL).then(r=>r.blob());form.append('image',blob,'image.png')}const r=await fetch('/api/vision',{method:'POST',body:form});if(!r.ok){const err=await r.json().catch(()=>({}));throw Error(err.error?.message||err.detail||`Vision request failed (${r.status})`)}const data=await r.json();visionResult=data.answer||'No analysis returned.';toast('Vision analysis complete.')}catch(err){toast(`Vision analysis failed: ${err.message}`);visionResult=`Analysis failed: ${err.message}`}finally{visionLoading=false;route()}})()}else if(a==='clear-vision'){visionResult='';route()}bindDialog()}
+function actions(a,el){if(a==='new-chat'){messages=[];currentChat=null;location.hash='assistant';route()}else if(a==='suggestion'){const t=el.dataset.prompt;if(t==='Summarize this document')location.hash='documents';else if(t==='What is in this image?')location.hash='images';else sendMessage(t)}else if(a==='choose-document'||a==='attach-document')$('#document-input').click();else if(a==='choose-image'||a==='attach-image')$('#image-input').click();else if(a==='doc-tab'){docTab=el.dataset.tab;route()}else if(a==='image-mode'){imageMode=el.dataset.mode;route()}else if(a==='example-image'){imageFile=null;imageURL=el.dataset.example==='screenshot'?'assets/reference-home.png':el.dataset.example==='diagram'?'assets/diagram.svg':'assets/hero.png';imageMode='upload';route();toast('Example selected. Connect an AI service for image analysis.')}else if(a==='cloud-source')modal(`<h2>Connect ${el.dataset.source}</h2><p>Cloud storage connections will be available when the account integration is configured. For now, download your document and choose it from your device.</p><button class="primary" data-action="choose-document">Choose a local file</button>`);else if(a==='full-analysis'||a==='document-action')modal(`<span class="feature-icon">${icon('file')}</span><h2>${el.dataset.title||'Document Analysis'}</h2><p>${docFile?'Your document is selected. Connect an AI service to analyze its contents.':'Example analysis — PTCL Enterprise Proposal'}</p>${!docFile?`<p>${sampleSummary}</p><h3>Key points</h3><ul><li>Enterprise connectivity and cloud services</li><li>Flexible deployment options</li><li>Managed support and service-level agreements</li></ul>`:''}`);else if(a==='view-documents')modal(`<h2>Recent Documents</h2><p>${docFile?esc(docFile.name)+' — selected on this device.':'No documents uploaded yet. The proposal displayed is an example.'}</p>`);else if(a==='menu')$('.sidebar').classList.toggle('mobile-open');else if(a==='close-dialog')$('#dialog').close();else if(a==='open-chat'){const c=chats.find(c=>c.id===el.dataset.id);messages=[...c.messages];currentChat=c.id;location.hash='assistant'}else if(a==='delete-chat')modal(`<h2>Delete this conversation?</h2><p>This removes the conversation from this device.</p><div class="dialog-actions"><button class="outline" data-action="close-dialog">Cancel</button><button class="primary" data-action="confirm-delete" data-id="${el.dataset.id}">Delete conversation</button></div>`);else if(a==='confirm-delete'){chats=chats.filter(c=>c.id!==el.dataset.id);saveChats();route();toast('Conversation deleted.')}else if(a==='settings')openSettingsModal();else if(a==='profile')openProfileModal();else if(a==='signout')handleSignOut();else if(a==='help')modal('<h2>How can we help?</h2><p><b>AI Assistant:</b> Start a conversation and explore the chat interface.</p><p><b>Document Insight:</b> Upload a file and explore an example analysis.</p><p><b>Image Analysis:</b> Preview an uploaded image or use a direct image URL.</p><p><b>Chat History:</b> Reopen or delete conversations saved on this device.</p>');else if(a==='solutions')modal(`<h2>PTCL Business Solutions</h2><p>Explore connectivity, cloud, security and intelligent support.</p><div class="solution-list">${[['signal','Reliable Connectivity','Keep your business connected.'],['cloud','Cloud & Data Solutions','Infrastructure that grows with you.'],['shield','Cyber Security','Protect your business and its data.'],['chip','AI-Powered Support','Find the right support for your business.']].map(([i,t,d])=>`<div>${icon(i)}<span><b>${t}</b><p>${d}</p></span></div>`).join('')}</div>`);else if(a==='ingest-document-ai'){if(!docFile)return toast('Please choose a document first.');if(typeof fetch!=='function')return toast('AI service connection required.');docIngesting=true;docJobStatus='Uploading to AI platform...';route();const form=new FormData();form.append('file',docFile);fetch('/api/documents/upload',{method:'POST',body:form}).then(async r=>{if(!r.ok){const err=await r.json().catch(()=>({}));throw Error(err.error?.message||err.detail||`Upload failed (${r.status})`)}return r.json()}).then(data=>{toast(`Document queued (Job: ${data.job_id.slice(0,8)}). Ingesting...`);docJobStatus=`Ingestion queued (Job: ${data.job_id.slice(0,8)})...`;route();pollIngestJob(data.job_id,data.filename)}).catch(err=>{docIngesting=false;docJobStatus=`Ingestion failed: ${err.message}`;toast(docJobStatus);route()})}else if(a==='analyze-image-ai'){if(!imageFile&&!imageURL)return toast('Please choose or upload an image first.');if(typeof fetch!=='function')return toast('AI service connection required.');visionLoading=true;visionResult='';route();(async()=>{try{const form=new FormData();form.append('question','Please analyze this image thoroughly: identify all objects, extract visible text via OCR, describe layout and context, and highlight key actionable observations.');if(imageFile){form.append('image',imageFile)}else{const blob=await fetch(imageURL).then(r=>r.blob());form.append('image',blob,'image.png')}const r=await fetch('/api/vision',{method:'POST',body:form});if(!r.ok){const err=await r.json().catch(()=>({}));throw Error(err.error?.message||err.detail||`Vision request failed (${r.status})`)}const data=await r.json();visionResult=data.answer||'No analysis returned.';toast('Vision analysis complete.')}catch(err){toast(`Vision analysis failed: ${err.message}`);visionResult=`Analysis failed: ${err.message}`}finally{visionLoading=false;route()}})()}else if(a==='clear-vision'){visionResult='';route()}bindDialog()}
 function bindDialog(){document.querySelectorAll('#dialog [data-action]').forEach(el=>el.onclick=()=>actions(el.dataset.action,el))}
 const baseBind=bind;bind=function(){baseBind();document.querySelectorAll('.composer').forEach(f=>f.onsubmit=e=>{e.preventDefault();sendMessage(new FormData(f).get('prompt'))});if($('#search-form'))$('#search-form').onsubmit=e=>{e.preventDefault();const q=$('#search-form input').value.toLowerCase();const match=navs.find(n=>n[2].toLowerCase().includes(q));if(q&&match)location.hash=match[0];else if(q)sendMessage(q)};if($('#document-input'))$('#document-input').onchange=e=>selectDocument(e.target.files[0]);if($('#image-input'))$('#image-input').onchange=e=>selectImage(e.target.files[0]);document.querySelectorAll('[data-drop]').forEach(d=>{d.ondragover=e=>{e.preventDefault();d.classList.add('dragging')};d.ondragleave=()=>d.classList.remove('dragging');d.ondrop=e=>{e.preventDefault();d.classList.remove('dragging');(d.dataset.drop==='image'?selectImage:selectDocument)(e.dataTransfer.files[0])}});if($('#url-form'))$('#url-form').onsubmit=e=>{e.preventDefault();const url=new FormData(e.target).get('url');try{if(new URL(url).protocol!=='https:')throw Error();}catch{return toast('Please enter a valid HTTPS image URL.')}const image=new Image();image.onload=()=>{imageFile=null;imageURL=url;imageMode='upload';route()};image.onerror=()=>toast('The image could not be loaded. Check the link or upload a file.');image.src=url};if($('#history-search'))$('#history-search').oninput=e=>{historySearch=e.target.value;const start=e.target.selectionStart;route();$('#history-search').focus();$('#history-search').setSelectionRange(start,start)};if($('#dialog'))$('#dialog').onclick=e=>{if(e.target===$('#dialog'))$('#dialog').close()};};
-const productBind=bind;bind=function(){productBind();clearTimeout(meetingsTimer);meetingsTimer=null;const on=(selector,handler)=>document.querySelectorAll(selector).forEach(el=>el.onclick=()=>handler(el));on('[data-action="open-meeting"]',el=>{meetingTab='overview';meetingsState.detail=null;location.hash=`meetings/${el.dataset.id}`;refreshMeetings(true)});on('[data-action="refresh-meetings"]',()=>refreshMeetings(true));on('[data-action="meeting-tab"]',el=>{meetingTab=el.dataset.tab;route();if(meetingTab==='chat'){requestAnimationFrame(()=>{const box=document.querySelector('.meeting-chat-messages');if(box)box.scrollTop=box.scrollHeight})}});on('[data-action="stop-meeting"]',el=>meetingCommand(el.dataset.id,'/stop'));on('[data-action="regenerate-mom"]',el=>meetingCommand(el.dataset.id,'/regenerate-mom'));on('[data-action="delete-meeting"]',el=>{if(window.confirm('Permanently delete this meeting and all of its audio, transcript, snapshots and MOM?'))meetingCommand(el.dataset.id,'','DELETE')});on('[data-action="copy-mom"]',()=>{navigator.clipboard?.writeText(momMarkdown(meetingsState.detail));toast('MOM copied to clipboard.')});on('[data-action="download-mom"]',()=>{const blob=new Blob([momMarkdown(meetingsState.detail)],{type:'text/markdown'}),link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download='meeting-mom.md';link.click();URL.revokeObjectURL(link.href)});on('[data-action="preview-mom"]',()=>previewMomPdf(meetingsState.detail));on('[data-action="print-mom"]',()=>printMomPdf(meetingsState.detail));on('[data-action="profile"]',()=>modal(`<span class="avatar">${esc((appUser?.displayName||'U').charAt(0))}</span><h2>${esc(appUser?.displayName||'CloudCore user')}</h2><p>${esc(appUser?.email||'Authenticated CloudCore AI user')} · ${esc(appUser?.role||'member')}</p><form method="post" action="/auth/logout"><button class="outline" type="submit">Sign out</button></form>`));on('[data-prompt="Start a Teams meeting bot"]',()=>location.hash='meetings');on('[data-action="quick-meeting-ask"]',el=>{if(selectedMeetingId)sendMeetingChat(selectedMeetingId,el.dataset.query)});on('[data-action="refresh-live-screenshot"]',()=>{const img=$('#live-bot-screen-img');if(img&&selectedMeetingId)img.src=`/api/meetings/${encodeURIComponent(selectedMeetingId)}/live-screenshot?t=${Date.now()}`});const transcriptInput=$('#transcript-filter');if(transcriptInput){transcriptInput.oninput=e=>{transcriptSearch=e.target.value;const term=transcriptSearch.trim().toLowerCase();const articles=document.querySelectorAll('.transcript-list article');let visible=0;articles.forEach(art=>{const match=!term||art.textContent.toLowerCase().includes(term);art.style.display=match?'':'none';if(match)visible++});const metaSpan=document.querySelector('.transcript-meta-strip span:last-child');if(metaSpan)metaSpan.textContent=`${visible} of ${articles.length} segments`}};const meetingChatForm=$('#meeting-chat-form');if(meetingChatForm){meetingChatForm.onsubmit=e=>{e.preventDefault();const p=new FormData(meetingChatForm).get('chatPrompt');if(selectedMeetingId)sendMeetingChat(selectedMeetingId,p)}};if($('#meeting-form'))$('#meeting-form').onsubmit=e=>{e.preventDefault();startMeeting(e.target)};if($('#mom-form'))$('#mom-form').onsubmit=async e=>{e.preventDefault();try{const mom=momFromForm(e.target,meetingsState.detail.mom);await api(`/api/meetings/${encodeURIComponent(meetingsState.detail.id)}/mom`,{method:'PUT',body:JSON.stringify(mom)});toast('MOM changes saved.');await refreshMeetings(true)}catch(error){toast(error.message)}};if(location.hash.startsWith('#meetings')){if(selectedMeetingId&&(!meetingsState.detail||meetingsState.detail.id!==selectedMeetingId)){refreshMeetings(true)}else if(!meetingsState.lastLoaded&&!meetingsLoading){refreshMeetings()}else{scheduleMeetingsPoll()}}};
+const productBind=bind;bind=function(){productBind();clearTimeout(meetingsTimer);meetingsTimer=null;const on=(selector,handler)=>document.querySelectorAll(selector).forEach(el=>el.onclick=()=>handler(el));on('[data-action="open-meeting"]',el=>{meetingTab='overview';meetingsState.detail=null;location.hash=`meetings/${el.dataset.id}`;refreshMeetings(true)});on('[data-action="refresh-meetings"]',()=>refreshMeetings(true));on('[data-action="meeting-tab"]',el=>{meetingTab=el.dataset.tab;route();if(meetingTab==='chat'){requestAnimationFrame(()=>{const box=document.querySelector('.meeting-chat-messages');if(box)box.scrollTop=box.scrollHeight})}});on('[data-action="stop-meeting"]',el=>meetingCommand(el.dataset.id,'/stop'));on('[data-action="regenerate-mom"]',el=>meetingCommand(el.dataset.id,'/regenerate-mom'));on('[data-action="delete-meeting"]',el=>{if(window.confirm('Permanently delete this meeting and all of its audio, transcript, snapshots and MOM?'))meetingCommand(el.dataset.id,'','DELETE')});on('[data-action="copy-mom"]',()=>{navigator.clipboard?.writeText(momMarkdown(meetingsState.detail));toast('MOM copied to clipboard.')});on('[data-action="download-mom"]',()=>{const blob=new Blob([momMarkdown(meetingsState.detail)],{type:'text/markdown'}),link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download='meeting-mom.md';link.click();URL.revokeObjectURL(link.href)});on('[data-action="preview-mom"]',()=>previewMomPdf(meetingsState.detail));on('[data-action="print-mom"]',()=>printMomPdf(meetingsState.detail));on('[data-action="profile"]',()=>openProfileModal());on('[data-action="settings"]',()=>openSettingsModal());on('[data-action="signout"]',()=>handleSignOut());on('[data-prompt="Start a Teams meeting bot"]',()=>location.hash='meetings');on('[data-action="quick-meeting-ask"]',el=>{if(selectedMeetingId)sendMeetingChat(selectedMeetingId,el.dataset.query)});on('[data-action="refresh-live-screenshot"]',()=>{const img=$('#live-bot-screen-img');if(img&&selectedMeetingId)img.src=`/api/meetings/${encodeURIComponent(selectedMeetingId)}/live-screenshot?t=${Date.now()}`});const transcriptInput=$('#transcript-filter');if(transcriptInput){transcriptInput.oninput=e=>{transcriptSearch=e.target.value;const term=transcriptSearch.trim().toLowerCase();const articles=document.querySelectorAll('.transcript-list article');let visible=0;articles.forEach(art=>{const match=!term||art.textContent.toLowerCase().includes(term);art.style.display=match?'':'none';if(match)visible++});const metaSpan=document.querySelector('.transcript-meta-strip span:last-child');if(metaSpan)metaSpan.textContent=`${visible} of ${articles.length} segments`}};const meetingChatForm=$('#meeting-chat-form');if(meetingChatForm){meetingChatForm.onsubmit=e=>{e.preventDefault();const p=new FormData(meetingChatForm).get('chatPrompt');if(selectedMeetingId)sendMeetingChat(selectedMeetingId,p)}};if($('#meeting-form'))$('#meeting-form').onsubmit=e=>{e.preventDefault();startMeeting(e.target)};if($('#mom-form'))$('#mom-form').onsubmit=async e=>{e.preventDefault();try{const mom=momFromForm(e.target,meetingsState.detail.mom);await api(`/api/meetings/${encodeURIComponent(meetingsState.detail.id)}/mom`,{method:'PUT',body:JSON.stringify(mom)});toast('MOM changes saved.');await refreshMeetings(true)}catch(error){toast(error.message)}};if(location.hash.startsWith('#meetings')){if(selectedMeetingId&&(!meetingsState.detail||meetingsState.detail.id!==selectedMeetingId)){refreshMeetings(true)}else if(!meetingsState.lastLoaded&&!meetingsLoading){refreshMeetings()}else{scheduleMeetingsPoll()}}};
 window.addEventListener('hashchange',route);route();
-if(typeof fetch==='function')api('/api/me').then(data=>{appUser=data.user;if(location.hash.startsWith('#home')||location.hash.startsWith('#meetings'))route({preserveScroll:true})}).catch(()=>{});
+if(typeof fetch==='function')api('/api/me').then(data=>{appUser=data.user;if(location.hash.startsWith('#home')||location.hash.startsWith('#meetings'))route({preserveScroll:true});if(appUser?.mustChangePassword)checkMustChangePassword();}).catch(()=>{});
 if(document.modelContext?.registerTool){try{Promise.resolve(document.modelContext.registerTool({name:'navigate_cloudcore',title:'Open a CloudCore AI screen',description:'Navigate to a CloudCore AI frontend screen. Does not send messages, join meetings, or upload files.',inputSchema:{type:'object',properties:{screen:{type:'string',enum:['landing','home','assistant','meetings','documents','images','history']}},required:['screen'],additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:false},execute(input){if(!input||!['landing','home','assistant','meetings','documents','images','history'].includes(input.screen))throw new Error('Choose a supported CloudCore AI screen.');location.hash=input.screen;route();return{screen:input.screen,status:'opened'}}})).catch(()=>{})}catch{}}
