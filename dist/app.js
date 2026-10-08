@@ -596,7 +596,7 @@ function loginView(){
             <span>Username</span>
             <div class="input-with-icon">
               ${icon('user')}
-              <input name="username" type="text" autocomplete="username" required placeholder="e.g. azeemniazi or muhammadali" autofocus>
+              <input name="username" type="text" autocomplete="username" required placeholder="Enter your username" autofocus>
             </div>
           </label>
           <label class="login-label">
@@ -736,6 +736,7 @@ async function openSettingsModal(activeTab='profile'){
       if(res.ok){
         const data=await res.json();
         usersList=data.users||[];
+        if(appUser?.role==='admin')usersList=usersList.filter(u=>u.role==='user'||u.role==='member');
       }
     }catch{}
   }
@@ -809,7 +810,7 @@ async function openSettingsModal(activeTab='profile'){
         </label>
         <button type="submit" class="primary">${icon('plus')} Create Account</button>
       </form>
-      <h3>Existing User Accounts</h3>
+      <h3>${appUser?.role==='dev'?'Existing User & Admin Accounts':'Existing User Accounts'}</h3>
       <div style="overflow-x:auto;">
         <table class="user-mgmt-table">
           <thead>
