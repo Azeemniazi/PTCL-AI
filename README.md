@@ -1,12 +1,14 @@
 # CloudCore AI
 
-A responsive frontend for **CloudCore AI — A product of PTCL Smart Cloud**, closely based on the four supplied design references.
+A responsive CloudCore AI workspace with a self-hosted Microsoft Teams meeting-notetaker control plane.
 
 ## Run locally
 
-Requires Node.js. No package installation is needed.
+Requires Node.js 22. Development mode uses an in-memory repository and a mock meeting engine when service URLs are absent.
 
 ```sh
+npm install
+npm run build
 npm start
 ```
 
@@ -14,7 +16,7 @@ Open http://127.0.0.1:4173. Run `npm run check` for source and interaction-state
 
 ## Screens
 
-The public site includes Landing (`#landing`), Solutions (`#site-solutions`), AI Assistant overview (`#site-ai`), Industries (`#site-industries`), Resources (`#site-resources`), and About (`#site-about`). The original signed-in product remains unchanged at Home (`#home`), AI Assistant (`#assistant`), Document Insight (`#documents`), Image Analysis (`#images`), and Chat History (`#history`).
+The public site includes Landing (`#landing`), Solutions (`#site-solutions`), AI Assistant overview (`#site-ai`), Industries (`#site-industries`), Resources (`#site-resources`), and About (`#site-about`). The signed-in workspace includes Home (`#home`), AI Assistant (`#assistant`), Meetings AI (`#meetings`), Document Insight (`#documents`), Image Analysis (`#images`), and Chat History (`#history`).
 
 ## Frontend behavior
 
@@ -23,8 +25,26 @@ The public site includes Landing (`#landing`), Solutions (`#site-solutions`), AI
 - Local image previews, image URL loading and example previews.
 - Chat UI with explicitly labelled preview responses; conversation history stays in browser localStorage.
 - Feature-detected WebMCP screen navigation.
+- Teams-link validation, guest-bot launch, meeting status, transcript, snapshots, private audio, editable MOM, Markdown export and print/PDF.
 
-Live AI, authentication, document parsing, cloud storage connectors and server persistence are not configured. The Document Insight analysis is explicitly labelled as an example. Files selected from the device are not uploaded.
+Meetings AI has real backend interfaces for Entra authentication, PostgreSQL, Redis, MinIO, the CloudCore Vexa fork and an OpenAI-compatible internal AI service. Document Insight and Image Analysis remain frontend previews.
+
+## Meetings AI deployment
+
+Docker Desktop's Linux data disk must be placed on the D drive before the first image pull. On this pilot host it is configured at `D:\docker\wsl\DockerDesktopWSL`. Generate local secrets, start the pinned self-hosted stack, then provision CloudCore's scoped Vexa token:
+
+```sh
+node scripts/bootstrap-local.mjs
+docker compose --env-file .env up -d vexa
+node scripts/bootstrap-vexa.mjs
+docker compose --env-file .env up -d --build
+```
+
+Open `http://127.0.0.2:4173/#meetings`. The default local authentication mode creates a pilot administrator. Production startup requires Entra, database, Redis, Vexa, and encryption settings. AI credentials are optional: when absent, local Whisper supplies the transcript and CloudCore produces extractive MOM locally.
+
+The pinned Vexa Lite image runs the visible Teams browser bot, records audio, and sends audio to the pinned CPU faster-whisper service. CloudCore polls Vexa every five seconds for lifecycle and completed transcript segments, proxies authorized recordings, and uses signed completion/failure webhooks. The pilot permits two active meetings and retains content for 30 days.
+
+Upstream Vexa does not currently expose shared-screen snapshots. The Snapshots tab is retained for the planned `cloudcore-vexa` screen-share extension; it remains empty until that extension is built and canary-tested. See [the deployed adapter contract](docs/vexa-contract.md).
 
 ## Assets and fidelity
 
@@ -32,7 +52,7 @@ The hero uses one generated background derived from the supplied first reference
 
 Hero generation used the built-in imagegen tool. Prompt: Recreate the reference’s photoreal PTCL building, Islamabad mountains, landscaped grounds and curving roadway as a 16:9 background; building right, pale mint-white mist across left 35%; remove all UI and text except the physical PTCL sign. Saved asset: `dist/assets/hero.png`.
 
-Application source and deployable static assets are in `dist/`. This directory is authored source, not disposable build output. `server.cjs` is a local-only preview server. Sites serves the static directory in production.
+Frontend source and deployable assets are in `dist/`; this directory is authored source. The TypeScript service is in `src/` and compiles to `build/`. `server.cjs` remains a static preview only; the functional deployment uses `build/server.js` or Docker Compose.
 
 ## Brand asset
 

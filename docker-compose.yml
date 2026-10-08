@@ -1,0 +1,150 @@
+name: cloudcore-ai
+services:
+  app:
+    build: .
+    command: ["node", "build/server.js"]
+    env_file: ${APP_ENV_FILE:-.env}
+    ports: ["127.0.0.2:4173:4173"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      minio: {condition: service_healthy}
+      vexa: {condition: service_healthy}
+    restart: unless-stopped
+  worker:
+    build: .
+    command: ["node", "build/worker.js"]
+    env_file: ${APP_ENV_FILE:-.env}
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      minio: {condition: service_healthy}
+    restart: unless-stopped
+  vexa:
+    image: cloudcore-vexa:teams-modern-link-fix
+    build:
+      context: ./vendor/cloudcore-vexa
+      dockerfile: deploy/lite/Dockerfile.lite
+    environment:
+      DB_HOST: vexa-postgres
+      DB_PORT: 5432
+      DB_NAME: vexa
+      DB_USER: postgres
+      DB_PASSWORD: ${VEXA_POSTGRES_PASSWORD}
+      ADMIN_API_TOKEN: ${VEXA_ADMIN_TOKEN}
+      ADMIN_TOKEN: ${VEXA_ADMIN_TOKEN}
+      TRANSCRIPTION_SERVICE_URL: http://vexa-whisper:8000
+      TRANSCRIPTION_SERVICE_TOKEN: local
+      TRANSCRIPTION_MODEL: whisper-1
+      TRANSCRIBE_ENABLED: "true"
+      RECORDING_ENABLED: "true"
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${S3_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${S3_SECRET_KEY}
+      MINIO_BUCKET: vexa
+      MINIO_SECURE: "false"
+      VEXA_PUBLIC_API_URL: http://localhost:8056
+      TERMINAL_PUBLIC_URL: http://localhost:3001
+      VEXA_SYSTEM_WEBHOOK_URL: http://app:4173/internal/vexa/events
+      VEXA_SYSTEM_WEBHOOK_SECRET: ${VEXA_WEBHOOK_SECRET}
+      VEXA_SYSTEM_WEBHOOK_ALLOW_PRIVATE_HTTP: "true"
+    shm_size: 2gb
+    ports:
+      - "127.0.0.1:8056:8056"
+      - "127.0.0.1:3001:3001"
+      - "127.0.0.1:8100:8100"
+    depends_on:
+      vexa-postgres: {condition: service_healthy}
+      minio-init: {condition: service_completed_successfully}
+      vexa-whisper: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8056/health >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+  vexa-whisper:
+    image: ${WHISPER_IMAGE:-fedirz/faster-whisper-server:latest-cpu@sha256:760e5e43d427dc6cfbbc4731934b908b7de9c7e6d5309c6a1f0c8c923a5b6030}
+    environment:
+      WHISPER__MODEL: ${WHISPER_MODEL:-Systran/faster-whisper-small.en}
+      WHISPER__INFERENCE_DEVICE: cpu
+      WHISPER__COMPUTE_TYPE: int8
+      WHISPER__TTL: -1
+    volumes: ["vexa-whisper-cache:/root/.cache/huggingface"]
+    healthcheck:
+      test: ["CMD", "/root/faster-whisper-server/.venv/bin/python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 60s
+    restart: unless-stopped
+  vexa-postgres:
+    image: postgres:17.6-alpine@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94
+    environment:
+      POSTGRES_DB: vexa
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${VEXA_POSTGRES_PASSWORD}
+    volumes: ["vexa-postgres-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d vexa"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+  postgres:
+    image: postgres:17.6-alpine@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94
+    environment:
+      POSTGRES_DB: cloudcore
+      POSTGRES_USER: cloudcore
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cloudcore}
+    volumes: ["postgres-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cloudcore -d cloudcore"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+  redis:
+    image: redis:8.2.1-bookworm
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: ["redis-data:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  minio:
+    image: quay.io/minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-cloudcore}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-replace-me-now}
+    volumes: ["minio-data:/data"]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+  minio-init:
+    image: quay.io/minio/mc:latest@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
+    depends_on:
+      minio: {condition: service_healthy}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        mc alias set local http://minio:9000 "$${S3_ACCESS_KEY}" "$${S3_SECRET_KEY}" &&
+        mc mb --ignore-existing local/meeting-audio &&
+        mc mb --ignore-existing local/meeting-snapshots &&
+        mc mb --ignore-existing local/vexa
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:
+  vexa-postgres-data:
+  vexa-whisper-cache:
