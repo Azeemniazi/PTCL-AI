@@ -154,32 +154,48 @@ export class Repository {
     }
 
     try {
-      const devRes = await this.pool.query(`
-        INSERT INTO users(id, username, password_hash, salt, display_name, role, must_change_password, tenant_id, object_id, email)
-        VALUES($1, 'azeemniazi', $2, $3, 'Azeem Niazi', 'dev', false, 'local', 'azeemniazi', 'azeemniazi@cloudcore.local')
-        ON CONFLICT (LOWER(username)) DO UPDATE SET
-          password_hash = EXCLUDED.password_hash,
-          salt = EXCLUDED.salt,
-          role = 'dev',
-          display_name = 'Azeem Niazi',
-          must_change_password = false,
-          updated_at = now()
-        RETURNING id
-      `, [randomUUID(), devPass.hash, devPass.salt]);
-      const devId = devRes.rows[0]?.id;
+      let devId: string;
+      const existingDev = await this.pool.query(`SELECT id FROM users WHERE LOWER(username) = 'azeemniazi' OR object_id = 'azeemniazi' LIMIT 1`);
+      if (existingDev.rows.length > 0) {
+        devId = existingDev.rows[0].id;
+        await this.pool.query(`
+          UPDATE users SET
+            username = 'azeemniazi',
+            password_hash = $1,
+            salt = $2,
+            role = 'dev',
+            display_name = 'Azeem Niazi',
+            must_change_password = false,
+            updated_at = now()
+          WHERE id = $3
+        `, [devPass.hash, devPass.salt, devId]);
+      } else {
+        devId = randomUUID();
+        await this.pool.query(`
+          INSERT INTO users(id, username, password_hash, salt, display_name, role, must_change_password, tenant_id, object_id, email)
+          VALUES($1, 'azeemniazi', $2, $3, 'Azeem Niazi', 'dev', false, 'local', 'azeemniazi', 'azeemniazi@cloudcore.local')
+        `, [devId, devPass.hash, devPass.salt]);
+      }
 
-      await this.pool.query(`
-        INSERT INTO users(id, username, password_hash, salt, display_name, role, must_change_password, tenant_id, object_id, email)
-        VALUES($1, 'muhammadali', $2, $3, 'Muhammad Ali', 'admin', false, 'local', 'muhammadali', 'muhammadali@cloudcore.local')
-        ON CONFLICT (LOWER(username)) DO UPDATE SET
-          password_hash = EXCLUDED.password_hash,
-          salt = EXCLUDED.salt,
-          role = 'admin',
-          display_name = 'Muhammad Ali',
-          must_change_password = false,
-          updated_at = now()
-        RETURNING id
-      `, [randomUUID(), adminPass.hash, adminPass.salt]);
+      const existingAdmin = await this.pool.query(`SELECT id FROM users WHERE LOWER(username) = 'muhammadali' OR object_id = 'muhammadali' LIMIT 1`);
+      if (existingAdmin.rows.length > 0) {
+        await this.pool.query(`
+          UPDATE users SET
+            username = 'muhammadali',
+            password_hash = $1,
+            salt = $2,
+            role = 'admin',
+            display_name = 'Muhammad Ali',
+            must_change_password = false,
+            updated_at = now()
+          WHERE id = $3
+        `, [adminPass.hash, adminPass.salt, existingAdmin.rows[0].id]);
+      } else {
+        await this.pool.query(`
+          INSERT INTO users(id, username, password_hash, salt, display_name, role, must_change_password, tenant_id, object_id, email)
+          VALUES($1, 'muhammadali', $2, $3, 'Muhammad Ali', 'admin', false, 'local', 'muhammadali', 'muhammadali@cloudcore.local')
+        `, [randomUUID(), adminPass.hash, adminPass.salt]);
+      }
 
       if (devId) {
         await this.pool.query(`
