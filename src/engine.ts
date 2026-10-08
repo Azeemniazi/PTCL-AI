@@ -117,9 +117,15 @@ class VexaEngine implements MeetingEngine {
     const response=await fetch(targetUrl.href,{headers});if(!response.ok)throw new Error(`Meeting audio returned ${response.status}.`);return response;
   }
   async screenshot(_engineId:string):Promise<Response|undefined>{
+    const primaryPort = (config.vexa.baseUrl.includes(':8056') || config.nodeEnv === 'production') ? '8057' : '18058';
     try{
-      const response=await fetch('http://127.0.0.1:18058/screenshot',{signal:AbortSignal.timeout(4000)});
+      const response=await fetch(`http://127.0.0.1:${primaryPort}/screenshot`,{signal:AbortSignal.timeout(4000)});
       if(response.ok)return response;
+    }catch{}
+    try{
+      const altPort = primaryPort === '8057' ? '18058' : '8057';
+      const fallback=await fetch(`http://127.0.0.1:${altPort}/screenshot`,{signal:AbortSignal.timeout(2000)});
+      if(fallback.ok)return fallback;
     }catch{}
     return undefined;
   }
