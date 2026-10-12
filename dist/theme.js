@@ -1,4 +1,36 @@
 /* Reference-theme views. The application owns state, authentication and API calls. */
+function refVideoBackground(kind){
+  const asset=kind==='sidebar'?'sidebar':'assistant';
+  const file=asset==='sidebar'?'sidebar-motion-slim':'assistant-motion';
+  return `<video class="ref-background-video ref-${asset}-video" data-motion-background data-video-src="assets/${file}.mp4" poster="assets/${file}-poster.jpg" autoplay muted loop playsinline preload="none" disablepictureinpicture disableremoteplayback aria-hidden="true" tabindex="-1"></video>`;
+}
+let refMotionQuery=null,refMotionObserver=null,refMotionListenersReady=false,refMotionVideos=[];
+function refSyncMotion(){
+  if(!refMotionListenersReady){
+    refMotionListenersReady=true;
+    if(typeof window.matchMedia==='function'){
+      refMotionQuery=window.matchMedia('(prefers-reduced-motion: reduce)');
+      if(refMotionQuery.addEventListener)refMotionQuery.addEventListener('change',refSyncMotion);
+      else if(refMotionQuery.addListener)refMotionQuery.addListener(refSyncMotion);
+    }
+    if(typeof document.addEventListener==='function')document.addEventListener('visibilitychange',refSyncMotion);
+    if(typeof IntersectionObserver!=='undefined')refMotionObserver=new IntersectionObserver(entries=>{
+      entries.forEach(entry=>entry.target.dataset.motionVisible=String(entry.isIntersecting&&entry.intersectionRatio>0));
+      refSyncMotion();
+    },{threshold:0.01});
+  }
+  const videos=Array.from(document.querySelectorAll('[data-motion-background]'));
+  refMotionVideos.filter(video=>!videos.includes(video)).forEach(video=>{video.pause();refMotionObserver?.unobserve(video);});
+  refMotionVideos=videos;
+  videos.forEach(video=>{
+    if(refMotionObserver&&!video.dataset.motionObserved){video.dataset.motionObserved='true';refMotionObserver.observe(video);}
+    const enabled=!refMotionQuery?.matches&&!document.hidden&&video.dataset.motionVisible!=='false';
+    if(!enabled){video.pause();return;}
+    video.muted=true;
+    if(!video.getAttribute('src'))video.setAttribute('src',video.dataset.videoSrc);
+    if(video.paused){const playback=video.play();if(playback?.catch)playback.catch(()=>{});}
+  });
+}
 function refHeader(active='landing') {
   return `<header class="ref-site-header">${brand()}<nav aria-label="Main navigation">${[['site-solutions','Solutions'],['site-ai','AI Workspace'],['site-industries','Industries'],['site-resources','Resources'],['site-about','About']].map(([id,t])=>`<a href="#${id}" ${active===id?'aria-current="page"':''}>${t}</a>`).join('')}</nav><div class="ref-site-actions"><a href="#site-resources" aria-label="Search resources">${icon('search')}</a><a class="ref-glass-button" href="${appUser?'#home':'#login'}">${appUser?'Workspace':'Sign in'}</a><a class="ref-lime-button" href="${appUser?'#home':'#login'}">Get Started ${icon('arrow')}</a></div></header>`;
 }
@@ -7,13 +39,13 @@ function refLanding() {
 }
 function refSidebar(r) {
   const name=appUser?.displayName||'CloudCore user';
-  return `<aside class="sidebar ref-sidebar"><div class="ref-sidebar-inner">${brand()}<nav aria-label="Product navigation">${[...navs.filter(n=>n[0]!=='history'),['settings','settings','Settings']].map(([id,i,t])=>`<a href="#${id}" class="${r===id?'selected':''}" ${r===id?'aria-current="page"':''}>${icon(i)}<span>${id==='meetings'?'Meeting Intelligence':id==='documents'?'Document Insights':t}</span></a>`).join('')}<a class="ref-history-link ${r==='history'?'selected':''}" href="#history">${icon('history')}<span>Chat History</span></a></nav><div class="ref-sidebar-bottom"><a class="ref-future-card" href="#landing"><span>Hello<br>to the Future</span><i>${icon('arrow')}</i></a><button class="ref-sidebar-user" data-action="profile"><span class="avatar">${esc(name.charAt(0))}</span><span><b>${esc(name)}</b><small>${esc(appUser?.role||'Workspace member')}</small></span><span>⌄</span></button></div></div></aside>`;
+  return `<aside class="sidebar ref-sidebar">${refVideoBackground("sidebar")}<div class="ref-sidebar-inner">${brand()}<nav aria-label="Product navigation">${[...navs.filter(n=>n[0]!=='history'),['settings','settings','Settings']].map(([id,i,t])=>`<a href="#${id}" class="${r===id?'selected':''}" ${r===id?'aria-current="page"':''}>${icon(i)}<span>${id==='meetings'?'Meeting Intelligence':id==='documents'?'Document Insights':t}</span></a>`).join('')}<a class="ref-history-link ${r==='history'?'selected':''}" href="#history">${icon('history')}<span>Chat History</span></a></nav><div class="ref-sidebar-bottom"><a class="ref-future-card" href="#landing"><span>Hello<br>to the Future</span><i>${icon('arrow')}</i></a><button class="ref-sidebar-user" data-action="profile"><span class="avatar">${esc(name.charAt(0))}</span><span><b>${esc(name)}</b><small>${esc(appUser?.role||'Workspace member')}</small></span><span>⌄</span></button></div></div></aside>`;
 }
 function refWorkspace(r) {
   if(!navs.some(n=>n[0]===r)&&r!=='settings')r='home';
   const body=r==='home'?refHome():r==='meetings'?refMeetings():r==='documents'?refDocuments():r==='images'?refImages():r==='history'?refHistory():r==='settings'?refSettings():refAssistant();
   const unread=typeof hasUnreadNotifications==='function'&&hasUnreadNotifications();
-  return `<div class="workspace ref-workspace ${r}-workspace ${r==='assistant'&&!messages.length?'ref-assistant-empty':''}">${refSidebar(r)}<div class="workspace-body"><header class="workspace-header"><button class="mobile-menu icon-button" data-action="menu" aria-label="Toggle navigation">${icon('menu')}</button><form class="global-search" id="search-form">${icon('search')}<input aria-label="Search products, guides, solutions" placeholder="Search across your workspace, documents, meetings, images..."></form><button class="icon-button notification ${unread?'has-unread':''}" data-action="notifications" aria-label="Notifications">${icon('bell')}${unread?'<i></i>':''}</button>${r==='assistant'?'<button class="ref-glass-button ref-new-chat" data-action="new-chat">'+icon('spark')+' New Chat</button>':''}</header><main class="workspace-main">${body}</main></div></div><input hidden type="file" id="document-input" accept=".pdf,.docx,.pptx,.xlsx,.txt,.md,.csv,.json"><input hidden type="file" id="image-input" accept="image/png,image/jpeg,image/webp"><dialog id="dialog"><button class="dialog-close icon-button" data-action="close-dialog" aria-label="Close">${icon('close')}</button><div id="dialog-content"></div></dialog>`;
+  return `<div class="workspace ref-workspace ${r}-workspace ${r==='assistant'&&!messages.length?'ref-assistant-empty':''}">${refSidebar(r)}<div class="workspace-body">${r==='assistant'&&!messages.length?refVideoBackground("assistant"):''}<header class="workspace-header"><button class="mobile-menu icon-button" data-action="menu" aria-label="Toggle navigation">${icon('menu')}</button><form class="global-search" id="search-form">${icon('search')}<input aria-label="Search products, guides, solutions" placeholder="Search across your workspace, documents, meetings, images..."></form><button class="icon-button notification ${unread?'has-unread':''}" data-action="notifications" aria-label="Notifications">${icon('bell')}${unread?'<i></i>':''}</button>${r==='assistant'?'<button class="ref-glass-button ref-new-chat" data-action="new-chat">'+icon('spark')+' New Chat</button>':''}</header><main class="workspace-main">${body}</main></div></div><input hidden type="file" id="document-input" accept=".pdf,.docx,.pptx,.xlsx,.txt,.md,.csv,.json"><input hidden type="file" id="image-input" accept="image/png,image/jpeg,image/webp"><dialog id="dialog"><button class="dialog-close icon-button" data-action="close-dialog" aria-label="Close">${icon('close')}</button><div id="dialog-content"></div></dialog>`;
 }
 function refHome() {
   const name=(appUser?.displayName||'there').split(' ')[0];
@@ -79,6 +111,7 @@ function refHandleAction(a,el) {
   return false;
 }
 function refBind() {
+  refSyncMotion();
   const search=$('#ref-document-search');if(search)search.oninput=e=>{const q=e.target.value.toLowerCase();document.querySelectorAll('[data-document-name]').forEach(row=>row.hidden=!row.dataset.documentName.includes(q));};
   const meetingsSearch=$('#ref-meeting-search');if(meetingsSearch)meetingsSearch.oninput=e=>{const q=e.target.value.toLowerCase();document.querySelectorAll('.meeting-row').forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(q));};
 }
