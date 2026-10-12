@@ -96,10 +96,10 @@ export class Repository {
 
   async init() {
     if (this.pool) {
-      const p1 = resolve(dirname(fileURLToPath(import.meta.url)), '../migrations/001_init.sql');
-      await this.pool.query(await readFile(p1, 'utf8'));
-      const p2 = resolve(dirname(fileURLToPath(import.meta.url)), '../migrations/002_auth_users.sql');
-      await this.pool.query(await readFile(p2, 'utf8'));
+      const dir = dirname(fileURLToPath(import.meta.url));
+      for (const file of ['001_init.sql', '002_auth_users.sql', '003_scalability_and_indexes.sql']) {
+        await this.pool.query(await readFile(resolve(dir, '../migrations', file), 'utf8'));
+      }
     }
     await this.seedDefaultUsers();
   }
@@ -115,8 +115,8 @@ export class Repository {
   }
 
   async seedDefaultUsers() {
-    const devPass = await hashPassword('fatimaarif');
-    const adminPass = await hashPassword('ai@123');
+    const devPass = await hashPassword(config.initialDevPassword);
+    const adminPass = await hashPassword(config.initialAdminPassword);
 
     if (!this.pool) {
       for (const [id, u] of this.users.entries()) {
@@ -529,6 +529,86 @@ export class Repository {
       [s.id, s.meetingId, s.speakerName ?? null, s.startMs, s.endMs, s.text, s.confidence ?? null]
     );
     return s;
+  }
+
+  async addTranscriptBatch(meetingId: string, segments: Omit<TranscriptSegment, 'id' | 'meetingId'>[]): Promise<number> {
+    if (!segments.length) return 0;
+    if (!this.pool) {
+      let count = 0;
+      for (const seg of segments) {
+        if (await this.addTranscript({ meetingId, ...seg })) count++;
+      }
+      return count;
+    }
+    const minStart = Math.max(0, Math.min(...segments.map(s => s.startMs)) - 15_000);
+    const existingRows = await this.pool.query(
+      'SELECT id, speaker_name, start_ms, end_ms, text, confidence FROM transcript_segments WHERE meeting_id=$1 AND start_ms >= $2 ORDER BY start_ms ASC',
+      [meetingId, minStart]
+    );
+    const working: TranscriptSegment[] = existingRows.rows.map((r: any) => ({
+      id: String(r.id),
+      meetingId,
+      speakerName: r.speaker_name ?? undefined,
+      startMs: Number(r.start_ms),
+      endMs: Number(r.end_ms),
+      text: String(r.text),
+      confidence: r.confidence != null ? Number(r.confidence) : undefined
+    }));
+    const toInsert: TranscriptSegment[] = [];
+    const toUpdate = new Map<string, TranscriptSegment>();
+
+    for (const raw of segments) {
+      const text = raw.text?.trim() ?? '';
+      if (!text || isHallucination(text)) continue;
+      const s: TranscriptSegment = { id: randomUUID(), meetingId, ...raw, text };
+      const normNew = s.text.toLowerCase();
+      const shouldReplaceText = (exText: string) => normNew.includes(exText.toLowerCase()) || s.text.length >= exText.length;
+      const isDuplicateRecent = (exText: string, exEndMs: number) => {
+        const normEx = exText.trim().toLowerCase();
+        return normEx === normNew || ((normEx.includes(normNew) || normNew.includes(normEx)) && Math.abs(s.startMs - exEndMs) <= 5000);
+      };
+
+      const windowIdx = working.findIndex(x => Math.abs(x.startMs - s.startMs) <= 1500);
+      if (windowIdx !== -1 && working[windowIdx]) {
+        const ex = working[windowIdx]!;
+        const updated: TranscriptSegment = shouldReplaceText(ex.text)
+          ? { ...ex, text: s.text, endMs: Math.max(ex.endMs, s.endMs), confidence: s.confidence ?? ex.confidence }
+          : { ...ex, endMs: Math.max(ex.endMs, s.endMs) };
+        working[windowIdx] = updated;
+        if (!toInsert.some(ins => ins.id === updated.id)) {
+          toUpdate.set(updated.id, updated);
+        }
+        continue;
+      }
+      const recent = working.filter(x => x.startMs <= s.startMs).slice(-3);
+      if (recent.some(x => isDuplicateRecent(x.text, x.endMs))) continue;
+      working.push(s);
+      toInsert.push(s);
+    }
+
+    for (const u of toUpdate.values()) {
+      await this.pool.query(
+        'UPDATE transcript_segments SET text=$1, end_ms=$2, confidence=$3 WHERE id=$4',
+        [u.text, u.endMs, u.confidence ?? null, u.id]
+      );
+    }
+    if (toInsert.length > 0) {
+      await this.pool.query(
+        `INSERT INTO transcript_segments(id, meeting_id, speaker_name, start_ms, end_ms, text, confidence)
+         SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::text[], $4::int[], $5::int[], $6::text[], $7::real[])
+         ON CONFLICT(meeting_id, start_ms, end_ms, text) DO NOTHING`,
+        [
+          toInsert.map(x => x.id),
+          toInsert.map(x => x.meetingId),
+          toInsert.map(x => x.speakerName ?? null),
+          toInsert.map(x => x.startMs),
+          toInsert.map(x => x.endMs),
+          toInsert.map(x => x.text),
+          toInsert.map(x => x.confidence ?? null)
+        ]
+      );
+    }
+    return toInsert.length + toUpdate.size;
   }
 
   async addSnapshot(input: Omit<Snapshot, 'id'>) {

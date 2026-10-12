@@ -108,4 +108,37 @@ test('answers speaker breakdown queries instantaneously without LLM round-trip',
   assert.equal(tryFastMeetingAnswer(segments, ['Azeem Niazi'], 'Summarize discussion so far'), undefined);
 });
 
+test('supports meeting URL encryption key rotation with fallback keys', async () => {
+  const { encryptMeetingUrl, decryptMeetingUrl } = await import('../build/crypto.js');
+  const url = 'https://teams.microsoft.com/l/meetup-join/19%3ameeting_abc%40thread.v2/0?context=%7b%22Tid%22%3a%221%22%7d';
+  const encryptedWithOldKey = encryptMeetingUrl(url, 'old-rotation-secret-key-2025');
+  assert.equal(decryptMeetingUrl(encryptedWithOldKey, ['old-rotation-secret-key-2025']), url);
+});
 
+test('enforces brute-force login lockout after repeated failed attempts and clears on success', async () => {
+  const { checkLoginLockout, recordFailedLogin, clearFailedLogin } = await import('../build/auth.js');
+  const key = '127.0.0.1:testlockout';
+  clearFailedLogin(key);
+  for (let i = 0; i < 5; i++) {
+    recordFailedLogin(key, 1000);
+    assert.equal(checkLoginLockout(key, 1000).locked, false);
+  }
+  recordFailedLogin(key, 1000);
+  const lockedState = checkLoginLockout(key, 1000);
+  assert.equal(lockedState.locked, true);
+  assert.ok(lockedState.retryAfterSec > 0);
+  clearFailedLogin(key);
+  assert.equal(checkLoginLockout(key, 1000).locked, false);
+});
+
+test('deduplicates and merges segments in addTranscriptBatch', async () => {
+  const { Repository } = await import('../build/repository.js');
+  const repo = new Repository();
+  const count = await repo.addTranscriptBatch('m-batch', [
+    { speakerName: 'Ali', startMs: 1000, endMs: 2500, text: 'Hello everyone' },
+    { speakerName: 'Ali', startMs: 1200, endMs: 3200, text: 'Hello everyone welcome to the call' },
+    { speakerName: 'Ali', startMs: 4000, endMs: 5000, text: 'Thank you.' },
+    { speakerName: 'Sara', startMs: 6000, endMs: 9000, text: 'Let us review the Q3 roadmap.' }
+  ]);
+  assert.ok(count >= 2);
+});

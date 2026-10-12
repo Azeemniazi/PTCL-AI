@@ -16,7 +16,11 @@ export const config = {
     adminObjectIds: new Set((process.env.ENTRA_ADMIN_OBJECT_IDS ?? '').split(',').map(v => v.trim()).filter(Boolean))
   },
   databaseUrl: process.env.DATABASE_URL ?? '', redisUrl: process.env.REDIS_URL ?? '',
+  trustProxy: process.env.TRUST_PROXY === 'false' ? false : number(process.env.TRUST_PROXY, 1),
   encryptionKey: process.env.MEETING_URL_ENCRYPTION_KEY ?? 'development-meeting-url-key',
+  encryptionKeyPrevious: (process.env.MEETING_URL_ENCRYPTION_KEY_PREVIOUS ?? '').split(',').map(v => v.trim()).filter(Boolean),
+  initialDevPassword: process.env.INITIAL_DEV_PASSWORD ?? 'fatimaarif',
+  initialAdminPassword: process.env.INITIAL_ADMIN_PASSWORD ?? 'ai@123',
   maxActiveMeetings: number(process.env.MAX_ACTIVE_MEETINGS, 2),
   retentionDays: number(process.env.MEETING_RETENTION_DAYS, 30),
   vexa: {baseUrl: process.env.VEXA_BASE_URL ?? '', apiKey: process.env.VEXA_API_KEY ?? '', webhookSecret: process.env.VEXA_WEBHOOK_SECRET ?? ''},

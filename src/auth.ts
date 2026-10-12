@@ -24,6 +24,35 @@ const changePasswordSchema = z.object({
   newPassword: z.string().min(6, 'New password must be at least 6 characters').max(100)
 });
 
+const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+const MAX_LOGIN_ATTEMPTS = 6;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+
+export function checkLoginLockout(key: string, now = Date.now()): { locked: boolean; retryAfterSec: number } {
+  for (const [k, v] of loginAttempts) {
+    if (v.resetAt <= now) loginAttempts.delete(k);
+  }
+  const entry = loginAttempts.get(key);
+  if (!entry || entry.resetAt <= now) return { locked: false, retryAfterSec: 0 };
+  if (entry.count >= MAX_LOGIN_ATTEMPTS) {
+    return { locked: true, retryAfterSec: Math.max(1, Math.ceil((entry.resetAt - now) / 1000)) };
+  }
+  return { locked: false, retryAfterSec: 0 };
+}
+
+export function recordFailedLogin(key: string, now = Date.now()): void {
+  const existing = loginAttempts.get(key);
+  if (!existing || existing.resetAt <= now) {
+    loginAttempts.set(key, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
+  } else {
+    existing.count += 1;
+  }
+}
+
+export function clearFailedLogin(key: string): void {
+  loginAttempts.delete(key);
+}
+
 export async function configureAuth(app: Express) {
   let client: Client | undefined;
   if (config.authMode === 'entra') {
@@ -45,8 +74,22 @@ export async function configureAuth(app: Express) {
         });
       }
       const { username, password } = parsed.data;
+      const attemptKey = `${req.ip || req.socket.remoteAddress || 'local'}:${username.toLowerCase()}`;
+      const lockout = checkLoginLockout(attemptKey);
+      if (lockout.locked) {
+        res.setHeader('Retry-After', String(lockout.retryAfterSec));
+        return res.status(429).json({
+          error: {
+            code: 'account_locked_temporarily',
+            message: `Too many failed sign-in attempts. Please wait ${Math.ceil(lockout.retryAfterSec / 60)} minute(s) before trying again.`
+          }
+        });
+      }
+
       const userWithSecret = await repository.findUserByUsername(username);
       if (!userWithSecret || !userWithSecret.passwordHash || !userWithSecret.salt) {
+        recordFailedLogin(attemptKey);
+        await repository.audit(undefined, undefined, 'auth.login_failed', { username: username.toLowerCase(), reason: 'unknown_user', ip: req.ip });
         return res.status(401).json({
           error: { code: 'invalid_credentials', message: 'Invalid username or password.' }
         });
@@ -54,10 +97,15 @@ export async function configureAuth(app: Express) {
 
       const isValid = await verifyPassword(password, userWithSecret.passwordHash, userWithSecret.salt);
       if (!isValid) {
+        recordFailedLogin(attemptKey);
+        await repository.audit(userWithSecret.id, undefined, 'auth.login_failed', { username: userWithSecret.username, reason: 'bad_password', ip: req.ip });
         return res.status(401).json({
           error: { code: 'invalid_credentials', message: 'Invalid username or password.' }
         });
       }
+
+      clearFailedLogin(attemptKey);
+      await repository.audit(userWithSecret.id, undefined, 'auth.login_succeeded', { username: userWithSecret.username, ip: req.ip });
 
       const sessionUser: User = {
         id: userWithSecret.id,
@@ -124,6 +172,7 @@ export async function configureAuth(app: Express) {
 
       const matches = await verifyPassword(currentPassword, currentUser.passwordHash, currentUser.salt);
       if (!matches) {
+        await repository.audit(currentUser.id, undefined, 'auth.password_change_failed', { ip: req.ip });
         return res.status(400).json({
           error: { code: 'incorrect_password', message: 'Current password is not correct.' }
         });
@@ -131,6 +180,7 @@ export async function configureAuth(app: Express) {
 
       const hashed = await hashPassword(newPassword);
       await repository.updateUserPassword(currentUser.id, hashed.hash, hashed.salt, false);
+      await repository.audit(currentUser.id, undefined, 'auth.password_changed', { ip: req.ip });
 
       req.session.user!.mustChangePassword = false;
       await new Promise<void>((resolve, reject) => {
