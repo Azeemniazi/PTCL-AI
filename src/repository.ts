@@ -315,11 +315,16 @@ export class Repository {
   }
 
   async deleteUser(id: string): Promise<void> {
+    const dev = await this.findUserByUsername('azeemniazi');
     if (!this.pool) {
+      if (dev && dev.id !== id) {
+        for (const meeting of this.meetings.values()) {
+          if (meeting.ownerId === id) meeting.ownerId = dev.id;
+        }
+      }
       this.users.delete(id);
       return;
     }
-    const dev = await this.findUserByUsername('azeemniazi');
     if (dev && dev.id !== id) {
       await this.pool.query('UPDATE meetings SET owner_id = $1 WHERE owner_id = $2', [dev.id, id]);
     }
