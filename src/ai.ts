@@ -2,12 +2,31 @@ import { config } from './config.js';
 import type { Mom, TranscriptSegment } from './models.js';
 import { momSchema } from './validation.js';
 
+export function buildAiUrl(path: string, stripV1 = false): string {
+  const rawBase = config.ai.baseUrl.replace(/\/+$/, '');
+  const base = stripV1 ? rawBase.replace(/\/v1$/, '') : rawBase;
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  if (base.endsWith('/v1') && cleanPath.startsWith('/v1')) {
+    return `${base}${cleanPath.slice(3)}`;
+  }
+  if (!stripV1 && !base.endsWith('/v1') && cleanPath === '/chat/completions') {
+    return `${base}/v1/chat/completions`;
+  }
+  return `${base}${cleanPath}`;
+}
+
+export function buildAiHeaders(extra?: Record<string, string>): Record<string, string> {
+  return {
+    authorization: `Bearer ${config.ai.apiKey}`,
+    'x-api-key': config.ai.apiKey,
+    ...extra
+  };
+}
+
 async function aiFetch(path:string,init:RequestInit){
   if(!config.ai.baseUrl)throw new Error('Internal AI service is not configured.');
-  const base = config.ai.baseUrl.replace(/\/+$/, '');
-  const cleanPath = path.startsWith('/') ? path : `/${path}`;
-  const url = base.endsWith('/v1') && cleanPath.startsWith('/v1') ? `${base}${cleanPath.slice(3)}` : `${base}${cleanPath}`;
-  const response=await fetch(url,{...init,headers:{authorization:`Bearer ${config.ai.apiKey}`,'x-api-key':config.ai.apiKey,...init.headers}});
+  const url = buildAiUrl(path);
+  const response=await fetch(url,{...init,headers:buildAiHeaders(init.headers as Record<string, string> | undefined)});
   if(!response.ok){
     const errText = await response.text().catch(()=>'');
     throw new Error(`Internal AI service returned ${response.status}: ${errText.slice(0, 300)}`);
@@ -271,18 +290,13 @@ export async function* askMeetingAssistantStream(transcript:TranscriptSegment[],
   const transcriptText=selectRecentTranscript(clean, question);
   const systemPrompt=buildMeetingPrompt(meetingTitle,attendees,transcriptText);
 
-  const base=config.ai.baseUrl.replace(/\/+$/, '');
-  const cleanUrl=base.endsWith('/v1')?`${base}/chat/completions`:`${base}/v1/chat/completions`;
+  const cleanUrl=buildAiUrl('/chat/completions');
 
   beginLiveChat();
   try{
     const response=await fetch(cleanUrl,{
       method:'POST',
-      headers:{
-        'content-type':'application/json',
-        'authorization':`Bearer ${config.ai.apiKey}`,
-        'x-api-key':config.ai.apiKey
-      },
+      headers:buildAiHeaders({'content-type':'application/json'}),
       body:JSON.stringify({
         model:config.ai.momModel||'qwen2.5-7b',
         temperature:0.2,

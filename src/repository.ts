@@ -119,50 +119,56 @@ export class Repository {
     const adminPass = await hashPassword('ai@123');
 
     if (!this.pool) {
-      const devId = randomUUID();
-      const adminId = randomUUID();
-      this.users.clear();
-      this.users.set(devId, {
-        id: devId,
-        username: 'azeemniazi',
-        passwordHash: devPass.hash,
-        salt: devPass.salt,
-        displayName: 'Azeem Niazi',
-        role: 'dev',
-        mustChangePassword: false,
-        tenantId: 'local',
-        objectId: 'azeemniazi',
-        email: 'azeemniazi@cloudcore.local',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      });
-      this.users.set(adminId, {
-        id: adminId,
-        username: 'muhammadali',
-        passwordHash: adminPass.hash,
-        salt: adminPass.salt,
-        displayName: 'Muhammad Ali',
-        role: 'admin',
-        mustChangePassword: false,
-        tenantId: 'local',
-        objectId: 'muhammadali',
-        email: 'muhammadali@cloudcore.local',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      });
+      for (const [id, u] of this.users.entries()) {
+        if (!u.passwordHash) this.users.delete(id);
+      }
+      if (![...this.users.values()].some(u => u.username?.toLowerCase() === 'azeemniazi')) {
+        const devId = randomUUID();
+        this.users.set(devId, {
+          id: devId,
+          username: 'azeemniazi',
+          passwordHash: devPass.hash,
+          salt: devPass.salt,
+          displayName: 'Azeem Niazi',
+          role: 'dev',
+          mustChangePassword: false,
+          tenantId: 'local',
+          objectId: 'azeemniazi',
+          email: 'azeemniazi@cloudcore.local',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+      }
+      if (![...this.users.values()].some(u => u.username?.toLowerCase() === 'muhammadali')) {
+        const adminId = randomUUID();
+        this.users.set(adminId, {
+          id: adminId,
+          username: 'muhammadali',
+          passwordHash: adminPass.hash,
+          salt: adminPass.salt,
+          displayName: 'Muhammad Ali',
+          role: 'admin',
+          mustChangePassword: false,
+          tenantId: 'local',
+          objectId: 'muhammadali',
+          email: 'muhammadali@cloudcore.local',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+      }
       return;
     }
 
     try {
       let devId: string;
-      const existingDev = await this.pool.query(`SELECT id FROM users WHERE LOWER(username) = 'azeemniazi' OR object_id = 'azeemniazi' LIMIT 1`);
+      const existingDev = await this.pool.query(`SELECT id, password_hash FROM users WHERE LOWER(username) = 'azeemniazi' OR object_id = 'azeemniazi' LIMIT 1`);
       if (existingDev.rows.length > 0) {
         devId = existingDev.rows[0].id;
         await this.pool.query(`
           UPDATE users SET
             username = 'azeemniazi',
-            password_hash = $1,
-            salt = $2,
+            password_hash = COALESCE(NULLIF(password_hash, ''), $1),
+            salt = COALESCE(NULLIF(salt, ''), $2),
             role = 'dev',
             display_name = 'Azeem Niazi',
             must_change_password = false,
@@ -177,13 +183,13 @@ export class Repository {
         `, [devId, devPass.hash, devPass.salt]);
       }
 
-      const existingAdmin = await this.pool.query(`SELECT id FROM users WHERE LOWER(username) = 'muhammadali' OR object_id = 'muhammadali' LIMIT 1`);
+      const existingAdmin = await this.pool.query(`SELECT id, password_hash FROM users WHERE LOWER(username) = 'muhammadali' OR object_id = 'muhammadali' LIMIT 1`);
       if (existingAdmin.rows.length > 0) {
         await this.pool.query(`
           UPDATE users SET
             username = 'muhammadali',
-            password_hash = $1,
-            salt = $2,
+            password_hash = COALESCE(NULLIF(password_hash, ''), $1),
+            salt = COALESCE(NULLIF(salt, ''), $2),
             role = 'admin',
             display_name = 'Muhammad Ali',
             must_change_password = false,
@@ -200,15 +206,18 @@ export class Repository {
       if (devId) {
         await this.pool.query(`
           UPDATE meetings SET owner_id = $1
-          WHERE owner_id NOT IN (
-            SELECT id FROM users WHERE LOWER(COALESCE(username, '')) IN ('azeemniazi', 'muhammadali')
+          WHERE owner_id IN (
+            SELECT id FROM users
+            WHERE (password_hash IS NULL OR password_hash = '')
+              AND LOWER(COALESCE(username, '')) NOT IN ('azeemniazi', 'muhammadali')
           )
         `, [devId]);
       }
 
       await this.pool.query(`
         DELETE FROM users
-        WHERE LOWER(COALESCE(username, '')) NOT IN ('azeemniazi', 'muhammadali')
+        WHERE (password_hash IS NULL OR password_hash = '')
+          AND LOWER(COALESCE(username, '')) NOT IN ('azeemniazi', 'muhammadali')
       `);
     } catch (err) {
       console.error('Error seeding default users:', err);
@@ -467,23 +476,25 @@ export class Repository {
     const text = input.text?.trim() ?? '';
     if (!text || isHallucination(text)) return undefined;
     const s = { id: randomUUID(), ...input, text };
+    const normNew = s.text.toLowerCase();
+    const shouldReplaceText = (exText: string) => normNew.includes(exText.toLowerCase()) || s.text.length >= exText.length;
+    const isDuplicateRecent = (exText: string, exEndMs: number) => {
+      const normEx = exText.trim().toLowerCase();
+      return normEx === normNew || ((normEx.includes(normNew) || normNew.includes(normEx)) && Math.abs(s.startMs - exEndMs) <= 5000);
+    };
+
     if (!this.pool) {
       const windowIdx = this.transcript.findIndex(x => x.meetingId === s.meetingId && Math.abs(x.startMs - s.startMs) <= 1500);
       if (windowIdx !== -1 && this.transcript[windowIdx]) {
         const existing = this.transcript[windowIdx]!;
-        if (s.text.toLowerCase().includes(existing.text.toLowerCase()) || s.text.length >= existing.text.length) {
-          const updated: TranscriptSegment = { ...existing, text: s.text, endMs: Math.max(existing.endMs, s.endMs), confidence: s.confidence ?? existing.confidence };
-          this.transcript[windowIdx] = updated;
-          return updated;
-        } else {
-          const updated: TranscriptSegment = { ...existing, endMs: Math.max(existing.endMs, s.endMs) };
-          this.transcript[windowIdx] = updated;
-          return updated;
-        }
+        const updated: TranscriptSegment = shouldReplaceText(existing.text)
+          ? { ...existing, text: s.text, endMs: Math.max(existing.endMs, s.endMs), confidence: s.confidence ?? existing.confidence }
+          : { ...existing, endMs: Math.max(existing.endMs, s.endMs) };
+        this.transcript[windowIdx] = updated;
+        return updated;
       }
       const recent = this.transcript.filter(x => x.meetingId === s.meetingId && x.startMs <= s.startMs).slice(-3);
-      if (recent.some(x => x.text.toLowerCase() === s.text.toLowerCase())) return undefined;
-      if (recent.some(x => (x.text.toLowerCase().includes(s.text.toLowerCase()) || s.text.toLowerCase().includes(x.text.toLowerCase())) && Math.abs(s.startMs - x.endMs) <= 5000)) return undefined;
+      if (recent.some(x => isDuplicateRecent(x.text, x.endMs))) return undefined;
       this.transcript.push(s);
       return s;
     }
@@ -493,8 +504,7 @@ export class Repository {
     );
     if (windowRow.rows[0]) {
       const existing = windowRow.rows[0];
-      const exText = String(existing.text);
-      if (s.text.toLowerCase().includes(exText.toLowerCase()) || s.text.length >= exText.length) {
+      if (shouldReplaceText(String(existing.text))) {
         await this.pool.query(
           'UPDATE transcript_segments SET text=$1, end_ms=GREATEST(end_ms, $2), confidence=COALESCE($3, confidence) WHERE id=$4',
           [s.text, s.endMs, s.confidence ?? null, existing.id]
@@ -508,11 +518,7 @@ export class Repository {
       'SELECT id, text, start_ms, end_ms FROM transcript_segments WHERE meeting_id=$1 AND start_ms <= $2 ORDER BY start_ms DESC LIMIT 3',
       [s.meetingId, s.startMs]
     );
-    for (const r of recentRows.rows) {
-      const rText = String(r.text).trim().toLowerCase();
-      if (rText === s.text.toLowerCase()) return undefined;
-      if ((rText.includes(s.text.toLowerCase()) || s.text.toLowerCase().includes(rText)) && Math.abs(s.startMs - Number(r.end_ms)) <= 5000) return undefined;
-    }
+    if (recentRows.rows.some((r: any) => isDuplicateRecent(String(r.text), Number(r.end_ms)))) return undefined;
     await this.pool.query(
       'INSERT INTO transcript_segments(id,meeting_id,speaker_name,start_ms,end_ms,text,confidence) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(meeting_id,start_ms,end_ms,text) DO NOTHING',
       [s.id, s.meetingId, s.speakerName ?? null, s.startMs, s.endMs, s.text, s.confidence ?? null]

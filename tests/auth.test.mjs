@@ -69,6 +69,12 @@ test('enforces user management lifecycle and role rules in repository', async ()
   assert.equal(updated.mustChangePassword, false);
   assert.equal(await verifyPassword('permanentPass456', updated.passwordHash, updated.salt), true);
 
+  // Re-running seedDefaultUsers (simulating server restart) preserves created user and custom password
+  await repo.seedDefaultUsers();
+  const afterRestart = await repo.findUserById(user.id);
+  assert.ok(afterRestart, 'Created user should survive server restart');
+  assert.equal(await verifyPassword('permanentPass456', afterRestart.passwordHash, afterRestart.salt), true);
+
   // Delete user
   await repo.deleteUser(user.id);
   assert.equal(await repo.findUserById(user.id), undefined);

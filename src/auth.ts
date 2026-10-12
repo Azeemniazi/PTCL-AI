@@ -192,17 +192,14 @@ export function requireUser(req: Request, res: Response, next: NextFunction) {
 
 export function requireRole(allowedRoles: Role[]) {
   return (req: Request, res: Response, next: NextFunction) => {
-    if (!req.session.user) {
-      return res.status(401).json({
-        error: { code: 'authentication_required', message: 'Sign in to use CloudCore AI.' }
-      });
-    }
-    const role = req.session.user.role;
-    if (!allowedRoles.includes(role)) {
-      return res.status(403).json({
-        error: { code: 'forbidden', message: 'You do not have permission to perform this action.' }
-      });
-    }
-    next();
+    requireUser(req, res, () => {
+      const role = req.session.user!.role;
+      if (!allowedRoles.includes(role)) {
+        return res.status(403).json({
+          error: { code: 'forbidden', message: 'You do not have permission to perform this action.' }
+        });
+      }
+      next();
+    });
   };
 }
