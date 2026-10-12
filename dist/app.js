@@ -70,7 +70,7 @@ function marketingPage(r){
   if(r==='site-resources')return resourcesPage();
   return aboutPage();
 }
-function toast(t){$('#toast').textContent=t;$('#toast').classList.add('show');clearTimeout(window.toastTimer);window.toastTimer=setTimeout(()=>$('#toast').classList.remove('show'),4000)}
+function toast(t){const el=$('#toast');if(!el)return;el.textContent=t;el.classList.add('show');el.onclick=()=>el.classList.remove('show');clearTimeout(window.toastTimer);window.toastTimer=setTimeout(()=>el.classList.remove('show'),2800)}
 function isNearBottom(box,threshold=60){if(!box)return true;const sh=Number(box.scrollHeight)||0,st=Number(box.scrollTop)||0,ch=Number(box.clientHeight)||0;if(!sh||!ch)return true;return(sh-st-ch)<=threshold}
 function route({preserveScroll=false}={}){
   const scrollX=window.scrollX,scrollY=window.scrollY;
@@ -121,8 +121,9 @@ function route({preserveScroll=false}={}){
       try{restored.focus();if(activeStart!==null&&activeEnd!==null)restored.setSelectionRange(activeStart,activeEnd)}catch{}
     }
   }
+  const raf=typeof requestAnimationFrame==='function'?requestAnimationFrame:fn=>setTimeout(fn,0);
   if(preserveScroll){
-    requestAnimationFrame(()=>{
+    raf(()=>{
       window.scrollTo(scrollX,scrollY);
       const mBox=document.querySelector('.meeting-chat-messages');
       if(mBox){
@@ -143,7 +144,7 @@ function route({preserveScroll=false}={}){
   }else{
     window.scrollTo(0,0);
     if(selectedMeetingId&&meetingTab==='chat'){
-      requestAnimationFrame(()=>{
+      raf(()=>{
         const mBox=document.querySelector('.meeting-chat-messages');
         if(mBox)mBox.scrollTop=mBox.scrollHeight;
       });
@@ -152,12 +153,28 @@ function route({preserveScroll=false}={}){
   if(r==='about')$('#about').scrollIntoView({behavior:'smooth'});
 }
 function bind(){
-  document.querySelectorAll('[data-action]').forEach(el=>el.onclick=()=>{const a=el.dataset.action;if(a==='notifications')toast('You’re all caught up. No new notifications.');else if(a==='privacy')toast('This frontend stores chat history on this device only.');else if(a==='terms')toast('CloudCore AI frontend preview. AI services are not connected.');else actions(a,el)});
+  document.querySelectorAll('[data-action]').forEach(el=>el.onclick=(e)=>{if(el.tagName==='A'&&el.dataset.action)e.preventDefault();const a=el.dataset.action;if(a==='notifications')openNotificationsModal();else if(a==='privacy')toast('This workspace stores chat history on this device only.');else if(a==='terms')toast('CloudCore AI Enterprise Workspace · PTCL Smart Cloud.');else actions(a,el)});
   const resourceSearch=$('#resource-search');
   if(resourceSearch&&resourceSearch.addEventListener)resourceSearch.addEventListener('input',()=>{const term=resourceSearch.value.trim().toLowerCase();document.querySelectorAll('[data-resource]').forEach(item=>item.hidden=term&&!item.dataset.resource.includes(term))});
 }
 let messages=[],currentChat=null,docFile=null,imageFile=null,imageURL='',docTab='Summary',imageMode='upload',historySearch='',selectedMeetingId=null,meetingTab='overview',meetingsTimer=null,meetingsLoading=false,meetingsError='',transcriptSearch='',meetingChats={},meetingChatLoading=false;
-let docIngesting=false,docJobStatus='',visionLoading=false,visionResult='';
+let docIngesting=false,docIngested=false,activeDocUploadPromise=null,attachContext='',chatImageAttached=false,pendingDocAutoPrompt='',pendingImageAutoPrompt='',docJobStatus='',visionLoading=false,visionResult='';
+let appNotifications=[{id:'welcome',title:'CloudCore AI Ready',text:'Connected to local Qwen3-4B & Whisper intelligence.',time:Date.now(),unread:true}];
+function hasUnreadNotifications(){return appNotifications.some(n=>n.unread)}
+function pushNotification(titleText,bodyText){appNotifications=[{id:String(Date.now()+Math.random()),title:titleText,text:bodyText,time:Date.now(),unread:true},...appNotifications].slice(0,25)}
+function openNotificationsModal(){
+  appNotifications.forEach(n=>{n.unread=false});
+  const bell=document.querySelector('.notification');
+  if(bell){bell.classList.remove('has-unread');const dot=bell.querySelector('i');if(dot)dot.remove();}
+  modal(`<div class="notifications-modal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <h2 style="margin:0;">Notifications</h2>
+      ${appNotifications.length?`<button type="button" class="outline small" style="margin:0;" data-action="clear-notifications">Clear all</button>`:''}
+    </div>
+    ${appNotifications.length?`<div class="notifications-list">${appNotifications.map(n=>`<div class="notification-item"><span class="mini-icon">${icon('bell')}</span><div><b>${esc(n.title)}</b><p style="margin:3px 0 0;font-size:13px;">${esc(n.text)}</p><small style="color:#75867e;font-size:11px;">${new Date(n.time).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</small></div></div>`).join('')}</div>`:`<p style="text-align:center;padding:20px 0;">You’re all caught up. No new notifications.</p>`}
+  </div>`);
+  bindDialog();
+}
 let appUser=null,meetingsState={meetings:[],capacity:{active:0,maximum:2},detail:null,lastLoaded:0};
 let chats=[];try{chats=JSON.parse(localStorage.getItem('cloudcore-chats')||'[]')}catch{}
 const navs=[['home','home','Home'],['assistant','chat','AI Assistant'],['meetings','video','Meetings AI'],['documents','file','Document Insight'],['images','image','Image Analysis'],['history','history','Chat History']];
@@ -165,7 +182,20 @@ function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;',
 function sidebar(r){return refSidebar(r)}
 function workspace(r){return refWorkspace(r)}
 function home(){return refHome()}
-function composer(id){return `<form class="composer" id="${id}-composer"><div><input name="prompt" aria-label="Message CloudCore AI" placeholder="${id==='home'?'Ask anything about PTCL, our services, documents, or upload an image...':'Ask CloudCore AI anything...'}" autocomplete="off" required><button type="button" class="icon-button" data-action="attach-document" aria-label="Attach a document">${icon('paperclip')}</button><button type="button" class="icon-button" data-action="attach-image" aria-label="Upload an image">${icon('image')}</button></div><button type="submit" class="send" aria-label="Send message">${icon('arrow')}</button></form>`}
+function composer(id){
+  const hasDoc=Boolean(docFile);
+  const hasImg=Boolean(chatImageAttached&&imageFile);
+  const hasAttachment=hasDoc||hasImg;
+  const chips=[];
+  if(hasDoc){
+    chips.push(`<span class="attachment-chip">${icon('file')}<b>${esc(docFile.name)}</b><small>${docIngesting?'Indexing…':docIngested?'Ready for Q&A':'Attached'}</small><button type="button" class="chip-remove" data-action="remove-attached-doc" aria-label="Remove attached document">×</button></span>`);
+  }
+  if(hasImg){
+    chips.push(`<span class="attachment-chip">${icon('image')}<b>${esc(imageFile.name)}</b><small>Ready for Vision AI</small><button type="button" class="chip-remove" data-action="remove-attached-image" aria-label="Remove attached image">×</button></span>`);
+  }
+  const placeholder=hasDoc?`Ask anything about "${docFile.name}" (or press Send to summarize)...`:hasImg?`Ask about "${imageFile.name}" (or press Send to analyze)...`:id==='home'?'Ask anything about PTCL, our services, documents, or upload an image...':'Ask CloudCore AI anything...';
+  return `<form class="composer ${hasAttachment?'has-attachments':''}" id="${id}-composer"><div>${chips.length?`<div class="composer-attachments">${chips.join('')}</div>`:''}<input name="prompt" aria-label="Message CloudCore AI" placeholder="${esc(placeholder)}" autocomplete="off" ${hasAttachment?'':'required'}><button type="button" class="icon-button" data-action="attach-document" title="Attach PDF, Word, Excel or text file" aria-label="Attach a document">${icon('paperclip')}</button><button type="button" class="icon-button" data-action="attach-image" title="Attach image for analysis" aria-label="Upload an image">${icon('image')}</button></div><button type="submit" class="send" aria-label="Send message">${icon('arrow')}</button></form>`;
+}
 function title(eyebrow,title,sub){return `<div class="section-heading"><div><div class="eyebrow">${eyebrow}</div><h1>${title}</h1><p>${sub}</p></div><div class="heading-brand">${mark('heading-mark')}<span><b>CloudCore AI</b><small>A product of PTCL Smart Cloud</small></span></div></div>`}
 const sampleSummary='This example document outlines PTCL’s enterprise connectivity solutions including dedicated internet, MPLS, cloud services and managed support SLAs for corporate clients. It highlights key service features, deployment options, benefits and commercial terms.';
 function documents(){return refDocuments()}
@@ -935,10 +965,51 @@ async function handleSignOut(){
   toast('You have signed out successfully.');
 }
 function saveChats(){try{localStorage.setItem('cloudcore-chats',JSON.stringify(chats))}catch{toast('Your browser could not save chat history.')}}
-function pollIngestJob(jobId,filename){const interval=setInterval(()=>{if(typeof fetch!=='function'){clearInterval(interval);return}fetch(`/api/jobs/${encodeURIComponent(jobId)}`).then(r=>r.json()).then(res=>{if(res.status==='finished'){clearInterval(interval);docIngesting=false;docJobStatus=`Successfully indexed "${filename}" into AI knowledge base! You can now query it in AI Assistant.`;toast(`"${filename}" indexed into AI knowledge base!`);route()}else if(res.status==='failed'){clearInterval(interval);docIngesting=false;docJobStatus=`Ingestion failed: ${res.error||'Unknown error'}`;toast(docJobStatus);route()}else{docJobStatus=`Processing document: ${res.status}...`;route()}}).catch(err=>{clearInterval(interval);docIngesting=false;docJobStatus=`Status check failed: ${err.message}`;route()})},3000)}
+function pollIngestJob(jobId,filename,resolveUpload){const interval=setInterval(()=>{if(typeof fetch!=='function'){clearInterval(interval);if(resolveUpload)resolveUpload();return}fetch(`/api/jobs/${encodeURIComponent(jobId)}`).then(r=>r.json()).then(res=>{if(res.status==='finished'){clearInterval(interval);docIngesting=false;docIngested=true;docJobStatus=`Indexed "${filename}" — ready for questions in AI Assistant.`;pushNotification('Document Indexed',`"${filename}" is indexed and ready for AI questions.`);toast(`"${filename}" indexed & ready for questions.`);route({preserveScroll:true});if(resolveUpload)resolveUpload();if(pendingDocAutoPrompt){const p=pendingDocAutoPrompt;pendingDocAutoPrompt='';sendMessage(p)}}else if(res.status==='failed'){clearInterval(interval);docIngesting=false;docIngested=false;docJobStatus=`Ingestion failed: ${res.error||'Unknown error'}`;toast(docJobStatus);route({preserveScroll:true});if(resolveUpload)resolveUpload()}else{docJobStatus=`Indexing "${filename}" (${res.status})...`;route({preserveScroll:true})}}).catch(err=>{clearInterval(interval);docIngesting=false;docJobStatus=`Status check failed: ${err.message}`;route({preserveScroll:true});if(resolveUpload)resolveUpload()})},1200)}
+function ingestDocumentNow(file){
+  if(!file||typeof fetch!=='function')return Promise.resolve();
+  docIngesting=true;
+  docIngested=false;
+  docJobStatus=`Indexing "${file.name}"...`;
+  route({preserveScroll:true});
+  activeDocUploadPromise=new Promise((resolveUpload)=>{
+    const form=new FormData();
+    form.append('file',file);
+    fetch('/api/documents/upload',{method:'POST',headers:{'x-requested-with':'CloudCoreAI'},body:form})
+      .then(async r=>{if(!r.ok){const err=await r.json().catch(()=>({}));throw Error(err.error?.message||err.detail||`Upload failed (${r.status})`)}return r.json()})
+      .then(data=>{
+        if(data.status==='finished'){
+          docIngesting=false;docIngested=true;
+          docJobStatus=`Indexed "${file.name}" — ready for questions in AI Assistant.`;
+          pushNotification('Document Indexed',`"${file.name}" is indexed and ready for AI questions.`);
+          toast(`"${file.name}" indexed & ready for questions.`);
+          route({preserveScroll:true});
+          resolveUpload();
+          if(pendingDocAutoPrompt){const p=pendingDocAutoPrompt;pendingDocAutoPrompt='';sendMessage(p)}
+        }else{
+          pollIngestJob(data.job_id,data.filename||file.name,resolveUpload);
+        }
+      })
+      .catch(err=>{
+        docIngesting=false;docIngested=false;
+        docJobStatus=`Ingestion failed: ${err.message}`;
+        toast(docJobStatus);
+        route({preserveScroll:true});
+        resolveUpload();
+      });
+  });
+  return activeDocUploadPromise;
+}
 async function sendMessage(t){
   t=(t||'').trim();
-  if(!t)return;
+  const useVisionChat=Boolean(chatImageAttached&&imageFile);
+  if(!t){
+    if(useVisionChat)t=`Please analyze the attached image "${imageFile.name}" thoroughly and highlight key observations.`;
+    else if(docFile)t=`Please summarize "${docFile.name}" and highlight key takeaways and action items.`;
+    else return;
+  }
+  const attachedImageForThisTurn=useVisionChat?imageFile:null;
+  if(useVisionChat)chatImageAttached=false;
   messages.push({role:'user',content:t});
   let response='This is the CloudCore AI frontend preview. Connect an AI service to receive live answers. You can already explore Document Insight, preview uploaded images and revisit conversations in Chat History.';
   if(/document|pdf|summari/i.test(t))response='Open Document Insight to select or drag in a PDF, DOCX, PPTX, XLSX or text file (up to 50 MB). You can explore an example summary and its Key Points and Actions tabs. Analysis of your own files will be available once an AI service is connected.';
@@ -963,47 +1034,65 @@ async function sendMessage(t){
 
   if(typeof fetch==='function'){
     try{
-      const res=await fetch('/api/chat?stream=true',{
-        method:'POST',
-        headers:{'content-type':'application/json','x-requested-with':'CloudCoreAI'},
-        body:JSON.stringify({message:t,use_rag:true,stream:true})
-      });
-      if(!res.ok){
-        const err=await res.json().catch(()=>({}));
-        throw Error(err.error?.message||err.detail||`AI service error (${res.status})`);
-      }
-      const reader=res.body?.getReader();
-      if(!reader){
-        const resData=await res.json();
-        assistantMsg.content=resData.answer||'';
+      if(attachedImageForThisTurn){
+        const form=new FormData();
+        form.append('question',t);
+        form.append('image',attachedImageForThisTurn);
+        const r=await fetch('/api/vision',{method:'POST',headers:{'x-requested-with':'CloudCoreAI'},body:form});
+        if(!r.ok){
+          const err=await r.json().catch(()=>({}));
+          throw Error(err.error?.message||err.detail||`Vision request failed (${r.status})`);
+        }
+        const vData=await r.json();
+        assistantMsg.content=vData.answer||'No analysis returned.';
+        visionResult=assistantMsg.content;
+        pushNotification('Image Analyzed',`Completed Vision AI analysis for "${attachedImageForThisTurn.name}".`);
       }else{
-        const decoder=new TextDecoder();
-        let buffer='';
-        while(true){
-          const {done,value}=await reader.read();
-          if(done)break;
-          buffer+=decoder.decode(value,{stream:true});
-          const lines=buffer.split('\n');
-          buffer=lines.pop()??'';
-          for(const line of lines){
-            const trimmed=line.trim();
-            if(!trimmed||trimmed.startsWith(':'))continue;
-            if(trimmed==='data: [DONE]')break;
-            if(trimmed.startsWith('data: ')){
-              try{
-                const json=JSON.parse(trimmed.slice(6));
-                const delta=json.choices?.[0]?.delta?.content||json.delta;
-                if(delta){
-                  assistantMsg.content+=delta;
-                  const bubble=document.getElementById('active-assistant-stream-bubble')||document.querySelector('.messages .message.assistant:last-child .chat-text');
-                  if(bubble){
-                    const box=document.querySelector('.messages');
-                    const shouldAutoScroll=isNearBottom(box,60);
-                    bubble.innerHTML=renderMarkdown(assistantMsg.content)+'<span class="typing-cursor"></span>';
-                    if(box&&shouldAutoScroll)box.scrollTop=box.scrollHeight;
+        if(docFile&&activeDocUploadPromise){
+          try{await activeDocUploadPromise}catch{}
+        }
+        const res=await fetch('/api/chat?stream=true',{
+          method:'POST',
+          headers:{'content-type':'application/json','x-requested-with':'CloudCoreAI'},
+          body:JSON.stringify({message:t,use_rag:true,stream:true})
+        });
+        if(!res.ok){
+          const err=await res.json().catch(()=>({}));
+          throw Error(err.error?.message||err.detail||`AI service error (${res.status})`);
+        }
+        const reader=res.body?.getReader();
+        if(!reader){
+          const resData=await res.json();
+          assistantMsg.content=resData.answer||'';
+        }else{
+          const decoder=new TextDecoder();
+          let buffer='';
+          while(true){
+            const {done,value}=await reader.read();
+            if(done)break;
+            buffer+=decoder.decode(value,{stream:true});
+            const lines=buffer.split('\n');
+            buffer=lines.pop()??'';
+            for(const line of lines){
+              const trimmed=line.trim();
+              if(!trimmed||trimmed.startsWith(':'))continue;
+              if(trimmed==='data: [DONE]')break;
+              if(trimmed.startsWith('data: ')){
+                try{
+                  const json=JSON.parse(trimmed.slice(6));
+                  const delta=json.choices?.[0]?.delta?.content||json.delta;
+                  if(delta){
+                    assistantMsg.content+=delta;
+                    const bubble=document.getElementById('active-assistant-stream-bubble')||document.querySelector('.messages .message.assistant:last-child .chat-text');
+                    if(bubble){
+                      const box=document.querySelector('.messages');
+                      const shouldAutoScroll=isNearBottom(box,60);
+                      bubble.innerHTML=renderMarkdown(assistantMsg.content)+'<span class="typing-cursor"></span>';
+                      if(box&&shouldAutoScroll)box.scrollTop=box.scrollHeight;
+                    }
                   }
-                }
-              }catch(e){}
+                }catch(e){}
+              }
             }
           }
         }
@@ -1029,11 +1118,51 @@ async function sendMessage(t){
     }
   }
 }
-function selectDocument(file){if(!file)return;if(!/\.(pdf|docx|pptx|xlsx|txt|md)$/i.test(file.name))return toast('Please choose a PDF, DOCX, PPTX, XLSX or text file.');if(file.size>50*1048576)return toast('Please choose a document smaller than 50 MB.');docFile=file;docJobStatus='';docIngesting=false;location.hash='documents';route();toast('Document selected. Your file stays on this device.')}
-function selectImage(file){if(!file)return;if(!['image/jpeg','image/png','image/webp'].includes(file.type))return toast('Please choose a JPG, PNG or WEBP image.');if(file.size>20*1048576)return toast('Please choose an image smaller than 20 MB.');if(imageURL.startsWith('blob:'))URL.revokeObjectURL(imageURL);visionResult='';imageFile=file;imageURL=URL.createObjectURL(file);imageMode='upload';location.hash='images';route()}
-function actions(a,el){if(refHandleAction(a,el)){bindDialog();return;}if(a==='new-chat'){messages=[];currentChat=null;location.hash='assistant';route()}else if(a==='suggestion'){const t=el.dataset.prompt;if(t==='Summarize this document')location.hash='documents';else if(t==='What is in this image?')location.hash='images';else sendMessage(t)}else if(a==='choose-document'||a==='attach-document')$('#document-input').click();else if(a==='choose-image'||a==='attach-image')$('#image-input').click();else if(a==='doc-tab'){docTab=el.dataset.tab;route()}else if(a==='image-mode'){imageMode=el.dataset.mode;route()}else if(a==='example-image'){visionResult='';if(imageURL.startsWith('blob:'))URL.revokeObjectURL(imageURL);imageFile=null;imageURL=({tower:'assets/example-tower.png',map:'assets/example-map.png',datacenter:'assets/example-datacenter.png',diagram:'assets/diagram.svg',screenshot:'assets/reference-home.png'})[el.dataset.example]||'assets/hero.png';imageMode='upload';route();toast('Example selected. Connect an AI service for image analysis.')}else if(a==='cloud-source')modal(`<h2>Connect ${el.dataset.source}</h2><p>Cloud storage connections will be available when the account integration is configured. For now, download your document and choose it from your device.</p><button class="primary" data-action="choose-document">Choose a local file</button>`);else if(a==='full-analysis'||a==='document-action')modal(`<span class="feature-icon">${icon('file')}</span><h2>${el.dataset.title||'Document Analysis'}</h2><p>${docFile?'Your document is selected. Connect an AI service to analyze its contents.':'Example analysis — PTCL Enterprise Proposal'}</p>${!docFile?`<p>${sampleSummary}</p><h3>Key points</h3><ul><li>Enterprise connectivity and cloud services</li><li>Flexible deployment options</li><li>Managed support and service-level agreements</li></ul>`:''}`);else if(a==='view-documents')modal(`<h2>Recent Documents</h2><p>${docFile?esc(docFile.name)+' — selected on this device.':'No documents uploaded yet. The proposal displayed is an example.'}</p>`);else if(a==='menu')$('.sidebar').classList.toggle('mobile-open');else if(a==='close-dialog')$('#dialog').close();else if(a==='open-chat'){const c=chats.find(c=>c.id===el.dataset.id);messages=[...c.messages];currentChat=c.id;location.hash='assistant'}else if(a==='delete-chat')modal(`<h2>Delete this conversation?</h2><p>This removes the conversation from this device.</p><div class="dialog-actions"><button class="outline" data-action="close-dialog">Cancel</button><button class="primary" data-action="confirm-delete" data-id="${el.dataset.id}">Delete conversation</button></div>`);else if(a==='confirm-delete'){chats=chats.filter(c=>c.id!==el.dataset.id);saveChats();route();toast('Conversation deleted.')}else if(a==='settings'){location.hash='settings';route()}else if(a==='profile')openProfileModal();else if(a==='signout')handleSignOut();else if(a==='help')modal('<h2>How can we help?</h2><p><b>AI Assistant:</b> Start a conversation and explore the chat interface.</p><p><b>Document Insight:</b> Upload a file and explore an example analysis.</p><p><b>Image Analysis:</b> Preview an uploaded image or use a direct image URL.</p><p><b>Chat History:</b> Reopen or delete conversations saved on this device.</p>');else if(a==='solutions')modal(`<h2>PTCL Business Solutions</h2><p>Explore connectivity, cloud, security and intelligent support.</p><div class="solution-list">${[['signal','Reliable Connectivity','Keep your business connected.'],['cloud','Cloud & Data Solutions','Infrastructure that grows with you.'],['shield','Cyber Security','Protect your business and its data.'],['chip','AI-Powered Support','Find the right support for your business.']].map(([i,t,d])=>`<div>${icon(i)}<span><b>${t}</b><p>${d}</p></span></div>`).join('')}</div>`);else if(a==='ingest-document-ai'){if(!docFile)return toast('Please choose a document first.');if(typeof fetch!=='function')return toast('AI service connection required.');docIngesting=true;docJobStatus='Uploading to AI platform...';route();const form=new FormData();form.append('file',docFile);fetch('/api/documents/upload',{method:'POST',headers:{'x-requested-with':'CloudCoreAI'},body:form}).then(async r=>{if(!r.ok){const err=await r.json().catch(()=>({}));throw Error(err.error?.message||err.detail||`Upload failed (${r.status})`)}return r.json()}).then(data=>{toast(`Document queued (Job: ${data.job_id.slice(0,8)}). Ingesting...`);docJobStatus=`Ingestion queued (Job: ${data.job_id.slice(0,8)})...`;route();pollIngestJob(data.job_id,data.filename)}).catch(err=>{docIngesting=false;docJobStatus=`Ingestion failed: ${err.message}`;toast(docJobStatus);route()})}else if(a==='analyze-image-ai'){if(!imageFile&&!imageURL)return toast('Please choose or upload an image first.');if(typeof fetch!=='function')return toast('AI service connection required.');visionLoading=true;visionResult='';route();(async()=>{try{const form=new FormData();form.append('question','Please analyze this image thoroughly: identify all objects, extract visible text via OCR, describe layout and context, and highlight key actionable observations.');if(imageFile){form.append('image',imageFile)}else{const blob=await fetch(imageURL).then(r=>r.blob());form.append('image',blob,'image.png')}const r=await fetch('/api/vision',{method:'POST',headers:{'x-requested-with':'CloudCoreAI'},body:form});if(!r.ok){const err=await r.json().catch(()=>({}));throw Error(err.error?.message||err.detail||`Vision request failed (${r.status})`)}const data=await r.json();visionResult=data.answer||'No analysis returned.';toast('Vision analysis complete.')}catch(err){toast(`Vision analysis failed: ${err.message}`);visionResult=`Analysis failed: ${err.message}`}finally{visionLoading=false;route()}})()}else if(a==='clear-vision'){visionResult='';route()}bindDialog()}
+function selectDocument(file){
+  if(!file)return;
+  if(!/\.(pdf|docx|pptx|xlsx|txt|md|csv|json)$/i.test(file.name))return toast('Please choose a PDF, DOCX, PPTX, XLSX, CSV or text file.');
+  if(file.size>50*1048576)return toast('Please choose a document smaller than 50 MB.');
+  docFile=file;docJobStatus='Selected and ready.';docIngesting=false;docIngested=false;
+  const cur=location.hash.replace(/^#/,'').split('/')[0];
+  const stayInAssistant=cur==='assistant'||attachContext==='assistant';
+  attachContext='';
+  if(stayInAssistant){
+    if(cur!=='assistant')location.hash='assistant';
+  }else if(cur!=='documents'){
+    location.hash='documents';
+  }
+  route({preserveScroll:true});
+  if(typeof fetch==='function'){
+    ingestDocumentNow(file);
+  }else{
+    toast(`"${file.name}" attached.`);
+  }
+}
+function selectImage(file){
+  if(!file)return;
+  if(!['image/jpeg','image/png','image/webp'].includes(file.type))return toast('Please choose a JPG, PNG or WEBP image.');
+  if(file.size>20*1048576)return toast('Please choose an image smaller than 20 MB.');
+  if(imageURL.startsWith('blob:'))URL.revokeObjectURL(imageURL);
+  visionResult='';imageFile=file;imageURL=URL.createObjectURL(file);imageMode='upload';
+  const cur=location.hash.replace(/^#/,'').split('/')[0];
+  const stayInAssistant=cur==='assistant'||attachContext==='assistant';
+  attachContext='';
+  if(stayInAssistant){
+    chatImageAttached=true;
+    if(cur!=='assistant')location.hash='assistant';
+    route({preserveScroll:true});
+    toast(`"${file.name}" attached for Vision AI.`);
+    if(pendingImageAutoPrompt){const p=pendingImageAutoPrompt;pendingImageAutoPrompt='';sendMessage(p)}
+  }else{
+    chatImageAttached=false;
+    location.hash='images';
+    route({preserveScroll:true});
+    toast(`"${file.name}" loaded. Click Analyze Image to inspect.`);
+  }
+}
+function actions(a,el){if(refHandleAction(a,el)){bindDialog();return;}if(a==='new-chat'){messages=[];currentChat=null;location.hash='assistant';route()}else if(a==='suggestion'){const t=el.dataset.prompt;if(t==='Summarize this document'){if(docFile)sendMessage(`Please summarize "${docFile.name}" and highlight key takeaways.`);else{attachContext='assistant';pendingDocAutoPrompt='Please summarize this document and highlight key takeaways and action items.';$('#document-input')?.click()}}else if(t==='What is in this image?'){if(imageFile){chatImageAttached=true;sendMessage(`What is in "${imageFile.name}"?`)}else{attachContext='assistant';pendingImageAutoPrompt='Please analyze this image and describe what is in it.';$('#image-input')?.click()}}else sendMessage(t)}else if(a==='assistant-doc-card'){if(docFile)sendMessage(`Please summarize "${docFile.name}" with key points and action items.`);else{attachContext='assistant';pendingDocAutoPrompt='Please summarize this document with key points and action items.';$('#document-input')?.click()}}else if(a==='assistant-image-card'){if(imageFile){chatImageAttached=true;sendMessage(`Please analyze "${imageFile.name}" and extract key observations.`)}else{attachContext='assistant';pendingImageAutoPrompt='Please analyze this image thoroughly and highlight key observations.';$('#image-input')?.click()}}else if(a==='attach-document'){attachContext='assistant';$('#document-input')?.click()}else if(a==='choose-document'){attachContext='documents';$('#document-input')?.click()}else if(a==='attach-image'){attachContext='assistant';$('#image-input')?.click()}else if(a==='choose-image'){attachContext='images';$('#image-input')?.click()}else if(a==='remove-attached-doc'){docFile=null;docIngested=false;docIngesting=false;docJobStatus='';route({preserveScroll:true});toast('Document attachment removed.')}else if(a==='remove-attached-image'){chatImageAttached=false;imageFile=null;route({preserveScroll:true});toast('Image attachment removed.')}else if(a==='clear-notifications'){appNotifications=[];openNotificationsModal()}else if(a==='ask-doc-ai'){if($('#dialog')?.open)$('#dialog').close();if(docFile)sendMessage(`Please summarize "${docFile.name}" and highlight its key takeaways and action items.`);else{location.hash='assistant';route()}}else if(a==='doc-tab'){docTab=el.dataset.tab;route({preserveScroll:true})}else if(a==='image-mode'){imageMode=el.dataset.mode;route({preserveScroll:true})}else if(a==='example-image'){visionResult='';if(imageURL.startsWith('blob:'))URL.revokeObjectURL(imageURL);imageFile=null;imageURL=({tower:'assets/example-tower.png',map:'assets/example-map.png',datacenter:'assets/example-datacenter.png',diagram:'assets/diagram.svg',screenshot:'assets/reference-home.png'})[el.dataset.example]||'assets/hero.png';imageMode='upload';route({preserveScroll:true});toast('Example image selected. Click Analyze Image to run Vision AI.')}else if(a==='cloud-source')modal(`<h2>Connect ${el.dataset.source}</h2><p>Cloud storage connections will be available when the account integration is configured. For now, download your document and choose it from your device.</p><button class="primary" data-action="choose-document">Choose a local file</button>`);else if(a==='full-analysis'||a==='document-action'){const actTitle=el.dataset.title||'Document Analysis';if(docFile){const promptMap={'Summarize document':`Please provide an executive summary of "${docFile.name}" with key takeaways.`,'Compare document':`Please analyze "${docFile.name}" and compare its key options, trade-offs, and recommendations.`,'Extract document':`Please extract all key facts, figures, dates, entities, and deliverables from "${docFile.name}".`,'Analyze document':`Please analyze "${docFile.name}" to identify key trends, risks, decisions, and action items.`};sendMessage(promptMap[actTitle]||`Please analyze "${docFile.name}" and provide key insights.`)}else{modal(`<span class="feature-icon">${icon('file')}</span><h2>${esc(actTitle)}</h2><p>Upload a PDF, Word, Excel, PowerPoint, or text file to run live AI analysis on your own document, or explore the example below.</p><p>${sampleSummary}</p><h3>Key points</h3><ul><li>Enterprise connectivity and cloud services</li><li>Flexible deployment options</li><li>Managed support and service-level agreements</li></ul><div class="dialog-actions"><button class="outline" data-action="close-dialog">Close</button><button class="primary" data-action="choose-document">${icon('upload')} Upload a document</button></div>`)}}else if(a==='view-documents')modal(`<h2>Recent Documents</h2><p>${docFile?esc(docFile.name)+' — indexed in workspace.':'No documents uploaded yet. The proposal displayed is an example.'}</p>`);else if(a==='menu')$('.sidebar').classList.toggle('mobile-open');else if(a==='close-dialog')$('#dialog').close();else if(a==='open-chat'){const c=chats.find(c=>c.id===el.dataset.id);messages=[...c.messages];currentChat=c.id;location.hash='assistant'}else if(a==='delete-chat')modal(`<h2>Delete this conversation?</h2><p>This removes the conversation from this device.</p><div class="dialog-actions"><button class="outline" data-action="close-dialog">Cancel</button><button class="primary" data-action="confirm-delete" data-id="${el.dataset.id}">Delete conversation</button></div>`);else if(a==='confirm-delete'){chats=chats.filter(c=>c.id!==el.dataset.id);saveChats();route();toast('Conversation deleted.')}else if(a==='settings'){location.hash='settings';route()}else if(a==='profile')openProfileModal();else if(a==='signout')handleSignOut();else if(a==='help')modal('<h2>How can we help?</h2><p><b>AI Assistant:</b> Start a conversation, or attach a PDF/Word file or image directly using the paperclip and image icons in the chat bar.</p><p><b>Document Insight:</b> Upload a document and use Summarize, Compare, Extract, or Analyze.</p><p><b>Image Analysis:</b> Upload an image or select an example and click Analyze Image.</p><p><b>Chat History:</b> Reopen or delete conversations saved on this device.</p>');else if(a==='solutions')modal(`<h2>PTCL Business Solutions</h2><p>Explore connectivity, cloud, security and intelligent support.</p><div class="solution-list">${[['signal','Reliable Connectivity','Keep your business connected.'],['cloud','Cloud & Data Solutions','Infrastructure that grows with you.'],['shield','Cyber Security','Protect your business and its data.'],['chip','AI-Powered Support','Find the right support for your business.']].map(([i,t,d])=>`<div>${icon(i)}<span><b>${t}</b><p>${d}</p></span></div>`).join('')}</div>`);else if(a==='ingest-document-ai'){if(!docFile)return toast('Please choose a document first.');if(typeof fetch!=='function')return toast('AI service connection required.');ingestDocumentNow(docFile)}else if(a==='analyze-image-ai'){if(!imageFile&&!imageURL)return toast('Please choose or upload an image first.');if(typeof fetch!=='function')return toast('AI service connection required.');visionLoading=true;visionResult='';route({preserveScroll:true});(async()=>{try{const form=new FormData();form.append('question','Please analyze this image thoroughly: identify all objects, extract visible text via OCR, describe layout and context, and highlight key actionable observations.');if(imageFile){form.append('image',imageFile)}else{const blob=await fetch(imageURL).then(r=>r.blob());form.append('image',blob,'image.png')}const r=await fetch('/api/vision',{method:'POST',headers:{'x-requested-with':'CloudCoreAI'},body:form});if(!r.ok){const err=await r.json().catch(()=>({}));throw Error(err.error?.message||err.detail||`Vision request failed (${r.status})`)}const data=await r.json();visionResult=data.answer||'No analysis returned.';pushNotification('Image Analyzed','Vision AI completed analysis of your selected image.');toast('Vision analysis complete.')}catch(err){toast(`Vision analysis failed: ${err.message}`);visionResult=`Analysis failed: ${err.message}`}finally{visionLoading=false;route({preserveScroll:true})}})()}else if(a==='clear-vision'){visionResult='';route({preserveScroll:true})}bindDialog()}
 function bindDialog(){document.querySelectorAll('#dialog [data-action]').forEach(el=>el.onclick=()=>actions(el.dataset.action,el))}
-const baseBind=bind;bind=function(){baseBind();document.querySelectorAll('.composer').forEach(f=>f.onsubmit=e=>{e.preventDefault();sendMessage(new FormData(f).get('prompt'))});if($('#search-form'))$('#search-form').onsubmit=e=>{e.preventDefault();const q=$('#search-form input').value.toLowerCase();const match=navs.find(n=>n[2].toLowerCase().includes(q));if(q&&match)location.hash=match[0];else if(q)sendMessage(q)};if($('#document-input'))$('#document-input').onchange=e=>selectDocument(e.target.files[0]);if($('#image-input'))$('#image-input').onchange=e=>selectImage(e.target.files[0]);document.querySelectorAll('[data-drop]').forEach(d=>{d.ondragover=e=>{e.preventDefault();d.classList.add('dragging')};d.ondragleave=()=>d.classList.remove('dragging');d.ondrop=e=>{e.preventDefault();d.classList.remove('dragging');(d.dataset.drop==='image'?selectImage:selectDocument)(e.dataTransfer.files[0])}});if($('#url-form'))$('#url-form').onsubmit=e=>{e.preventDefault();const url=new FormData(e.target).get('url');try{if(new URL(url).protocol!=='https:')throw Error();}catch{return toast('Please enter a valid HTTPS image URL.')}const image=new Image();image.onload=()=>{visionResult='';if(imageURL.startsWith('blob:'))URL.revokeObjectURL(imageURL);imageFile=null;imageURL=url;imageMode='upload';route()};image.onerror=()=>toast('The image could not be loaded. Check the link or upload a file.');image.src=url};if($('#history-search'))$('#history-search').oninput=e=>{historySearch=e.target.value;const start=e.target.selectionStart;route();$('#history-search').focus();$('#history-search').setSelectionRange(start,start)};if($('#dialog'))$('#dialog').onclick=e=>{if(e.target===$('#dialog'))$('#dialog').close()};};
+const baseBind=bind;bind=function(){baseBind();document.querySelectorAll('.composer').forEach(f=>f.onsubmit=e=>{e.preventDefault();sendMessage(new FormData(f).get('prompt'))});if($('#search-form'))$('#search-form').onsubmit=e=>{e.preventDefault();const q=($('#search-form input').value||'').trim();if(!q)return;const exactMatch=navs.find(n=>n[2].toLowerCase()===q.toLowerCase()||n[0].toLowerCase()===q.toLowerCase());if(exactMatch)location.hash=exactMatch[0];else sendMessage(q)};if($('#document-input'))$('#document-input').onchange=e=>{const f=e.target.files[0];try{e.target.value=''}catch{}selectDocument(f)};if($('#image-input'))$('#image-input').onchange=e=>{const f=e.target.files[0];try{e.target.value=''}catch{}selectImage(f)};document.querySelectorAll('[data-drop]').forEach(d=>{d.ondragover=e=>{e.preventDefault();d.classList.add('dragging')};d.ondragleave=()=>d.classList.remove('dragging');d.ondrop=e=>{e.preventDefault();d.classList.remove('dragging');(d.dataset.drop==='image'?selectImage:selectDocument)(e.dataTransfer.files[0])}});if($('#url-form'))$('#url-form').onsubmit=e=>{e.preventDefault();const url=new FormData(e.target).get('url');try{if(new URL(url).protocol!=='https:')throw Error();}catch{return toast('Please enter a valid HTTPS image URL.')}const image=new Image();image.onload=()=>{visionResult='';if(imageURL.startsWith('blob:'))URL.revokeObjectURL(imageURL);imageFile=null;imageURL=url;imageMode='upload';route()};image.onerror=()=>toast('The image could not be loaded. Check the link or upload a file.');image.src=url};if($('#history-search'))$('#history-search').oninput=e=>{historySearch=e.target.value;const start=e.target.selectionStart;route();$('#history-search').focus();$('#history-search').setSelectionRange(start,start)};if($('#dialog'))$('#dialog').onclick=e=>{if(e.target===$('#dialog'))$('#dialog').close()};};
 const productBind=bind;bind=function(){productBind();clearTimeout(meetingsTimer);meetingsTimer=null;const on=(selector,handler)=>document.querySelectorAll(selector).forEach(el=>el.onclick=()=>handler(el));on('[data-action="open-meeting"]',el=>{meetingTab='overview';meetingsState.detail=null;location.hash=`meetings/${el.dataset.id}`;refreshMeetings(true)});on('[data-action="refresh-meetings"]',()=>refreshMeetings(true));on('[data-action="meeting-tab"]',el=>{meetingTab=el.dataset.tab;route();if(meetingTab==='chat'){requestAnimationFrame(()=>{const box=document.querySelector('.meeting-chat-messages');if(box)box.scrollTop=box.scrollHeight})}});on('[data-action="stop-meeting"]',el=>meetingCommand(el.dataset.id,'/stop'));on('[data-action="regenerate-mom"]',el=>meetingCommand(el.dataset.id,'/regenerate-mom'));on('[data-action="delete-meeting"]',el=>{if(window.confirm('Permanently delete this meeting and all of its audio, transcript, snapshots and MOM?'))meetingCommand(el.dataset.id,'','DELETE')});on('[data-action="copy-mom"]',()=>{navigator.clipboard?.writeText(momMarkdown(meetingsState.detail));toast('MOM copied to clipboard.')});on('[data-action="download-mom"]',()=>{const blob=new Blob([momMarkdown(meetingsState.detail)],{type:'text/markdown'}),link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download='meeting-mom.md';link.click();URL.revokeObjectURL(link.href)});on('[data-action="preview-mom"]',()=>previewMomPdf(meetingsState.detail));on('[data-action="print-mom"]',()=>printMomPdf(meetingsState.detail));on('[data-action="profile"]',()=>openProfileModal());on('[data-action="settings"]',()=>openSettingsModal());on('[data-action="signout"]',()=>handleSignOut());on('[data-prompt="Start a Teams meeting bot"]',()=>location.hash='meetings');on('[data-action="quick-meeting-ask"]',el=>{if(selectedMeetingId)sendMeetingChat(selectedMeetingId,el.dataset.query)});on('[data-action="refresh-live-screenshot"]',()=>{const img=$('#live-bot-screen-img');if(img&&selectedMeetingId)img.src=`/api/meetings/${encodeURIComponent(selectedMeetingId)}/live-screenshot?t=${Date.now()}`});const transcriptInput=$('#transcript-filter');if(transcriptInput){transcriptInput.oninput=e=>{transcriptSearch=e.target.value;const term=transcriptSearch.trim().toLowerCase();const articles=document.querySelectorAll('.transcript-list article');let visible=0;articles.forEach(art=>{const match=!term||art.textContent.toLowerCase().includes(term);art.style.display=match?'':'none';if(match)visible++});const metaSpan=document.querySelector('.transcript-meta-strip span:last-child');if(metaSpan)metaSpan.textContent=`${visible} of ${articles.length} segments`}};const meetingChatForm=$('#meeting-chat-form');if(meetingChatForm){meetingChatForm.onsubmit=e=>{e.preventDefault();const p=new FormData(meetingChatForm).get('chatPrompt');if(selectedMeetingId)sendMeetingChat(selectedMeetingId,p)}};if($('#meeting-form'))$('#meeting-form').onsubmit=e=>{e.preventDefault();startMeeting(e.target)};if($('#mom-form'))$('#mom-form').onsubmit=async e=>{e.preventDefault();try{const mom=momFromForm(e.target,meetingsState.detail.mom);await api(`/api/meetings/${encodeURIComponent(meetingsState.detail.id)}/mom`,{method:'PUT',body:JSON.stringify(mom)});toast('MOM changes saved.');await refreshMeetings(true)}catch(error){toast(error.message)}};if(location.hash.startsWith('#meetings')){if(selectedMeetingId&&(!meetingsState.detail||meetingsState.detail.id!==selectedMeetingId)){refreshMeetings(true)}else if(!meetingsState.lastLoaded&&!meetingsLoading){refreshMeetings()}else{scheduleMeetingsPoll()}}};
 const referenceBind=bind;bind=function(){referenceBind();refBind()};
 window.addEventListener('hashchange',route);route();
