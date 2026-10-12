@@ -51,3 +51,49 @@ test('deduplicates progressive transcript windows and repetition loops in reposi
   assert.equal(detail.transcript[0].endMs,5000);
   assert.equal(detail.transcript[1].text,'Agreed, lets move forward.');
 });
+
+test('caps ordinary replies to 350 tokens and allows longer replies when requested', async () => {
+  const { resolveReplyMaxTokens } = await import('../build/ai.js');
+  assert.equal(resolveReplyMaxTokens('What is the deadline?'), 350);
+  assert.equal(resolveReplyMaxTokens('Summarize what he said'), 350);
+  assert.equal(resolveReplyMaxTokens('Give me a detailed step-by-step architecture breakdown'), 750);
+  assert.equal(resolveReplyMaxTokens('Provide a comprehensive report', 900), 900);
+});
+
+test('consolidates adjacent speaker turns and compresses long transcripts for MOM', async () => {
+  const { consolidateTranscript, buildCompactMomInput } = await import('../build/ai.js');
+  const raw = [
+    { id: '1', meetingId: 'm1', speakerName: 'Ali', startMs: 1000, endMs: 3000, text: 'Assalam o Alaikum team.', createdAt: '' },
+    { id: '2', meetingId: 'm1', speakerName: 'Ali', startMs: 4000, endMs: 7000, text: 'We decided to launch CloudCore on Friday.', createdAt: '' },
+    { id: '3', meetingId: 'm1', speakerName: 'Fatima', startMs: 8000, endMs: 11000, text: 'Agreed, I will follow up on firewall rules by Thursday.', createdAt: '' }
+  ];
+  const merged = consolidateTranscript(raw);
+  assert.equal(merged.length, 2);
+  assert.equal(merged[0].text, 'Assalam o Alaikum team. We decided to launch CloudCore on Friday.');
+
+  const longSegments = Array.from({ length: 80 }, (_, i) => ({
+    id: String(i),
+    meetingId: 'm1',
+    speakerName: i % 2 === 0 ? 'Ali' : 'Fatima',
+    startMs: i * 12000,
+    endMs: i * 12000 + 5000,
+    text: i === 10 ? 'We agreed and decided to finalize the SLA by Monday.' : `Discussion segment number ${i} regarding server metrics and network routing.`,
+    createdAt: ''
+  }));
+  const fullJsonLen = JSON.stringify({ attendees: ['Ali', 'Fatima'], transcript: longSegments }).length;
+  const compactStr = buildCompactMomInput(longSegments, ['Ali', 'Fatima']);
+  assert.ok(compactStr.length < fullJsonLen * 0.55, `Expected compact input (${compactStr.length}) to be < 55% of full JSON (${fullJsonLen})`);
+  assert.ok(compactStr.includes('120000ms'), 'Expected earlier decision timestamp to be preserved');
+});
+
+test('tracks in-flight MOM jobs to prevent duplicate background finalization', async () => {
+  const { isMomInFlight, markMomInFlight, clearMomInFlight } = await import('../build/jobs.js');
+  clearMomInFlight('m-test');
+  assert.equal(isMomInFlight('m-test'), false);
+  assert.equal(markMomInFlight('m-test'), true);
+  assert.equal(isMomInFlight('m-test'), true);
+  assert.equal(markMomInFlight('m-test'), false);
+  clearMomInFlight('m-test');
+  assert.equal(isMomInFlight('m-test'), false);
+});
+

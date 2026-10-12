@@ -10,13 +10,13 @@ import { RedisStore } from 'connect-redis';
 import pino from 'pino';
 import { pinoHttp } from 'pino-http';
 import { configureAuth, requireUser, requireRole } from './auth.js';
-import { askMeetingAssistant, askMeetingAssistantStream, generateMom } from './ai.js';
+import { askMeetingAssistant, askMeetingAssistantStream, beginLiveChat, endLiveChat, generateMom, resolveReplyMaxTokens } from './ai.js';
 import { artifacts } from './artifacts.js';
 import { config, validateProductionConfig } from './config.js';
 import { purgeMeetingContent } from './cleanup.js';
 import { encryptMeetingUrl, hashPassword, sanitizePrompt } from './crypto.js';
 import { meetingEngine, reconcileMeetingStatus, TEAMS_BOT_NAME, vexaEngineId } from './engine.js';
-import { enqueue, redisConnection } from './jobs.js';
+import { clearMomInFlight, enqueue, isMomInFlight, markMomInFlight, redisConnection } from './jobs.js';
 import { activeStatuses, type Meeting, type MeetingStatus, type User, type Role } from './models.js';
 import { repository } from './repository.js';
 import { createMeetingSchema, momSchema, validateTeamsUrl } from './validation.js';
@@ -53,74 +53,85 @@ app.get('/api/ai/health',requireUser,async(_req,res)=>{
 app.post('/api/chat',requireUser,async(req,res)=>{
   try{
     if(!config.ai.baseUrl)return res.status(503).json({error:{code:'ai_disconnected',message:'Internal AI service is not configured.'}});
-    const {message,max_tokens=1500,stream=false}=req.body??{};
+    const {message,max_tokens,stream=false}=req.body??{};
     if(!message||typeof message!=='string')return res.status(400).json({error:{code:'invalid_request',message:'Message is required.'}});
     const cleanMessage=sanitizePrompt(message);
     if(!cleanMessage)return res.status(400).json({error:{code:'invalid_request',message:'Valid message is required.'}});
     const streamRequested=stream===true||req.query.stream==='true'||req.header('accept')?.includes('text/event-stream');
     const base=config.ai.baseUrl.replace(/\/+$/, '');
     const cleanUrl=base.endsWith('/v1')?`${base}/chat/completions`:`${base}/v1/chat/completions`;
-    const systemPrompt='You are CloudCore AI, an intelligent partner by PTCL Smart Cloud. Help users with enterprise questions, meeting intelligence, documents, and technical solutions. Provide thorough, well-structured answers using clean Markdown formatting with bolding, lists, and clear sections.';
+    const systemPrompt='You are CloudCore AI, an intelligent partner by PTCL Smart Cloud. Help users with enterprise questions, meeting intelligence, documents, and technical solutions. Keep ordinary replies concise and direct (roughly 150-250 words) using clean Markdown formatting with bolding and bullet points, unless the user explicitly requests a detailed or comprehensive response.';
+    const effectiveMaxTokens=resolveReplyMaxTokens(cleanMessage,typeof max_tokens==='number'?max_tokens:undefined);
 
     if(streamRequested){
+      beginLiveChat();
+      try{
+        const upstream=await fetch(cleanUrl,{
+          method:'POST',
+          headers:{'content-type':'application/json','x-api-key':config.ai.apiKey,authorization:`Bearer ${config.ai.apiKey}`},
+          body:JSON.stringify({
+            model:config.ai.momModel||'qwen2.5-7b',
+            cache_prompt:true,
+            stream:true,
+            messages:[
+              {role:'system',content:systemPrompt},
+              {role:'user',content:cleanMessage}
+            ],
+            max_tokens:effectiveMaxTokens
+          })
+        });
+        if(!upstream.ok||!upstream.body){
+          const errText=await upstream.text().catch(()=>'');
+          return res.status(upstream.status).json({error:{code:'ai_error',message:errText}});
+        }
+        res.setHeader('content-type','text/event-stream; charset=utf-8');
+        res.setHeader('cache-control','no-cache, no-transform');
+        res.setHeader('connection','keep-alive');
+        res.setHeader('x-accel-buffering','no');
+        res.socket?.setNoDelay(true);
+        res.flushHeaders?.();
+        res.write(': stream-start\n\n');
+        const reader=upstream.body.getReader();
+        try{
+          while(true){
+            const {done,value}=await reader.read();
+            if(done)break;
+            res.write(value);
+          }
+        }finally{
+          res.end();
+        }
+        return;
+      }finally{
+        endLiveChat();
+      }
+    }
+
+    beginLiveChat();
+    try{
       const upstream=await fetch(cleanUrl,{
         method:'POST',
         headers:{'content-type':'application/json','x-api-key':config.ai.apiKey,authorization:`Bearer ${config.ai.apiKey}`},
         body:JSON.stringify({
           model:config.ai.momModel||'qwen2.5-7b',
           cache_prompt:true,
-          stream:true,
           messages:[
             {role:'system',content:systemPrompt},
             {role:'user',content:cleanMessage}
           ],
-          max_tokens:Number(max_tokens)||700
+          max_tokens:effectiveMaxTokens
         })
       });
-      if(!upstream.ok||!upstream.body){
+      if(!upstream.ok){
         const errText=await upstream.text().catch(()=>'');
         return res.status(upstream.status).json({error:{code:'ai_error',message:errText}});
       }
-      res.setHeader('content-type','text/event-stream; charset=utf-8');
-      res.setHeader('cache-control','no-cache, no-transform');
-      res.setHeader('connection','keep-alive');
-      res.setHeader('x-accel-buffering','no');
-      res.socket?.setNoDelay(true);
-      res.flushHeaders?.();
-      res.write(': stream-start\n\n');
-      const reader=upstream.body.getReader();
-      try{
-        while(true){
-          const {done,value}=await reader.read();
-          if(done)break;
-          res.write(value);
-        }
-      }finally{
-        res.end();
-      }
-      return;
+      const data:any=await upstream.json().catch(()=>({}));
+      const answer=data.choices?.[0]?.message?.content||'';
+      return res.json({answer,model:config.ai.momModel});
+    }finally{
+      endLiveChat();
     }
-
-    const upstream=await fetch(cleanUrl,{
-      method:'POST',
-      headers:{'content-type':'application/json','x-api-key':config.ai.apiKey,authorization:`Bearer ${config.ai.apiKey}`},
-      body:JSON.stringify({
-        model:config.ai.momModel||'qwen2.5-7b',
-        cache_prompt:true,
-        messages:[
-          {role:'system',content:systemPrompt},
-          {role:'user',content:cleanMessage}
-        ],
-        max_tokens:Number(max_tokens)||700
-      })
-    });
-    if(!upstream.ok){
-      const errText=await upstream.text().catch(()=>'');
-      return res.status(upstream.status).json({error:{code:'ai_error',message:errText}});
-    }
-    const data:any=await upstream.json().catch(()=>({}));
-    const answer=data.choices?.[0]?.message?.content||'';
-    return res.json({answer,model:config.ai.momModel});
   }catch(error){
     logger.warn({error:error instanceof Error?error.message:String(error)},'AI chat proxy failed');
     return res.status(502).json({error:{code:'ai_unavailable',message:error instanceof Error?error.message:'AI service unavailable.'}});
@@ -180,15 +191,17 @@ app.post('/api/vision',requireUser,async(req,res)=>{
 
 
 const snapshotCache = new Map<string, Buffer>();
-const finalizingMeetings = new Set<string>();
+const syncingMeetings = new Set<string>();
+const lastSyncTimeMs = new Map<string, number>();
+const syncedSegmentCount = new Map<string, number>();
 
-async function finalizeMeetingDirectly(meetingId: string) {
-  if (finalizingMeetings.has(meetingId)) return;
-  finalizingMeetings.add(meetingId);
+async function finalizeMeetingDirectly(meetingId: string, forceRegen = false) {
+  if (!forceRegen && isMomInFlight(meetingId)) return;
+  markMomInFlight(meetingId);
   try {
     const detail = await repository.getMeetingDetail(meetingId);
     if (!detail) return;
-    if (detail.mom) {
+    if (detail.mom && !forceRegen) {
       await repository.updateMeeting(meetingId, {
         status: 'completed',
         endedAt: detail.endedAt ?? new Date().toISOString()
@@ -210,50 +223,60 @@ async function finalizeMeetingDirectly(meetingId: string) {
       failureMessage: error instanceof Error ? error.message : 'MOM generation failed.'
     });
   } finally {
-    finalizingMeetings.delete(meetingId);
+    clearMomInFlight(meetingId);
   }
 }
 
 async function synchronizeMeeting(meeting:Meeting){
   if(!meeting.engineId||meeting.engineId.startsWith('dev_'))return;
-  const state=await meetingEngine.sync(meeting.engineId);
-  for(const segment of state.transcript)await repository.addTranscript({meetingId:meeting.id,...segment});
-  for(const participant of state.participants)await repository.addParticipant({meetingId:meeting.id,externalId:participant.externalId,displayName:participant.displayName,joinedAt:participant.joinedAt??meeting.startedAt??new Date().toISOString(),leftAt:participant.leftAt});
-  const patch:Partial<Pick<Meeting,'status'|'failureCode'|'failureMessage'|'recordingObjectKey'|'startedAt'|'endedAt'>>={};
-  const status=reconcileMeetingStatus(meeting.status,state.status);
-  if(status)patch.status=status;if(state.failureCode)patch.failureCode=state.failureCode;if(state.failureMessage)patch.failureMessage=state.failureMessage;if(state.startedAt)patch.startedAt=state.startedAt;if(state.endedAt)patch.endedAt=state.endedAt;if(state.recordingId)patch.recordingObjectKey=`vexa:${state.recordingId}`;
-  if(status==='recording'&&!patch.startedAt)patch.startedAt=meeting.startedAt??new Date().toISOString();
-  if(['processing','completed','failed'].includes(status??''))patch.endedAt=state.endedAt??meeting.endedAt??new Date().toISOString();
-  if(Object.keys(patch).length)await repository.updateMeeting(meeting.id,patch);
-  if(status==='processing'||meeting.status==='processing'){
-    const detail=await repository.getMeetingDetail(meeting.id);
-    if(detail?.mom){
-      await repository.updateMeeting(meeting.id,{status:'completed'});
-    }else{
-      const enqueued=await enqueue('finalize-meeting',{meetingId:meeting.id});
-      if(!enqueued)finalizeMeetingDirectly(meeting.id).catch(err=>logger.warn({meetingId:meeting.id,error:err instanceof Error?err.message:String(err)},'finalizeMeetingDirectly failed'));
-    }
-  }
-  if(status==='recording'){
-    try{
-      const now=Date.now();
-      const meetingStart=Date.parse(meeting.startedAt??new Date().toISOString());
-      const capturedAtMs=Math.max(0,now-meetingStart);
+  if(syncingMeetings.has(meeting.id))return;
+  syncingMeetings.add(meeting.id);
+  try{
+    const state=await meetingEngine.sync(meeting.engineId);
+    const prevCount=Math.max(0,(syncedSegmentCount.get(meeting.id)??0)-2);
+    const newSegments=state.transcript.slice(prevCount);
+    for(const segment of newSegments)await repository.addTranscript({meetingId:meeting.id,...segment});
+    syncedSegmentCount.set(meeting.id,state.transcript.length);
+    for(const participant of state.participants)await repository.addParticipant({meetingId:meeting.id,externalId:participant.externalId,displayName:participant.displayName,joinedAt:participant.joinedAt??meeting.startedAt??new Date().toISOString(),leftAt:participant.leftAt});
+    const patch:Partial<Pick<Meeting,'status'|'failureCode'|'failureMessage'|'recordingObjectKey'|'startedAt'|'endedAt'>>={};
+    const status=reconcileMeetingStatus(meeting.status,state.status);
+    if(status)patch.status=status;if(state.failureCode)patch.failureCode=state.failureCode;if(state.failureMessage)patch.failureMessage=state.failureMessage;if(state.startedAt)patch.startedAt=state.startedAt;if(state.endedAt)patch.endedAt=state.endedAt;if(state.recordingId)patch.recordingObjectKey=`vexa:${state.recordingId}`;
+    if(status==='recording'&&!patch.startedAt)patch.startedAt=meeting.startedAt??new Date().toISOString();
+    if(['processing','completed','failed'].includes(status??''))patch.endedAt=state.endedAt??meeting.endedAt??new Date().toISOString();
+    if(Object.keys(patch).length)await repository.updateMeeting(meeting.id,patch);
+    if((status==='processing'||meeting.status==='processing')&&!isMomInFlight(meeting.id)){
       const detail=await repository.getMeetingDetail(meeting.id);
-      const shots=detail?.snapshots??[];
-      if(shots.length < 15){
-        const lastShot=shots.at(-1);
-        if(!lastShot||(capturedAtMs-lastShot.capturedAtMs>=120_000)){
-          const shot=await meetingEngine.screenshot(meeting.engineId);
-          if(shot?.ok){
-            const bytes=Buffer.from(await shot.arrayBuffer());
-            const key=`snapshot_${Date.now()}`;
-            const saved=await repository.addSnapshot({meetingId:meeting.id,objectKey:key,capturedAtMs});
-            if(saved?.id)snapshotCache.set(saved.id,bytes);
+      if(detail?.mom){
+        await repository.updateMeeting(meeting.id,{status:'completed'});
+      }else{
+        const enqueued=await enqueue('finalize-meeting',{meetingId:meeting.id});
+        if(!enqueued)finalizeMeetingDirectly(meeting.id).catch(err=>logger.warn({meetingId:meeting.id,error:err instanceof Error?err.message:String(err)},'finalizeMeetingDirectly failed'));
+      }
+    }
+    if(status==='recording'){
+      try{
+        const now=Date.now();
+        const meetingStart=Date.parse(meeting.startedAt??new Date().toISOString());
+        const capturedAtMs=Math.max(0,now-meetingStart);
+        const detail=await repository.getMeetingDetail(meeting.id);
+        const shots=detail?.snapshots??[];
+        if(shots.length < 15){
+          const lastShot=shots.at(-1);
+          if(!lastShot||(capturedAtMs-lastShot.capturedAtMs>=120_000)){
+            const shot=await meetingEngine.screenshot(meeting.engineId);
+            if(shot?.ok){
+              const bytes=Buffer.from(await shot.arrayBuffer());
+              const key=`snapshot_${Date.now()}`;
+              const saved=await repository.addSnapshot({meetingId:meeting.id,objectKey:key,capturedAtMs});
+              if(saved?.id)snapshotCache.set(saved.id,bytes);
+            }
           }
         }
-      }
-    }catch{}
+      }catch{}
+    }
+    lastSyncTimeMs.set(meeting.id,Date.now());
+  }finally{
+    syncingMeetings.delete(meeting.id);
   }
 }
 
@@ -265,9 +288,9 @@ app.post('/api/meetings',requireUser,async(req,res,next)=>{try{
   catch(error){await repository.updateMeeting(meeting.id,{status:'failed',failureCode:'engine_launch_failed',failureMessage:error instanceof Error?error.message:'Meeting bot could not launch.'});throw error}
 }catch(error){next(error)}});
 app.get('/api/meetings',requireUser,async(_req,res)=>{res.setHeader('cache-control','no-store, no-cache, must-revalidate');res.json({meetings:await repository.listMeetings(res.locals.user),capacity:{active:await repository.activeCount(),maximum:config.maxActiveMeetings}})});
-app.get('/api/meetings/:id',requireUser,async(req,res)=>{res.setHeader('cache-control','no-store, no-cache, must-revalidate');const meeting=await repository.getMeeting(String(req.params.id),res.locals.user);if(!meeting)return res.status(404).json({error:{code:'not_found',message:'Meeting not found.'}});if(activeStatuses.includes(meeting.status)){await synchronizeMeeting(meeting).catch(error=>logger.warn({meetingId:meeting.id,error:error instanceof Error?error.message:String(error)},'meeting synchronization failed'))}const detail=await repository.getMeetingDetail(meeting.id,res.locals.user);res.json(detail)});
+app.get('/api/meetings/:id',requireUser,async(req,res)=>{res.setHeader('cache-control','no-store, no-cache, must-revalidate');const meeting=await repository.getMeeting(String(req.params.id),res.locals.user);if(!meeting)return res.status(404).json({error:{code:'not_found',message:'Meeting not found.'}});if(activeStatuses.includes(meeting.status)&&Date.now()-(lastSyncTimeMs.get(meeting.id)??0)>6_000){void synchronizeMeeting(meeting).catch(error=>logger.warn({meetingId:meeting.id,error:error instanceof Error?error.message:String(error)},'meeting synchronization failed'))}const detail=await repository.getMeetingDetail(meeting.id,res.locals.user);res.json(detail)});
 app.post('/api/meetings/:id/stop',requireUser,async(req,res,next)=>{try{const meeting=await repository.getMeeting(String(req.params.id),res.locals.user);if(!meeting)return res.status(404).json({error:{code:'not_found',message:'Meeting not found.'}});if(!activeStatuses.includes(meeting.status))return res.status(409).json({error:{code:'not_active',message:'This meeting is no longer active.'}});await repository.updateMeeting(meeting.id,{status:'stopping'});if(meeting.engineId){await meetingEngine.stop(meeting.engineId).catch(err=>logger.warn({meetingId:meeting.id,error:err instanceof Error?err.message:String(err)},'bot stop warning'));await synchronizeMeeting(meeting).catch(()=>{});}await repository.audit((res.locals.user as User).id,meeting.id,'meeting.stop_requested');res.status(202).json({status:'stopping'})}catch(error){next(error)}});
-app.post('/api/meetings/:id/regenerate-mom',requireUser,async(req,res)=>{const meeting=await repository.getMeeting(String(req.params.id),res.locals.user);if(!meeting)return res.status(404).json({error:{code:'not_found',message:'Meeting not found.'}});if(!meeting.endedAt&&!['completed','failed','processing'].includes(meeting.status))return res.status(409).json({error:{code:'meeting_active',message:'MOM can be generated after the meeting ends.'}});await repository.updateMeeting(meeting.id,{status:'processing',failureCode:undefined,failureMessage:undefined});const enqueued=await enqueue('finalize-meeting',{meetingId:meeting.id});if(!enqueued)finalizeMeetingDirectly(meeting.id).catch(err=>logger.warn({meetingId:meeting.id,error:err instanceof Error?err.message:String(err)},'finalizeMeetingDirectly failed'));res.status(202).json({status:'processing'})});
+app.post('/api/meetings/:id/regenerate-mom',requireUser,async(req,res)=>{const meeting=await repository.getMeeting(String(req.params.id),res.locals.user);if(!meeting)return res.status(404).json({error:{code:'not_found',message:'Meeting not found.'}});if(!meeting.endedAt&&!['completed','failed','processing'].includes(meeting.status))return res.status(409).json({error:{code:'meeting_active',message:'MOM can be generated after the meeting ends.'}});await repository.updateMeeting(meeting.id,{status:'processing',failureCode:undefined,failureMessage:undefined});const enqueued=await enqueue('finalize-meeting',{meetingId:meeting.id,regenerate:true});if(!enqueued)finalizeMeetingDirectly(meeting.id,true).catch(err=>logger.warn({meetingId:meeting.id,error:err instanceof Error?err.message:String(err)},'finalizeMeetingDirectly failed'));res.status(202).json({status:'processing'})});
 app.put('/api/meetings/:id/mom',requireUser,async(req,res,next)=>{try{const meeting=await repository.getMeeting(String(req.params.id),res.locals.user);if(!meeting)return res.status(404).json({error:{code:'not_found',message:'Meeting not found.'}});const mom=momSchema.parse(req.body);await repository.saveMom(meeting.id,mom);await repository.audit((res.locals.user as User).id,meeting.id,'meeting.mom_edited');res.json({mom})}catch(error){next(error)}});
 function renderMomHtml(meeting:Meeting,showTopBar=true):string{
   const mom=meeting.mom??{summary:'',attendees:[],topics:[],decisions:[],actionItems:[],risks:[],openQuestions:[]};

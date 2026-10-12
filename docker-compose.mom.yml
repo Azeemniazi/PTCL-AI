@@ -9,7 +9,7 @@ services:
       - /opt/ai-stack/models/mom:/models:ro
     command:
       - -m
-      - /models/Qwen2.5-7B-Instruct-Q4_K_M.gguf
+      - /models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf
       - -c
       - '8192'
       - -np
@@ -21,9 +21,9 @@ services:
       - --port
       - '8080'
       - -t
-      - '8'
+      - '12'
       - -tb
-      - '8'
+      - '16'
       - -fa
       - 'on'
       - -cb
