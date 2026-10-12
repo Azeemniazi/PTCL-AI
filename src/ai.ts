@@ -29,24 +29,27 @@ function localMom(transcript:TranscriptSegment[],attendees:string[]):Mom{
 }
 export async function generateMom(transcript:TranscriptSegment[],attendees:string[]):Promise<Mom>{if(!config.ai.baseUrl)return localMom(transcript,attendees);const evidence=transcript.map(s=>({startMs:s.startMs,endMs:s.endMs,speaker:s.speakerName??'Unknown speaker',text:s.text}));const body={model:config.ai.momModel,temperature:0.1,response_format:{type:'json_schema',json_schema:{name:'meeting_minutes',strict:true,schema}},messages:[{role:'system',content:'You are an expert executive meeting secretary. Create comprehensive, factual Minutes of Meeting from the transcript. The transcript may contain English, Urdu, or mixed Pakistani English and Urdu. Understand both languages accurately. Identify the overarching executive summary, key discussion topics, explicit decisions, action items with owners and due dates, risks, and open questions. Never invent names, owners, dates, or decisions. Omit unsupported details and attach the nearest transcript timestamp as evidence.'},{role:'user',content:JSON.stringify({attendees,transcript:evidence})}]};let last:unknown;for(let attempt=0;attempt<2;attempt++){const response=await aiFetch('/chat/completions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});const payload:any=await response.json();const raw=payload.choices?.[0]?.message?.content;try{return momSchema.parse(typeof raw==='string'?JSON.parse(raw):raw)}catch(error){last=error}}throw new Error(`MOM response did not match the required schema: ${String(last)}`)}
 
+function selectRecentTranscript(clean:TranscriptSegment[]):string{
+  const startIdx=clean.length<=45?0:Math.floor((clean.length-30)/15)*15;
+  const recent=clean.slice(startIdx);
+  return recent.map(s=>`[${s.speakerName||'Participant'}]: ${s.text}`).join('\n');
+}
+
 function buildMeetingPrompt(meetingTitle:string,attendees:string[],transcriptText:string):string{
   return `You are an intelligent, executive AI Meeting Assistant for "${meetingTitle}".
 Attendees: ${attendees.length?attendees.join(', '):'Meeting participants'}.
 
-Below is the verified chronological meeting transcript:
+Formatting and Tone Instructions:
+1. Provide clear, well-structured, and concise executive responses using clean Markdown (**bold headings** and bullet points).
+2. Quote or attribute important statements to specific speakers.
+3. If the user asks "what is he saying?", "what are they talking about?", or asks for a summary, provide a structured breakdown of the discussion topics, who spoke, and key conclusions.
+4. If the transcript contains Urdu, Pakistani English, or Roman Urdu, translate and interpret it into natural, professional English or clear Roman text. Never use Hindi / Devanagari script.
+5. If a requested detail was not discussed or is absent from the transcript, state what is known from the meeting versus what was not mentioned.
+
+Verified chronological meeting transcript:
 ---
 ${transcriptText||'(No speech recorded yet in this meeting.)'}
----
-
-Formatting and Tone Instructions:
-1. Provide comprehensive, thorough, and well-structured responses. Explain details and context clearly rather than giving brief one-sentence answers.
-2. Format your response cleanly using structured Markdown:
-   - Use bold section headings (e.g., **Summary**, **Key Discussion Points**, **Action Items**, **Participant Remarks**)
-   - Use bullet points with bold keywords
-   - Quote or attribute important statements to specific speakers
-3. If the user asks "what is he saying?", "what are they talking about?", or asks for a summary, provide a comprehensive breakdown of the discussion topics, who spoke, and what conclusions were reached.
-4. If the transcript contains Urdu, Pakistani English, or Roman Urdu, translate and interpret it into natural, professional English or clear Roman text. Never use Hindi / Devanagari script.
-5. If a requested detail was not discussed or is absent from the transcript, explicitly state what is known from the meeting versus what was not mentioned.`;
+---`;
 }
 
 export async function askMeetingAssistant(transcript:TranscriptSegment[],attendees:string[],question:string,meetingTitle='Meeting'):Promise<string>{
@@ -56,14 +59,14 @@ export async function askMeetingAssistant(transcript:TranscriptSegment[],attende
     if(matches.length)return `Relevant excerpt found:\n${matches.slice(-5).map(s=>`[${s.speakerName||'Speaker'}]: "${s.text}"`).join('\n')}`;
     return `Currently recording "${meetingTitle}". Latest transcript has ${clean.length} segments.`;
   }
-  const recent=clean.slice(-60);
-  const transcriptText=recent.map(s=>`[${s.speakerName||'Participant'}]: ${s.text}`).join('\n');
+  const transcriptText=selectRecentTranscript(clean);
   const systemPrompt=buildMeetingPrompt(meetingTitle,attendees,transcriptText);
 
   const body={
     model:config.ai.momModel||'qwen2.5-7b',
-    temperature:0.3,
-    max_tokens:1500,
+    temperature:0.2,
+    max_tokens:600,
+    cache_prompt:true,
     messages:[
       {role:'system',content:systemPrompt},
       {role:'user',content:question}
@@ -83,8 +86,7 @@ export async function* askMeetingAssistantStream(transcript:TranscriptSegment[],
     yield fallback;
     return;
   }
-  const recent=clean.slice(-60);
-  const transcriptText=recent.map(s=>`[${s.speakerName||'Participant'}]: ${s.text}`).join('\n');
+  const transcriptText=selectRecentTranscript(clean);
   const systemPrompt=buildMeetingPrompt(meetingTitle,attendees,transcriptText);
 
   const base=config.ai.baseUrl.replace(/\/+$/, '');
@@ -99,8 +101,9 @@ export async function* askMeetingAssistantStream(transcript:TranscriptSegment[],
     },
     body:JSON.stringify({
       model:config.ai.momModel||'qwen2.5-7b',
-      temperature:0.3,
-      max_tokens:1500,
+      temperature:0.2,
+      max_tokens:600,
+      cache_prompt:true,
       stream:true,
       messages:[
         {role:'system',content:systemPrompt},

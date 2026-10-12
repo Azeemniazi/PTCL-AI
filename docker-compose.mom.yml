@@ -12,14 +12,18 @@ services:
       - /models/Qwen2.5-7B-Instruct-Q4_K_M.gguf
       - -c
       - '8192'
+      - -np
+      - '1'
+      - --cache-reuse
+      - '256'
       - --host
       - 0.0.0.0
       - --port
       - '8080'
       - -t
-      - '28'
+      - '8'
       - -tb
-      - '28'
+      - '8'
       - -fa
       - 'on'
       - -cb

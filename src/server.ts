@@ -68,12 +68,13 @@ app.post('/api/chat',requireUser,async(req,res)=>{
         headers:{'content-type':'application/json','x-api-key':config.ai.apiKey,authorization:`Bearer ${config.ai.apiKey}`},
         body:JSON.stringify({
           model:config.ai.momModel||'qwen2.5-7b',
+          cache_prompt:true,
           stream:true,
           messages:[
             {role:'system',content:systemPrompt},
             {role:'user',content:cleanMessage}
           ],
-          max_tokens:Number(max_tokens)||1500
+          max_tokens:Number(max_tokens)||700
         })
       });
       if(!upstream.ok||!upstream.body){
@@ -105,11 +106,12 @@ app.post('/api/chat',requireUser,async(req,res)=>{
       headers:{'content-type':'application/json','x-api-key':config.ai.apiKey,authorization:`Bearer ${config.ai.apiKey}`},
       body:JSON.stringify({
         model:config.ai.momModel||'qwen2.5-7b',
+        cache_prompt:true,
         messages:[
           {role:'system',content:systemPrompt},
           {role:'user',content:cleanMessage}
         ],
-        max_tokens:Number(max_tokens)||1500
+        max_tokens:Number(max_tokens)||700
       })
     });
     if(!upstream.ok){
