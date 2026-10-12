@@ -38,10 +38,10 @@ export async function waitForLiveChatIdle(maxWaitMs = 15_000): Promise<void> {
 }
 
 export function resolveReplyMaxTokens(prompt: string, requestedMax?: number): number {
-  const wantsLong = /\b(detailed|in[- ]depth|comprehensive|elaborate|full|long|step[- ]by[- ]step|complete|all details|thorough|everything|exhaustiv)\b/i.test(prompt);
-  if (wantsLong) return requestedMax && requestedMax > 400 ? Math.min(requestedMax, 1200) : 750;
-  if (requestedMax && requestedMax <= 400) return requestedMax;
-  return 350;
+  const wantsLong = /\b(detailed|in[- ]depth|comprehensive|elaborate|full|long|step[- ]by[- ]step|complete|all details|thorough|everything|exhaustiv|report|code|script|document)\b/i.test(prompt);
+  if (wantsLong) return requestedMax && requestedMax > 1024 ? Math.min(requestedMax, 2048) : 2048;
+  if (requestedMax && requestedMax >= 512) return Math.min(requestedMax, 2048);
+  return 1024;
 }
 
 function fmtTime(ms: number): string {
@@ -104,7 +104,7 @@ export async function generateMom(transcript:TranscriptSegment[],attendees:strin
   const body={
     model:config.ai.momModel,
     temperature:0.1,
-    max_tokens:800,
+    max_tokens:1500,
     cache_prompt:true,
     response_format:{type:'json_schema',json_schema:{name:'meeting_minutes',strict:true,schema}},
     messages:[
@@ -163,7 +163,7 @@ function buildMeetingPrompt(meetingTitle:string,attendees:string[],transcriptTex
 Attendees: ${attendees.length?attendees.join(', '):'Meeting participants'}.
 
 Formatting and Tone Instructions:
-1. Keep ordinary replies concise and direct (roughly 150-250 words) using clean Markdown (**bold headings** and bullet points), unless the user explicitly asks for a detailed breakdown.
+1. Always complete your thoughts, sentences, and bullet points fully—never stop mid-sentence. Keep standard answers focused and well-structured (around 150-300 words) using clean Markdown (**bold headings** and bullet points), or provide a full, detailed breakdown when requested.
 2. Quote or attribute important statements to specific speakers with their [mm:ss] timestamps when available.
 3. If the user asks "what is he saying?", "what are they talking about?", or asks for a summary, provide a structured breakdown of the discussion topics, who spoke, and key conclusions.
 4. If the transcript contains Urdu, Pakistani English, or Roman Urdu, translate and interpret it into natural, professional English or clear Roman text. Never use Hindi / Devanagari script.

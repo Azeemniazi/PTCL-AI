@@ -52,12 +52,12 @@ test('deduplicates progressive transcript windows and repetition loops in reposi
   assert.equal(detail.transcript[1].text,'Agreed, lets move forward.');
 });
 
-test('caps ordinary replies to 350 tokens and allows longer replies when requested', async () => {
+test('sets generous safety token ceilings so replies never cut off mid-sentence', async () => {
   const { resolveReplyMaxTokens } = await import('../build/ai.js');
-  assert.equal(resolveReplyMaxTokens('What is the deadline?'), 350);
-  assert.equal(resolveReplyMaxTokens('Summarize what he said'), 350);
-  assert.equal(resolveReplyMaxTokens('Give me a detailed step-by-step architecture breakdown'), 750);
-  assert.equal(resolveReplyMaxTokens('Provide a comprehensive report', 900), 900);
+  assert.equal(resolveReplyMaxTokens('What is the deadline?'), 1024);
+  assert.equal(resolveReplyMaxTokens('Summarize what he said'), 1024);
+  assert.equal(resolveReplyMaxTokens('Give me a detailed step-by-step architecture breakdown'), 2048);
+  assert.equal(resolveReplyMaxTokens('Provide a comprehensive report', 1500), 1500);
 });
 
 test('consolidates adjacent speaker turns and compresses long transcripts for MOM', async () => {

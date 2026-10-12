@@ -60,7 +60,7 @@ app.post('/api/chat',requireUser,async(req,res)=>{
     const streamRequested=stream===true||req.query.stream==='true'||req.header('accept')?.includes('text/event-stream');
     const base=config.ai.baseUrl.replace(/\/+$/, '');
     const cleanUrl=base.endsWith('/v1')?`${base}/chat/completions`:`${base}/v1/chat/completions`;
-    const systemPrompt='You are CloudCore AI, an intelligent partner by PTCL Smart Cloud. Help users with enterprise questions, meeting intelligence, documents, and technical solutions. Keep ordinary replies concise and direct (roughly 150-250 words) using clean Markdown formatting with bolding and bullet points, unless the user explicitly requests a detailed or comprehensive response.';
+    const systemPrompt='You are CloudCore AI, an intelligent partner by PTCL Smart Cloud. Help users with enterprise questions, meeting intelligence, documents, and technical solutions. Always complete your thoughts, sentences, and sections fully—never cut off mid-sentence. Keep standard replies focused and well-structured (around 150-300 words) using clean Markdown formatting with bolding and bullet points, or provide a full, comprehensive response when the user asks for detail.';
     const effectiveMaxTokens=resolveReplyMaxTokens(cleanMessage,typeof max_tokens==='number'?max_tokens:undefined);
 
     if(streamRequested){
