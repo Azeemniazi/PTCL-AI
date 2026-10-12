@@ -57,7 +57,9 @@ function refSyncMotion(){
   videos.forEach(video=>{
     refAttachLoopGuard(video);
     if(refMotionObserver&&!video.dataset.motionObserved){video.dataset.motionObserved='true';refMotionObserver.observe(video);}
-    const enabled=!refMotionQuery?.matches&&!document.hidden&&video.dataset.motionVisible!=='false';
+    const prefMode=(typeof userPrefs==='object'&&userPrefs&&userPrefs.motionMode)||'auto';
+    const reduced=prefMode==='off'?true:prefMode==='on'?false:Boolean(refMotionQuery?.matches);
+    const enabled=!reduced&&!document.hidden&&video.dataset.motionVisible!=='false';
     if(!enabled){video.pause();return;}
     video.muted=true;
     if(!video.getAttribute('src'))video.setAttribute('src',video.dataset.videoSrc);
@@ -127,7 +129,201 @@ function refMeetingPreview(m) {
 }
 function refSettings() {
   const u=appUser||{};
-  return `<div class="ref-page-heading"><h1>Settings</h1><p>Manage your account, preferences, and workspace.</p></div><nav class="ref-settings-tabs" aria-label="Settings sections"><button class="active" data-action="ref-settings-account">${icon('user')}Account</button><button data-action="ref-preferences">${icon('sliders')}Preferences</button><button data-action="ref-security">${icon('shield')}Security</button><button data-action="ref-integrations">${icon('link')}Integrations</button></nav><section class="panel ref-profile-panel"><div class="panel-heading"><span class="feature-icon">${icon('settings')}</span><div><h2>Profile</h2><p>Your personal information and role in CloudCore AI workspace.</p></div><button class="soft-button" data-action="profile">${icon('user')}View Profile</button></div><div class="ref-profile-identity"><span class="avatar">${esc((u.displayName||'U')[0])}</span><div><h2>${esc(u.displayName||'CloudCore user')}</h2><p>PTCL Smart Cloud</p></div></div><div class="ref-profile-fields">${[['Name',u.displayName],['Username',u.username],['Email',u.email||'Not provided'],['Role',u.role],['Workspace','CloudCore AI'],['Language','English']].map(([l,v])=>`<label><span>${l}</span><input readonly value="${esc(v||'Not provided')}" aria-label="${l}"></label>`).join('')}</div></section><section class="panel ref-workspace-details"><div class="panel-heading"><span class="feature-icon">${icon('building')}</span><div><h2>Workspace Details</h2><p>Information about your current workspace.</p></div></div><div class="ref-profile-fields"><label><span>Workspace Name</span><input readonly value="CloudCore AI Workspace"></label><label><span>Meeting Capacity</span><input readonly value="${meetingsState.capacity.maximum} concurrent meetings"></label><label><span>Account</span><input readonly value="${esc(u.username||u.displayName||'Workspace member')}"></label><label><span>Access</span><input readonly value="${esc(u.role||'Member')}"></label></div>${['dev','admin'].includes(u.role)?'<button class="outline" data-action="ref-users">'+icon('users')+' Manage workspace users</button>':''}</section>`;
+  const isPrivileged=['dev','admin'].includes(u.role);
+  const curTab=typeof settingsTab==='string'?settingsTab:'account';
+  const prefs=(typeof userPrefs==='object'&&userPrefs)||{motionMode:'auto',responseStyle:'balanced',autoRag:'on',notifications:'on'};
+  const nav=`<div class="ref-page-heading"><h1>Settings</h1><p>Manage your account, preferences, security, and workspace integrations.</p></div><nav class="ref-settings-tabs" role="tablist" aria-label="Settings sections"><button type="button" role="tab" aria-selected="${curTab==='account'}" class="${curTab==='account'?'active':''}" data-action="ref-settings-tab" data-tab="account">${icon('user')}Account</button><button type="button" role="tab" aria-selected="${curTab==='preferences'}" class="${curTab==='preferences'?'active':''}" data-action="ref-settings-tab" data-tab="preferences">${icon('sliders')}Preferences</button><button type="button" role="tab" aria-selected="${curTab==='security'}" class="${curTab==='security'?'active':''}" data-action="ref-settings-tab" data-tab="security">${icon('shield')}${isPrivileged?'Security & Users':'Security'}</button><button type="button" role="tab" aria-selected="${curTab==='integrations'}" class="${curTab==='integrations'?'active':''}" data-action="ref-settings-tab" data-tab="integrations">${icon('link')}Integrations</button></nav>`;
+
+  if(curTab==='preferences'){
+    const totalMsgs=chats.reduce((acc,c)=>acc+(c.messages?.length||0),0);
+    return `${nav}
+      <section class="panel ref-profile-panel">
+        <div class="panel-heading"><span class="feature-icon">${icon('sliders')}</span><div><h2>Appearance & Motion</h2><p>Control workspace visual effects, animations, and notifications on this device.</p></div></div>
+        <div class="ref-pref-list">
+          <div class="ref-pref-row">
+            <div><b>Background Motion Animations</b><p>Control the looping ambient video in the sidebar and AI Assistant.</p></div>
+            <div class="ref-toggle-group" role="group" aria-label="Background motion mode">
+              <button type="button" class="${prefs.motionMode==='auto'?'active':''}" data-action="set-pref" data-key="motionMode" data-val="auto">System Default</button>
+              <button type="button" class="${prefs.motionMode==='on'?'active':''}" data-action="set-pref" data-key="motionMode" data-val="on">Always On</button>
+              <button type="button" class="${prefs.motionMode==='off'?'active':''}" data-action="set-pref" data-key="motionMode" data-val="off">Off (Static)</button>
+            </div>
+          </div>
+          <div class="ref-pref-row">
+            <div><b>Workspace Toast Alerts</b><p>Show non-blocking top-right status alerts when documents finish indexing or tasks complete.</p></div>
+            <div class="ref-toggle-group" role="group" aria-label="Workspace toast alerts">
+              <button type="button" class="${prefs.notifications!=='off'?'active':''}" data-action="set-pref" data-key="notifications" data-val="on">Enabled</button>
+              <button type="button" class="${prefs.notifications==='off'?'active':''}" data-action="set-pref" data-key="notifications" data-val="off">Muted</button>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="panel ref-workspace-details">
+        <div class="panel-heading"><span class="feature-icon">${icon('spark')}</span><div><h2>AI Assistant Defaults</h2><p>Customize how CloudCore AI formats responses and grounds answers in your uploaded documents.</p></div></div>
+        <div class="ref-pref-list">
+          <div class="ref-pref-row">
+            <div><b>Default Response Style</b><p>Choose the level of detail for AI Assistant replies.</p></div>
+            <div class="ref-toggle-group" role="group" aria-label="Default response style">
+              <button type="button" class="${prefs.responseStyle==='concise'?'active':''}" data-action="set-pref" data-key="responseStyle" data-val="concise">Concise</button>
+              <button type="button" class="${(!prefs.responseStyle||prefs.responseStyle==='balanced')?'active':''}" data-action="set-pref" data-key="responseStyle" data-val="balanced">Balanced</button>
+              <button type="button" class="${prefs.responseStyle==='detailed'?'active':''}" data-action="set-pref" data-key="responseStyle" data-val="detailed">Executive Detail</button>
+            </div>
+          </div>
+          <div class="ref-pref-row">
+            <div><b>Automatic Document Grounding (RAG)</b><p>Automatically include relevant excerpts from your attached document when asking questions in chat.</p></div>
+            <div class="ref-toggle-group" role="group" aria-label="Automatic document grounding">
+              <button type="button" class="${prefs.autoRag!=='off'?'active':''}" data-action="set-pref" data-key="autoRag" data-val="on">Automatic</button>
+              <button type="button" class="${prefs.autoRag==='off'?'active':''}" data-action="set-pref" data-key="autoRag" data-val="off">Manual Only</button>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="panel ref-workspace-details">
+        <div class="panel-heading"><span class="feature-icon">${icon('history')}</span><div><h2>Local Data & Conversation Storage</h2><p>${chats.length} conversation${chats.length===1?'':'s'} (${totalMsgs} messages) saved on this device · ${docFile?`Active document: ${esc(docFile.name)}`:'No active document attached'}.</p></div></div>
+        <div class="ref-settings-actions">
+          <button type="button" class="outline" data-action="export-chats">${icon('download')} Export Chat History (.json)</button>
+          <button type="button" class="outline danger-outline" data-action="clear-all-chats">${icon('trash')} Clear All Local Conversations</button>
+        </div>
+      </section>`;
+  }
+
+  if(curTab==='security'){
+    const usersList=(typeof settingsUsersList!=='undefined'&&Array.isArray(settingsUsersList))?settingsUsersList:[];
+    return `${nav}
+      <section class="panel ref-profile-panel">
+        <div class="panel-heading"><span class="feature-icon">${icon('shield')}</span><div><h2>Change Your Password</h2><p>Update your personal account password. Minimum 6 characters required.</p></div></div>
+        <form id="settings-password-form" class="ref-settings-form">
+          <div id="settings-pw-err" class="login-alert" style="display:none;margin-bottom:12px;"></div>
+          <div class="ref-profile-fields">
+            <label><span>Current PW</span><input name="currentPassword" type="password" required placeholder="Enter current password"></label>
+            <label><span>New PW</span><input name="newPassword" type="password" minlength="6" required placeholder="At least 6 characters"></label>
+            <label><span>Confirm PW</span><input name="confirmPassword" type="password" minlength="6" required placeholder="Re-enter new password"></label>
+          </div>
+          <div class="ref-settings-actions"><button type="submit" class="primary">${icon('check')} Update Password</button></div>
+        </form>
+      </section>
+      <section class="panel ref-workspace-details">
+        <div class="panel-heading"><span class="feature-icon">${icon('lock')}</span><div><h2>Session & Security Posture</h2><p>Enterprise authentication and session controls active for your account.</p></div><button type="button" class="outline danger-outline" data-action="signout">${icon('logout')} Sign Out</button></div>
+        <div class="ref-profile-fields">
+          <label><span>Auth Mode</span><input readonly value="Role-Based Access Control (RBAC)"></label>
+          <label><span>Lockout Policy</span><input readonly value="6 failed attempts / 15m window"></label>
+          <label><span>Session Cookie</span><input readonly value="HttpOnly · SameSite=Lax · 8h TTL"></label>
+          <label><span>Password Status</span><input readonly value="${u.mustChangePassword?'Action Required (OTP)':'Verified & Active'}"></label>
+        </div>
+      </section>
+      ${isPrivileged?`
+      <section class="panel ref-workspace-details" id="settings-users-panel">
+        <div class="panel-heading"><span class="feature-icon">${icon('users')}</span><div><h2>Workspace User Management (${usersList.length})</h2><p>${u.role==='dev'?'As a Dev, you can provision Admin or User accounts and manage credentials.':'As an Admin, you can provision User accounts with one-time passwords.'}</p></div><button type="button" class="soft-button" data-action="refresh-settings-users">${icon('history')} Refresh Users</button></div>
+        <form id="settings-create-user-form" class="ref-create-user-box">
+          <h3>Create New User Account</h3>
+          <div id="settings-create-user-err" class="login-alert" style="display:none;margin-bottom:12px;"></div>
+          <div class="ref-profile-fields">
+            <label><span>Username</span><input name="username" type="text" pattern="[a-zA-Z0-9_.-]{3,30}" required placeholder="e.g. employee1"></label>
+            <label><span>Display Name</span><input name="displayName" type="text" required placeholder="e.g. Ali Ahmed"></label>
+            <label><span>Initial PW</span><input name="password" type="text" minlength="6" required placeholder="At least 6 characters"></label>
+            <label><span>Role</span>${u.role==='dev'?`<select name="role" class="ref-select"><option value="user">User (Standard)</option><option value="admin">Admin</option></select>`:`<input name="role" value="user" readonly>`}</label>
+          </div>
+          <div class="ref-settings-actions" style="justify-content:space-between;margin-top:14px;">
+            <label style="display:inline-flex;align-items:center;gap:8px;font-size:12px;color:#284336;cursor:pointer;">
+              <input type="checkbox" name="mustChangePassword" ${u.role==='admin'?'checked disabled':'checked'}>
+              <span>Require password change on first login (One-Time Password / OTP)</span>
+            </label>
+            <button type="submit" class="primary">${icon('plus')} Create Account</button>
+          </div>
+        </form>
+        <div class="ref-table-wrap" style="margin-top:16px;">
+          <table>
+            <thead><tr><th>Username</th><th>Display Name</th><th>Role</th><th>PW Status</th><th>Created</th><th>Actions</th></tr></thead>
+            <tbody>
+              ${usersList.length?usersList.map(item=>`<tr>
+                <td><b>${esc(item.username)}</b></td>
+                <td>${esc(item.displayName)}</td>
+                <td><span class="role-badge ${esc(item.role)}">${esc(item.role)}</span></td>
+                <td>${item.mustChangePassword?'<span style="color:#d97706;font-weight:600;">Must change (OTP)</span>':'<span style="color:#059669;font-weight:500;">Active</span>'}</td>
+                <td>${item.createdAt?new Date(item.createdAt).toLocaleDateString():'—'}</td>
+                <td>
+                  <div style="display:flex;gap:8px;align-items:center;">
+                    <button type="button" class="soft-button" data-action="settings-reset-pw" data-id="${esc(item.id)}" data-user="${esc(item.username)}">Reset PW</button>
+                    ${(item.role!=='dev'&&!(u.role==='admin'&&item.role==='admin')&&item.id!==u.id)?`<button type="button" class="icon-button danger" data-action="settings-delete-user" data-id="${esc(item.id)}" data-user="${esc(item.username)}" title="Delete user">${icon('trash')}</button>`:''}
+                  </div>
+                </td>
+              </tr>`).join(''):`<tr><td colspan="6" style="text-align:center;color:#647087;padding:18px;">Loading workspace users…</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </section>`:''}`;
+  }
+
+  if(curTab==='integrations'){
+    const health=(typeof aiHealthStatus==='object'&&aiHealthStatus)||null;
+    const aiConnected=health?Boolean(health.connected):true;
+    const chatModel=health?.services?.chatModel||health?.model||'Qwen3.5-27B';
+    const visionModel=health?.services?.visionModel||'Qwen2.5-VL-7B-Instruct';
+    const botName=health?.services?.botName||'PTCL AI NOTETAKER';
+    return `${nav}
+      <section class="panel ref-profile-panel">
+        <div class="panel-heading"><span class="feature-icon">${icon('link')}</span><div><h2>Connected Workspace Services</h2><p>Live status of CloudCore AI engines, Microsoft Teams meeting bot, and enterprise intelligence pipelines.</p></div><button type="button" class="soft-button" data-action="refresh-integrations">${icon('history')} Refresh Status</button></div>
+        <div class="ref-integration-grid">
+          <article class="ref-status-card">
+            <div class="ref-status-top"><span class="mini-icon">${icon('chat')}</span><span class="ref-status-badge ${aiConnected?'online':'offline'}">${aiConnected?'Connected':'Checking / Offline'}</span></div>
+            <h3>Conversational AI & MOM Engine</h3>
+            <p>Primary reasoning and structured meeting-minutes model for PTCL Smart Cloud.</p>
+            <small>Model: <b>${esc(chatModel)}</b> · Context: 8,192 tokens</small>
+            <div class="ref-status-actions"><a class="outline" href="#assistant">Open AI Assistant ${icon('arrow')}</a></div>
+          </article>
+          <article class="ref-status-card">
+            <div class="ref-status-top"><span class="mini-icon">${icon('video')}</span><span class="ref-status-badge online">${meetingsState.capacity.active||0} / ${meetingsState.capacity.maximum} Active</span></div>
+            <h3>Microsoft Teams Intelligence</h3>
+            <p>Automated live meeting bot, Whisper speech transcription, speaker attribution, and executive MOM.</p>
+            <small>Bot Identity: <b>${esc(botName)}</b></small>
+            <div class="ref-status-actions"><a class="outline" href="#meetings">Open Meetings AI ${icon('arrow')}</a></div>
+          </article>
+          <article class="ref-status-card">
+            <div class="ref-status-top"><span class="mini-icon">${icon('file')}</span><span class="ref-status-badge online">${docFile?(docIngested?'Document Indexed':'Document Selected'):'Ready'}</span></div>
+            <h3>Enterprise Document RAG</h3>
+            <p>Instant text extraction and context-window-safe semantic chunking for uploaded files.</p>
+            <small>${docFile?`Active file: <b>${esc(docFile.name)}</b>`:'Formats: PDF, DOCX, PPTX, XLSX, CSV, TXT'}</small>
+            <div class="ref-status-actions"><a class="outline" href="#documents">Open Document Insights ${icon('arrow')}</a></div>
+          </article>
+          <article class="ref-status-card">
+            <div class="ref-status-top"><span class="mini-icon">${icon('image')}</span><span class="ref-status-badge online">Ready</span></div>
+            <h3>Vision AI & Optical Character Recognition</h3>
+            <p>Visual inspection for telecom infrastructure, diagrams, satellite imagery, and OCR extraction.</p>
+            <small>Model: <b>${esc(visionModel)}</b></small>
+            <div class="ref-status-actions"><a class="outline" href="#images">Open Image Analysis ${icon('arrow')}</a></div>
+          </article>
+        </div>
+      </section>`;
+  }
+
+  return `${nav}
+    <section class="panel ref-profile-panel">
+      <div class="panel-heading"><span class="feature-icon">${icon('settings')}</span><div><h2>Profile</h2><p>Your personal information and role in the CloudCore AI workspace.</p></div><button type="button" class="outline danger-outline" data-action="signout">${icon('logout')} Sign Out</button></div>
+      <div class="ref-profile-identity"><span class="avatar">${esc((u.displayName||'U')[0])}</span><div><h2>${esc(u.displayName||'CloudCore user')}</h2><p>PTCL Smart Cloud · <span class="role-badge ${esc(u.role||'user')}">${esc(u.role||'user')}</span></p></div></div>
+      <form id="settings-profile-form">
+        <div class="ref-profile-fields">
+          <label><span>Name</span><input name="displayName" required minlength="2" maxlength="50" value="${esc(u.displayName||'')}" aria-label="Name"></label>
+          <label><span>Username</span><input readonly value="${esc(u.username||'Not provided')}" aria-label="Username"></label>
+          <label><span>Email</span><input name="email" type="email" maxlength="100" value="${esc(u.email||'')}" placeholder="name@ptcl.net.pk" aria-label="Email"></label>
+          <label><span>Role</span><input readonly value="${esc(u.role||'Member')}" aria-label="Role"></label>
+          <label><span>Workspace</span><input readonly value="CloudCore AI" aria-label="Workspace"></label>
+          <label><span>Time Zone</span><input readonly value="Asia/Karachi (PKT)" aria-label="Time Zone"></label>
+        </div>
+        <div class="ref-settings-actions"><button type="submit" class="primary">${icon('check')} Save Profile Changes</button></div>
+      </form>
+    </section>
+    <section class="panel ref-workspace-details">
+      <div class="panel-heading"><span class="feature-icon">${icon('building')}</span><div><h2>Workspace Details</h2><p>Information about your current PTCL Smart Cloud workspace and capacity.</p></div></div>
+      <div class="ref-profile-fields">
+        <label><span>Workspace Name</span><input readonly value="CloudCore AI Workspace"></label>
+        <label><span>Meeting Capacity</span><input readonly value="${meetingsState.capacity.active||0} active / ${meetingsState.capacity.maximum} concurrent meetings"></label>
+        <label><span>Account</span><input readonly value="${esc(u.username||u.displayName||'Workspace member')}"></label>
+        <label><span>Access</span><input readonly value="${esc(u.role||'Member')}"></label>
+      </div>
+      <div class="ref-settings-actions">
+        <button type="button" class="outline" data-action="ref-settings-tab" data-tab="security">${icon('shield')} Security & Password</button>
+        ${isPrivileged?`<button type="button" class="outline" data-action="ref-users">${icon('users')} Manage workspace users</button>`:''}
+      </div>
+    </section>`;
 }
 function refHandleAction(a,el) {
   if(a==='ref-preview-tab'){meetingTab=el.dataset.tab;meetingsState.detail=null;location.hash=`meetings/${el.dataset.id}`;refreshMeetings(true);return true;}
@@ -136,15 +332,17 @@ function refHandleAction(a,el) {
   if(a==='ref-example-document'){modal(`<h2>Example document analysis</h2><span class="example-label">EXAMPLE ANALYSIS</span><div class="tabs" role="tablist" aria-label="Document analysis">${['Summary','Key Points','Actions'].map(t=>`<button role="tab" aria-selected="${docTab===t}" data-action="ref-example-tab" data-tab="${t}" class="${docTab===t?'active':''}">${t}</button>`).join('')}</div><p>${docTab==='Summary'?sampleSummary:docTab==='Key Points'?'Enterprise connectivity, cloud deployment options and managed support.':'Review deployment requirements, compare connectivity options and confirm service expectations.'}</p>`);return true;}
   if(a==='ref-example-tab'){docTab=el.dataset.tab;refHandleAction('ref-example-document',el);return true;}
   if(a==='ref-view-image'){modal(`<h2>Selected image</h2><img class="ref-full-image" src="${esc(imageURL)}" alt="Selected image">`);return true;}
-  if(a==='ref-settings-account'){route();return true;}
-  if(a==='ref-security'){openSettingsModal('profile');return true;}
-  if(a==='ref-users'){openSettingsModal('users');return true;}
-  if(a==='ref-preferences'){modal('<h2>Preferences</h2><p>Your workspace follows this device’s accessibility preferences, including reduced motion. Conversations are saved locally on this device.</p>');return true;}
-  if(a==='ref-integrations'){modal('<h2>Workspace integrations</h2><p>Teams meetings, document analysis and image analysis use the services configured by your workspace administrator.</p><a class="outline" href="#meetings">Open Meeting Intelligence</a>');return true;}
+  if(a==='ref-settings-tab'){if(typeof switchSettingsTab==='function')switchSettingsTab(el.dataset.tab||'account');return true;}
+  if(a==='ref-settings-account'){if(typeof switchSettingsTab==='function')switchSettingsTab('account');return true;}
+  if(a==='ref-preferences'){if(typeof switchSettingsTab==='function')switchSettingsTab('preferences');return true;}
+  if(a==='ref-security'){if(typeof switchSettingsTab==='function')switchSettingsTab('security');return true;}
+  if(a==='ref-integrations'){if(typeof switchSettingsTab==='function')switchSettingsTab('integrations');return true;}
+  if(a==='ref-users'){if(typeof switchSettingsTab==='function')switchSettingsTab('security',true);return true;}
   return false;
 }
 function refBind() {
   refSyncMotion();
   const search=$('#ref-document-search');if(search)search.oninput=e=>{const q=e.target.value.toLowerCase();document.querySelectorAll('[data-document-name]').forEach(row=>row.hidden=!row.dataset.documentName.includes(q));};
   const meetingsSearch=$('#ref-meeting-search');if(meetingsSearch)meetingsSearch.oninput=e=>{const q=e.target.value.toLowerCase();document.querySelectorAll('.meeting-row').forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(q));};
+  if(typeof bindSettingsForms==='function')bindSettingsForms();
 }

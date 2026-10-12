@@ -75,7 +75,15 @@ test('enforces user management lifecycle and role rules in repository', async ()
   assert.ok(afterRestart, 'Created user should survive server restart');
   assert.equal(await verifyPassword('permanentPass456', afterRestart.passwordHash, afterRestart.salt), true);
 
+  // Update user profile (displayName and email)
+  await repo.updateUserProfile(user.id, { displayName: 'Updated Worker', email: 'worker@ptcl.net.pk' });
+  const profileUpdated = await repo.findUserById(user.id);
+  assert.ok(profileUpdated);
+  assert.equal(profileUpdated.displayName, 'Updated Worker');
+  assert.equal(profileUpdated.email, 'worker@ptcl.net.pk');
+
   // Delete user
   await repo.deleteUser(user.id);
   assert.equal(await repo.findUserById(user.id), undefined);
 });
+

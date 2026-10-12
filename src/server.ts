@@ -53,6 +53,27 @@ const apiLimit=rateLimit({windowMs:60_000,limit:120,standardHeaders:true,legacyH
 app.get('/healthz',(_req,res)=>res.json({status:'ok'}));
 app.get('/readyz',async(_req,res)=>{try{await repository.healthy();if(redisConnection)await redisConnection.ping();res.json({status:'ready'})}catch{res.status(503).json({status:'not_ready'})}});
 app.get('/api/me',async(req,res)=>{if(!req.session.user)return res.json({authenticated:false,user:null,authMode:config.authMode});return res.json({authenticated:true,user:req.session.user,authMode:config.authMode,capacity:{active:await repository.activeCount(),maximum:config.maxActiveMeetings}})});
+app.patch('/api/me/profile',requireUser,async(req,res)=>{
+  try{
+    const actor=req.session.user!;
+    const rawName=typeof req.body?.displayName==='string'?req.body.displayName.trim():'';
+    const rawEmail=typeof req.body?.email==='string'?req.body.email.trim():'';
+    const cleanName=sanitizePrompt(rawName).slice(0,50);
+    if(cleanName.length<2)return res.status(400).json({error:{code:'invalid_display_name',message:'Display name must be between 2 and 50 characters.'}});
+    if(rawEmail&&(rawEmail.length>100||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail))){
+      return res.status(400).json({error:{code:'invalid_email',message:'Please enter a valid email address.'}});
+    }
+    const updated=await repository.updateUserProfile(actor.id,{displayName:cleanName,email:rawEmail});
+    if(!updated)return res.status(404).json({error:{code:'user_not_found',message:'User account not found.'}});
+    req.session.user={...actor,displayName:updated.displayName,email:updated.email};
+    await new Promise<void>((resolve,reject)=>req.session.save(err=>err?reject(err):resolve()));
+    await repository.audit(actor.id,undefined,'user.profile_updated',{displayName:updated.displayName,email:updated.email});
+    return res.json({status:'ok',user:req.session.user});
+  }catch(error){
+    console.error('Error updating profile:',error);
+    return res.status(500).json({error:{code:'internal_error',message:'Failed to update profile.'}});
+  }
+});
 
 app.get('/api/admin/users',requireRole(['dev','admin']),async(req,res)=>{try{const actor=req.session.user!;const allUsers=await repository.listUsers();const users=actor.role==='dev'?allUsers:allUsers.filter(u=>u.role==='user'||u.role==='member');return res.json({users})}catch(error){return res.status(500).json({error:{code:'internal_error',message:'Failed to list users.'}})}});
 app.post('/api/admin/users',requireRole(['dev','admin']),async(req,res)=>{try{const actor=req.session.user!;const{username,password,displayName,role}=req.body??{};if(!username||typeof username!=='string'||!/^[a-zA-Z0-9_.-]{3,30}$/.test(username.trim()))return res.status(400).json({error:{code:'invalid_username',message:'Username must be 3-30 alphanumeric characters (or _.-).'}});if(!password||typeof password!=='string'||password.length<6)return res.status(400).json({error:{code:'invalid_password',message:'Password must be at least 6 characters.'}});const cleanDisplay=sanitizePrompt(typeof displayName==='string'&&displayName.trim()?displayName.trim():username.trim()).slice(0,50);let targetRole:Role='user';let mustChangePassword=true;if(actor.role==='admin'){targetRole='user';mustChangePassword=true}else if(actor.role==='dev'){if(role==='admin'||role==='user')targetRole=role;mustChangePassword=req.body.mustChangePassword!==undefined?Boolean(req.body.mustChangePassword):(targetRole==='user')}const existing=await repository.findUserByUsername(username);if(existing)return res.status(409).json({error:{code:'user_exists',message:`User '${username}' already exists.`}});const hashed=await hashPassword(password);const created=await repository.createUser({username:username.trim().toLowerCase(),passwordHash:hashed.hash,salt:hashed.salt,displayName:cleanDisplay,role:targetRole,mustChangePassword});return res.json({status:'ok',user:created})}catch(error){console.error('Error creating user:',error);return res.status(500).json({error:{code:'internal_error',message:'Failed to create user.'}})}});
@@ -60,15 +81,22 @@ app.delete('/api/admin/users/:id',requireRole(['dev','admin']),async(req,res)=>{
 app.post('/api/admin/users/:id/reset-password',requireRole(['dev','admin']),async(req,res)=>{try{const actor=req.session.user!;const targetId=String(req.params.id);const{newPassword}=req.body??{};if(!newPassword||typeof newPassword!=='string'||newPassword.length<6)return res.status(400).json({error:{code:'invalid_password',message:'Password must be at least 6 characters.'}});const target=await repository.findUserById(targetId);if(!target)return res.status(404).json({error:{code:'user_not_found',message:'User not found.'}});if(target.role==='dev'&&actor.role!=='dev')return res.status(403).json({error:{code:'forbidden',message:'Only devs can reset dev account passwords.'}});if(actor.role==='admin'&&target.role!=='user'&&target.role!=='member')return res.status(403).json({error:{code:'forbidden',message:'Admins can only reset passwords for regular user accounts.'}});const hashed=await hashPassword(newPassword);const mustChange=actor.role==='admin'?true:Boolean(req.body.mustChangePassword??true);await repository.updateUserPassword(target.id,hashed.hash,hashed.salt,mustChange);return res.json({status:'ok',message:'Password updated successfully.'})}catch(error){console.error('Error resetting password:',error);return res.status(500).json({error:{code:'internal_error',message:'Failed to reset password.'}})}});
 
 app.get('/api/ai/health',requireUser,async(_req,res)=>{
-  if(!config.ai.baseUrl)return res.json({connected:false,message:'AI_BASE_URL is not configured.'});
+  const services={
+    chatModel:config.ai.momModel,
+    visionModel:process.env.VISION_MODEL||'Qwen2.5-VL-7B-Instruct',
+    botName:TEAMS_BOT_NAME,
+    authMode:config.authMode,
+    maxActiveMeetings:config.maxActiveMeetings
+  };
+  if(!config.ai.baseUrl)return res.json({connected:false,message:'AI_BASE_URL is not configured.',services});
   try{
     const controller=new AbortController(),t=setTimeout(()=>controller.abort(),5000);
     const upstream=await fetch(buildAiUrl('/health',true),{headers:buildAiHeaders(),signal:controller.signal});
     clearTimeout(t);
     const data:any=await upstream.json().catch(()=>({}));
-    return res.json({connected:upstream.ok,data,model:config.ai.momModel});
+    return res.json({connected:upstream.ok,data,model:config.ai.momModel,services});
   }catch(error){
-    return res.json({connected:false,message:error instanceof Error?error.message:String(error)});
+    return res.json({connected:false,message:error instanceof Error?error.message:String(error),services});
   }
 });
 const userDocuments = new Map<string, { filename: string; content: string; uploadedAt: string }>();

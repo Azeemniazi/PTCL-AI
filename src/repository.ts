@@ -314,6 +314,22 @@ export class Repository {
     );
   }
 
+  async updateUserProfile(id: string, input: { displayName: string; email: string }): Promise<User | undefined> {
+    if (!this.pool) {
+      const u = this.users.get(id);
+      if (!u) return undefined;
+      u.displayName = input.displayName;
+      u.email = input.email;
+      u.updatedAt = new Date().toISOString();
+      return userRow(u);
+    }
+    const q = await this.pool.query(
+      'UPDATE users SET display_name = $2, email = $3, updated_at = now() WHERE id = $1 RETURNING *',
+      [id, input.displayName, input.email]
+    );
+    return q.rows[0] ? userRow(q.rows[0]) : undefined;
+  }
+
   async deleteUser(id: string): Promise<void> {
     const dev = await this.findUserByUsername('azeemniazi');
     if (!this.pool) {
