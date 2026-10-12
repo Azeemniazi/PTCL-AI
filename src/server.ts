@@ -725,7 +725,7 @@ app.use(express.static(root,{
   index:'index.html',
   maxAge:0,
   setHeaders:(res,filePath)=>{
-    if(filePath.endsWith('.html')||filePath.endsWith('.js')||filePath.endsWith('.css')){
+    if(filePath.endsWith('.html')||filePath.endsWith('.js')||filePath.endsWith('.css')||filePath.endsWith('.mp4')){
       res.setHeader('Cache-Control','no-cache, no-store, must-revalidate');
       res.setHeader('Pragma','no-cache');
       res.setHeader('Expires','0');

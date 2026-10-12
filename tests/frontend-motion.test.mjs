@@ -39,3 +39,29 @@ test('background markup uses silent looping decorative video with a still fallba
   assert.match(markup,/autoplay muted loop playsinline/);
   assert.match(markup,/aria-hidden="true" tabindex="-1"/);
 });
+test('re-rendering a workspace view reuses the live playing sidebar video without pausing or resetting it',()=>{
+  const f=fixture();
+  f.video.className='ref-background-video ref-sidebar-video';
+  f.video.replaceWith=function(){};
+  f.sync();
+  assert.equal(f.video.paused,false);
+  assert.equal(f.video.plays,1);
+  let replacedWith=null;
+  const freshPlaceholder={
+    className:'ref-background-video ref-sidebar-video',
+    dataset:{videoSrc:'assets/sidebar-motion.mp4'},
+    attributes:{},
+    paused:true,
+    getAttribute(name){return this.attributes[name];},
+    setAttribute(name,value){this.attributes[name]=value;},
+    replaceWith(node){replacedWith=node;},
+    play(){return Promise.resolve();},
+    pause(){}
+  };
+  f.document.videos=[freshPlaceholder];
+  f.sync();
+  assert.equal(replacedWith,f.video);
+  assert.equal(f.video.pauses,0);
+  assert.equal(f.video.paused,false);
+});
+

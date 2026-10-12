@@ -4,7 +4,26 @@ function refVideoBackground(kind){
   const file=asset==='sidebar'?'sidebar-motion-slim':'assistant-motion';
   return `<video class="ref-background-video ref-${asset}-video" data-motion-background data-video-src="assets/${file}.mp4" poster="assets/${file}-poster.jpg" autoplay muted loop playsinline preload="none" disablepictureinpicture disableremoteplayback aria-hidden="true" tabindex="-1"></video>`;
 }
-let refMotionQuery=null,refMotionObserver=null,refMotionListenersReady=false,refMotionVideos=[];
+let refMotionQuery=null,refMotionObserver=null,refMotionListenersReady=false,refMotionVideos=[],refMotionCache=new Map();
+function refAttachLoopGuard(video){
+  if(video.dataset.motionLoopBound||typeof video.addEventListener!=='function')return;
+  video.dataset.motionLoopBound='true';
+  video.loop=true;
+  video.addEventListener('timeupdate',()=>{
+    if(video.duration>0.5&&video.currentTime>=video.duration-0.05){
+      video.currentTime=0.001;
+      if(video.paused&&!refMotionQuery?.matches&&!document.hidden&&video.dataset.motionVisible!=='false'){
+        const p=video.play();if(p?.catch)p.catch(()=>{});
+      }
+    }
+  });
+  video.addEventListener('ended',()=>{
+    video.currentTime=0.001;
+    if(!refMotionQuery?.matches&&!document.hidden&&video.dataset.motionVisible!=='false'){
+      const p=video.play();if(p?.catch)p.catch(()=>{});
+    }
+  });
+}
 function refSyncMotion(){
   if(!refMotionListenersReady){
     refMotionListenersReady=true;
@@ -19,10 +38,24 @@ function refSyncMotion(){
       refSyncMotion();
     },{threshold:0.01});
   }
-  const videos=Array.from(document.querySelectorAll('[data-motion-background]'));
-  refMotionVideos.filter(video=>!videos.includes(video)).forEach(video=>{video.pause();refMotionObserver?.unobserve(video);});
+  const rawVideos=Array.from(document.querySelectorAll('[data-motion-background]'));
+  const videos=rawVideos.map(video=>{
+    const key=video.dataset?.videoSrc;
+    if(key&&typeof video.replaceWith==='function'){
+      const cached=refMotionCache.get(key);
+      if(cached&&cached!==video&&cached.getAttribute?.('src')){
+        cached.className=video.className;
+        video.replaceWith(cached);
+        return cached;
+      }
+      refMotionCache.set(key,video);
+    }
+    return video;
+  });
+  refMotionVideos.filter(video=>!videos.includes(video)).forEach(video=>{video.pause();refMotionObserver?.unobserve(video);if(video.dataset)delete video.dataset.motionObserved;});
   refMotionVideos=videos;
   videos.forEach(video=>{
+    refAttachLoopGuard(video);
     if(refMotionObserver&&!video.dataset.motionObserved){video.dataset.motionObserved='true';refMotionObserver.observe(video);}
     const enabled=!refMotionQuery?.matches&&!document.hidden&&video.dataset.motionVisible!=='false';
     if(!enabled){video.pause();return;}
