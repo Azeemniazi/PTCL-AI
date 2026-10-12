@@ -175,8 +175,49 @@ ${transcriptText||'(No speech recorded yet in this meeting.)'}
 ---`;
 }
 
+const meetingQaCache = new Map<string, string>();
+function getMeetingCacheKey(meetingTitle: string, clean: TranscriptSegment[], question: string): string {
+  const lastEnd = clean.at(-1)?.endMs ?? 0;
+  return `${meetingTitle}|${clean.length}|${lastEnd}|${question.trim().toLowerCase()}`;
+}
+function saveMeetingCache(key: string, answer: string): void {
+  if (meetingQaCache.size >= 100) {
+    const firstKey = meetingQaCache.keys().next().value;
+    if (firstKey) meetingQaCache.delete(firstKey);
+  }
+  meetingQaCache.set(key, answer);
+}
+
+export function tryFastMeetingAnswer(clean: TranscriptSegment[], attendees: string[], question: string): string | undefined {
+  const q = question.trim().toLowerCase();
+  if (/^who is speaking( in this meeting)?\??$/i.test(q) || /^who spoke( in this meeting)?\??$/i.test(q)) {
+    if (!clean.length) {
+      return attendees.length
+        ? `**Participants in Meeting:** ${attendees.join(', ')}\n\nNo spoken transcript segments have been recorded yet.`
+        : `No spoken transcript segments have been recorded yet.`;
+    }
+    const counts = new Map<string, { count: number; lastText: string; lastMs: number }>();
+    for (const seg of clean) {
+      const name = seg.speakerName || 'Participant';
+      const prev = counts.get(name);
+      counts.set(name, { count: (prev?.count ?? 0) + 1, lastText: seg.text.trim(), lastMs: seg.startMs });
+    }
+    const latest = clean.at(-1)!;
+    const lines = [...counts.entries()].map(([name, info]) => `- **${name}** (${info.count} segment${info.count === 1 ? '' : 's'}) — Latest at \`[${fmtTime(info.lastMs)}]\`: *"${info.lastText.slice(0, 140)}"*`);
+    return `**Active Speakers in This Meeting:**\n\n${lines.join('\n')}\n\n**Most Recent Speaker:** **${latest.speakerName || 'Participant'}** at \`[${fmtTime(latest.startMs)}]\`.`;
+  }
+  return undefined;
+}
+
 export async function askMeetingAssistant(transcript:TranscriptSegment[],attendees:string[],question:string,meetingTitle='Meeting'):Promise<string>{
   const clean=transcript.filter(s=>s.text.trim());
+  const fast = tryFastMeetingAnswer(clean, attendees, question);
+  if (fast) return fast;
+
+  const cacheKey = getMeetingCacheKey(meetingTitle, clean, question);
+  const cached = meetingQaCache.get(cacheKey);
+  if (cached) return cached;
+
   if(!config.ai.baseUrl){
     const matches=clean.filter(s=>question.toLowerCase().split(/\s+/).some(w=>w.length>3&&s.text.toLowerCase().includes(w)));
     if(matches.length)return `Relevant excerpt found:\n${matches.slice(-5).map(s=>`[${s.speakerName||'Speaker'}]: "${s.text}"`).join('\n')}`;
@@ -201,7 +242,9 @@ export async function askMeetingAssistant(transcript:TranscriptSegment[],attende
     const payload:any=await response.json();
     const answer=payload.choices?.[0]?.message?.content;
     if(!answer||typeof answer!=='string')throw new Error('No answer returned from AI model.');
-    return answer.trim();
+    const trimmed = answer.trim();
+    saveMeetingCache(cacheKey, trimmed);
+    return trimmed;
   } finally {
     endLiveChat();
   }
@@ -209,6 +252,17 @@ export async function askMeetingAssistant(transcript:TranscriptSegment[],attende
 
 export async function* askMeetingAssistantStream(transcript:TranscriptSegment[],attendees:string[],question:string,meetingTitle='Meeting'):AsyncGenerator<string,void,unknown>{
   const clean=transcript.filter(s=>s.text.trim());
+  const fast = tryFastMeetingAnswer(clean, attendees, question);
+  if (fast) {
+    yield fast;
+    return;
+  }
+  const cacheKey = getMeetingCacheKey(meetingTitle, clean, question);
+  const cached = meetingQaCache.get(cacheKey);
+  if (cached) {
+    yield cached;
+    return;
+  }
   if(!config.ai.baseUrl){
     const fallback=await askMeetingAssistant(transcript,attendees,question,meetingTitle);
     yield fallback;
@@ -250,6 +304,7 @@ export async function* askMeetingAssistantStream(transcript:TranscriptSegment[],
     const reader=response.body.getReader();
     const decoder=new TextDecoder();
     let buffer='';
+    let fullGenerated='';
 
     try{
       while(true){
@@ -262,18 +317,23 @@ export async function* askMeetingAssistantStream(transcript:TranscriptSegment[],
         for(const line of lines){
           const trimmed=line.trim();
           if(!trimmed||trimmed.startsWith(':'))continue;
-          if(trimmed==='data: [DONE]')return;
+          if(trimmed==='data: [DONE]'){
+            if(fullGenerated.trim())saveMeetingCache(cacheKey,fullGenerated.trim());
+            return;
+          }
           if(trimmed.startsWith('data: ')){
             try{
               const json=JSON.parse(trimmed.slice(6));
               const delta=json.choices?.[0]?.delta?.content;
               if(delta){
+                fullGenerated+=delta;
                 yield delta;
               }
             }catch{}
           }
         }
       }
+      if(fullGenerated.trim())saveMeetingCache(cacheKey,fullGenerated.trim());
     }finally{
       reader.releaseLock();
     }
@@ -281,5 +341,6 @@ export async function* askMeetingAssistantStream(transcript:TranscriptSegment[],
     endLiveChat();
   }
 }
+
 
 

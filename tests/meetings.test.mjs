@@ -97,3 +97,15 @@ test('tracks in-flight MOM jobs to prevent duplicate background finalization', a
   assert.equal(isMomInFlight('m-test'), false);
 });
 
+test('answers speaker breakdown queries instantaneously without LLM round-trip', async () => {
+  const { tryFastMeetingAnswer } = await import('../build/ai.js');
+  const segments = [
+    { id: '1', meetingId: 'm1', speakerName: 'Azeem Niazi', startMs: 15000, endMs: 20000, text: 'Welcome to the CloudCore review.', createdAt: '' },
+    { id: '2', meetingId: 'm1', speakerName: 'Muhammad Ali', startMs: 25000, endMs: 32000, text: 'Thank you, SLA metrics are green.', createdAt: '' }
+  ];
+  const ans = tryFastMeetingAnswer(segments, ['Azeem Niazi', 'Muhammad Ali'], 'Who is speaking in this meeting?');
+  assert.ok(ans && ans.includes('Azeem Niazi') && ans.includes('Muhammad Ali'));
+  assert.equal(tryFastMeetingAnswer(segments, ['Azeem Niazi'], 'Summarize discussion so far'), undefined);
+});
+
+

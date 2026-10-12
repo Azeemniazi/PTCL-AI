@@ -24,6 +24,10 @@ services:
       - '12'
       - -tb
       - '16'
+      - --prio
+      - '2'
+      - --prio-batch
+      - '2'
       - -fa
       - 'on'
       - -cb
