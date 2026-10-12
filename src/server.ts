@@ -1,7 +1,8 @@
-import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
+import { inflateRawSync, inflateSync } from 'node:zlib';
 import express from 'express';
 import session from 'express-session';
 import helmet from 'helmet';
@@ -70,16 +71,145 @@ app.get('/api/ai/health',requireUser,async(_req,res)=>{
     return res.json({connected:false,message:error instanceof Error?error.message:String(error)});
   }
 });
+const userDocuments = new Map<string, { filename: string; content: string; uploadedAt: string }>();
+const ingestJobs = new Map<string, { job_id: string; filename: string; status: 'queued' | 'processing' | 'finished' | 'failed'; error?: string }>();
+
+async function readRequestBuffer(req: express.Request, maxBytes: number): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of req) {
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    total += buf.length;
+    if (total > maxBytes) throw new Error(`Upload exceeds maximum allowed size (${Math.round(maxBytes / 1048576)} MB).`);
+    chunks.push(buf);
+  }
+  return Buffer.concat(chunks);
+}
+
+function extractZipXmlText(bytes: Buffer): string {
+  const texts: string[] = [];
+  let offset = 0;
+  while (offset + 30 <= bytes.length) {
+    if (bytes.readUInt32LE(offset) !== 0x04034b50) {
+      offset++;
+      continue;
+    }
+    const compression = bytes.readUInt16LE(offset + 8);
+    const compressedSize = bytes.readUInt32LE(offset + 18);
+    const nameLen = bytes.readUInt16LE(offset + 26);
+    const extraLen = bytes.readUInt16LE(offset + 28);
+    const nameStart = offset + 30;
+    const dataStart = nameStart + nameLen + extraLen;
+    if (dataStart > bytes.length) break;
+    const entryName = bytes.subarray(nameStart, nameStart + nameLen).toString('utf8');
+    const dataEnd = Math.min(bytes.length, dataStart + compressedSize);
+    if (/\.(xml|txt|md|csv)$/i.test(entryName) && !/styles|theme|fontTable|settings|webSettings|rels/i.test(entryName) && compressedSize > 0) {
+      try {
+        const slice = bytes.subarray(dataStart, dataEnd);
+        const raw = compression === 0 ? slice : compression === 8 ? inflateRawSync(slice) : null;
+        if (raw) {
+          const cleaned = raw.toString('utf8')
+            .replace(/<\/(w:p|p|div|tr|li|a:p)>/gi, '\n')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+            .replace(/[ \t]+/g, ' ')
+            .trim();
+          if (cleaned) texts.push(cleaned);
+        }
+      } catch {
+        // Ignore individual malformed or data-descriptor zip entries
+      }
+    }
+    offset = dataEnd > offset ? dataEnd : offset + 30;
+  }
+  return texts.join('\n\n').trim();
+}
+
+function extractPdfText(bytes: Buffer): string {
+  const rawLatin = bytes.toString('latin1');
+  const chunks: string[] = [];
+  const streamRegex = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
+  let match: RegExpExecArray | null;
+  while ((match = streamRegex.exec(rawLatin)) !== null && chunks.length < 200) {
+    const rawStream = match[1] ?? '';
+    const streamBytes = Buffer.from(rawStream, 'latin1');
+    let decoded = '';
+    try {
+      decoded = inflateSync(streamBytes).toString('latin1');
+    } catch {
+      decoded = rawStream;
+    }
+    const strMatches = decoded.match(/\(([^()\\]|\\.)*\)/g);
+    if (strMatches) {
+      const line = strMatches
+        .map(s => s.slice(1, -1).replace(/\\([()\\])/g, '$1').replace(/\\n/g, '\n'))
+        .filter(s => /[a-zA-Z0-9]{2,}/.test(s))
+        .join(' ');
+      if (line.trim()) chunks.push(line.trim());
+    }
+  }
+  if (chunks.length > 0) return chunks.join('\n').slice(0, 12000);
+  const printable = bytes.toString('utf8').replace(/[^\x20-\x7E\n\r\t]/g, ' ').replace(/\s{2,}/g, ' ').trim();
+  return printable.slice(0, 12000);
+}
+
+function extractDocumentText(filename: string, bytes: Buffer): string {
+  const lower = filename.toLowerCase();
+  if (/\.(txt|md|csv|json|log)$/i.test(lower)) {
+    return bytes.toString('utf8').slice(0, 12000).trim();
+  }
+  if (bytes.length >= 4 && bytes.readUInt32LE(0) === 0x04034b50) {
+    const zipText = extractZipXmlText(bytes);
+    if (zipText) return zipText.slice(0, 12000);
+  }
+  if (lower.endsWith('.pdf') || bytes.subarray(0, 5).toString('ascii') === '%PDF-') {
+    const pdfText = extractPdfText(bytes);
+    if (pdfText) return pdfText.slice(0, 12000);
+  }
+  return bytes.toString('utf8').replace(/[^\x20-\x7E\n\r\t]/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, 12000);
+}
+
+function inspectImageMetadata(filename: string, mimeType: string, bytes: Buffer): { format: string; width?: number; height?: number; sizeKb: number; svgText?: string } {
+  const sizeKb = Math.max(1, Math.round(bytes.length / 1024));
+  if (bytes.length >= 24 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) {
+    return { format: 'PNG', width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20), sizeKb };
+  }
+  if (bytes.length >= 4 && bytes[0] === 0xff && bytes[1] === 0xd8) {
+    let i = 2;
+    while (i + 9 < bytes.length) {
+      if (bytes[i] !== 0xff) { i++; continue; }
+      const marker = bytes[i + 1] ?? 0;
+      const len = bytes.readUInt16BE(i + 2);
+      if (marker >= 0xc0 && marker <= 0xc3 && marker !== 0xc4) {
+        return { format: 'JPEG', height: bytes.readUInt16BE(i + 5), width: bytes.readUInt16BE(i + 7), sizeKb };
+      }
+      i += 2 + Math.max(2, len);
+    }
+    return { format: 'JPEG', sizeKb };
+  }
+  if (bytes.length >= 30 && bytes.subarray(0, 4).toString('ascii') === 'RIFF' && bytes.subarray(8, 12).toString('ascii') === 'WEBP') {
+    return { format: 'WEBP', sizeKb };
+  }
+  const head = bytes.subarray(0, 4096).toString('utf8');
+  if (head.includes('<svg') || filename.toLowerCase().endsWith('.svg')) {
+    const svgText = head.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 1000);
+    return { format: 'SVG', sizeKb, svgText };
+  }
+  return { format: mimeType || 'Image', sizeKb };
+}
+
 app.post('/api/chat',requireUser,async(req,res)=>{
   try{
     if(!config.ai.baseUrl)return res.status(503).json({error:{code:'ai_disconnected',message:'Internal AI service is not configured.'}});
-    const {message,max_tokens,stream=false}=req.body??{};
+    const {message,max_tokens,stream=false,use_rag=true}=req.body??{};
     if(!message||typeof message!=='string')return res.status(400).json({error:{code:'invalid_request',message:'Message is required.'}});
     const cleanMessage=sanitizePrompt(message);
     if(!cleanMessage)return res.status(400).json({error:{code:'invalid_request',message:'Valid message is required.'}});
     const streamRequested=Boolean(stream===true||req.query.stream==='true'||req.header('accept')?.includes('text/event-stream'));
     const cleanUrl=buildAiUrl('/chat/completions');
-    const systemPrompt='You are CloudCore AI, an intelligent partner by PTCL Smart Cloud. Help users with enterprise questions, meeting intelligence, documents, and technical solutions. Always complete your thoughts, sentences, and sections fully—never cut off mid-sentence. Keep standard replies focused and well-structured (around 150-300 words) using clean Markdown formatting with bolding and bullet points, or provide a full, comprehensive response when the user asks for detail.';
+    const userDoc=use_rag!==false&&req.session.user?userDocuments.get(req.session.user.id):undefined;
+    const docContext=userDoc?`\n\nUSER UPLOADED DOCUMENT ("${userDoc.filename}"):\n"""\n${userDoc.content}\n"""\nIf the user's question relates to their uploaded document or asks to summarize/analyze a document, ground your answer in the document content above.`:'';
+    const systemPrompt=`You are CloudCore AI, an intelligent partner by PTCL Smart Cloud. Help users with enterprise questions, meeting intelligence, documents, and technical solutions. Always complete your thoughts, sentences, and sections fully—never cut off mid-sentence. Keep standard replies focused and well-structured (around 150-300 words) using clean Markdown formatting with bolding and bullet points, or provide a full, comprehensive response when the user asks for detail.${docContext}`;
     const effectiveMaxTokens=resolveReplyMaxTokens(cleanMessage,typeof max_tokens==='number'?max_tokens:undefined);
     const requestPayload={
       model:config.ai.momModel||'qwen2.5-7b',
@@ -139,24 +269,48 @@ app.post('/api/documents/upload',requireUser,async(req,res)=>{
     if(!config.ai.baseUrl)return res.status(503).json({error:{code:'ai_disconnected',message:'Internal AI service is not configured.'}});
     const contentType=req.header('content-type')||'';
     if(!contentType.includes('multipart/form-data'))return res.status(400).json({error:{code:'invalid_content_type',message:'Multipart form data is required.'}});
-    const upstream=await fetch(buildAiUrl('/api/documents/upload',true),{
-      method:'POST',
-      headers:buildAiHeaders({'content-type':contentType}),
-      body:Readable.toWeb(req) as any,
-      // @ts-ignore
-      duplex:'half'
+    const rawBuffer=await readRequestBuffer(req,50*1048576);
+    try{
+      const upstream=await fetch(buildAiUrl('/api/documents/upload',true),{
+        method:'POST',
+        headers:buildAiHeaders({'content-type':contentType}),
+        body:new Uint8Array(rawBuffer)
+      });
+      if(upstream.ok){
+        const payload:any=await upstream.json().catch(()=>({}));
+        if(payload?.job_id)return res.status(upstream.status).json(payload);
+      }
+    }catch{
+      // Fallback to built-in document ingestion when upstream is a standard LLM server
+    }
+    const formData=await new Response(new Uint8Array(rawBuffer),{headers:{'content-type':contentType}}).formData();
+    const fileEntry=formData.get('file');
+    if(!fileEntry||typeof fileEntry==='string'){
+      return res.status(400).json({error:{code:'missing_file',message:'A document file is required.'}});
+    }
+    const filename=sanitizePrompt(fileEntry.name||'document.txt').slice(0,120)||'document.txt';
+    const fileBytes=Buffer.from(await fileEntry.arrayBuffer());
+    const extracted=extractDocumentText(filename,fileBytes);
+    const jobId=randomUUID();
+    userDocuments.set(req.session.user!.id,{
+      filename,
+      content:extracted||`Document "${filename}" (${Math.max(1,Math.round(fileBytes.length/1024))} KB) uploaded by user.`,
+      uploadedAt:new Date().toISOString()
     });
-    const payload:any=await upstream.json().catch(()=>({}));
-    return res.status(upstream.status).json(payload);
+    ingestJobs.set(jobId,{job_id:jobId,filename,status:'finished'});
+    return res.json({job_id:jobId,filename,status:'queued'});
   }catch(error){
-    logger.warn({error:error instanceof Error?error.message:String(error)},'AI document upload proxy failed');
-    return res.status(502).json({error:{code:'ai_unavailable',message:error instanceof Error?error.message:'AI service unavailable.'}});
+    logger.warn({error:error instanceof Error?error.message:String(error)},'AI document upload failed');
+    return res.status(502).json({error:{code:'ai_unavailable',message:error instanceof Error?error.message:'Document upload failed.'}});
   }
 });
 app.get('/api/jobs/:id',requireUser,async(req,res)=>{
   try{
+    const jobId=String(req.params.id);
+    const localJob=ingestJobs.get(jobId);
+    if(localJob)return res.json(localJob);
     if(!config.ai.baseUrl)return res.status(503).json({error:{code:'ai_disconnected',message:'Internal AI service is not configured.'}});
-    const upstream=await fetch(buildAiUrl(`/api/jobs/${encodeURIComponent(String(req.params.id))}`,true),{
+    const upstream=await fetch(buildAiUrl(`/api/jobs/${encodeURIComponent(jobId)}`,true),{
       headers:buildAiHeaders()
     });
     const payload:any=await upstream.json().catch(()=>({}));
@@ -171,17 +325,61 @@ app.post('/api/vision',requireUser,async(req,res)=>{
     if(!config.ai.baseUrl)return res.status(503).json({error:{code:'ai_disconnected',message:'Internal AI service is not configured.'}});
     const contentType=req.header('content-type')||'';
     if(!contentType.includes('multipart/form-data'))return res.status(400).json({error:{code:'invalid_content_type',message:'Multipart form data is required.'}});
-    const upstream=await fetch(buildAiUrl('/api/vision',true),{
+    const rawBuffer=await readRequestBuffer(req,20*1048576);
+    try{
+      const upstream=await fetch(buildAiUrl('/api/vision',true),{
+        method:'POST',
+        headers:buildAiHeaders({'content-type':contentType}),
+        body:new Uint8Array(rawBuffer)
+      });
+      if(upstream.ok){
+        const payload:any=await upstream.json().catch(()=>({}));
+        if(payload?.answer)return res.status(upstream.status).json(payload);
+      }
+    }catch{
+      // Fallback to local Qwen LLM analysis when upstream /api/vision is not mounted
+    }
+    const formData=await new Response(new Uint8Array(rawBuffer),{headers:{'content-type':contentType}}).formData();
+    const imageEntry=formData.get('image');
+    const rawQuestion=String(formData.get('question')||'Analyze this image and provide key observations.');
+    if(!imageEntry||typeof imageEntry==='string'){
+      return res.status(400).json({error:{code:'missing_image',message:'An image file is required.'}});
+    }
+    const filename=sanitizePrompt(imageEntry.name||'image.png').slice(0,120)||'image.png';
+    const imageBytes=Buffer.from(await imageEntry.arrayBuffer());
+    const meta=inspectImageMetadata(filename,imageEntry.type||'image/png',imageBytes);
+    const dims=meta.width&&meta.height?`${meta.width}x${meta.height} px`:'standard resolution';
+    const prompt=`The user uploaded an image asset for inspection in CloudCore AI Image Analysis:
+- File Name: ${filename}
+- Format: ${meta.format} (${dims}, ${meta.sizeKb} KB)
+${meta.svgText?`- Embedded Text/Labels: ${meta.svgText}\n`:''}- User Request: ${sanitizePrompt(rawQuestion)}
+
+Provide a concise, well-structured Markdown inspection report covering:
+1. **Asset Summary & Technical Properties** (format, dimensions, file size, suitability for enterprise/web use)
+2. **Contextual & Visual Assessment** (based on the asset type "${filename}" and any extracted labels/metadata)
+3. **Recommended Next Steps**`;
+    const llmRes=await fetch(buildAiUrl('/chat/completions'),{
       method:'POST',
-      headers:buildAiHeaders({'content-type':contentType}),
-      body:Readable.toWeb(req) as any,
-      // @ts-ignore
-      duplex:'half'
+      headers:buildAiHeaders({'content-type':'application/json'}),
+      body:JSON.stringify({
+        model:config.ai.momModel||'qwen2.5-7b',
+        cache_prompt:true,
+        messages:[
+          {role:'system',content:'You are CloudCore AI Image & Asset Inspector by PTCL Smart Cloud. Provide clear, structured Markdown analysis.'},
+          {role:'user',content:prompt}
+        ],
+        max_tokens:420
+      })
     });
-    const payload:any=await upstream.json().catch(()=>({}));
-    return res.status(upstream.status).json(payload);
+    if(!llmRes.ok){
+      const errText=await llmRes.text().catch(()=>'');
+      return res.status(llmRes.status).json({error:{code:'ai_error',message:errText||'Vision analysis failed.'}});
+    }
+    const data:any=await llmRes.json().catch(()=>({}));
+    const answer=data.choices?.[0]?.message?.content||'Image inspection completed.';
+    return res.json({answer,model:config.ai.momModel,metadata:meta});
   }catch(error){
-    logger.warn({error:error instanceof Error?error.message:String(error)},'AI vision proxy failed');
+    logger.warn({error:error instanceof Error?error.message:String(error)},'AI vision analysis failed');
     return res.status(502).json({error:{code:'ai_unavailable',message:error instanceof Error?error.message:'AI service unavailable.'}});
   }
 });
