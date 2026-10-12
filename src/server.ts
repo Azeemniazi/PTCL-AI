@@ -86,42 +86,100 @@ async function readRequestBuffer(req: express.Request, maxBytes: number): Promis
   return Buffer.concat(chunks);
 }
 
-function extractZipXmlText(bytes: Buffer): string {
+function cleanXmlEntryToText(xml: string): string {
+  return xml
+    .replace(/<\/(w:p|p|div|tr|li|a:p|si|row)>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x[0-9a-fA-F]+;/g, ' ').replace(/&#\d+;/g, ' ')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function isTargetDocXml(entryName: string): boolean {
+  return /\.(xml|txt|md|csv)$/i.test(entryName)
+    && !/(styles|theme|fontTable|settings|webSettings|rels|\[Content_Types\]|docProps\/core|docProps\/app|numbering| customXml)/i.test(entryName);
+}
+
+export function extractZipXmlText(bytes: Buffer): string {
   const texts: string[] = [];
-  let offset = 0;
-  while (offset + 30 <= bytes.length) {
-    if (bytes.readUInt32LE(offset) !== 0x04034b50) {
-      offset++;
+  const seenEntries = new Set<string>();
+
+  // 1. Scan ZIP Central Directory headers (0x02014b50) which always carry accurate compressedSize even when bit 3 (data descriptor) is set
+  let cdOffset = 0;
+  while (cdOffset + 46 <= bytes.length) {
+    if (bytes.readUInt32LE(cdOffset) !== 0x02014b50) {
+      cdOffset++;
       continue;
     }
-    const compression = bytes.readUInt16LE(offset + 8);
-    const compressedSize = bytes.readUInt32LE(offset + 18);
-    const nameLen = bytes.readUInt16LE(offset + 26);
-    const extraLen = bytes.readUInt16LE(offset + 28);
-    const nameStart = offset + 30;
-    const dataStart = nameStart + nameLen + extraLen;
-    if (dataStart > bytes.length) break;
+    const compression = bytes.readUInt16LE(cdOffset + 10);
+    const compressedSize = bytes.readUInt32LE(cdOffset + 20);
+    const nameLen = bytes.readUInt16LE(cdOffset + 28);
+    const extraLen = bytes.readUInt16LE(cdOffset + 30);
+    const commentLen = bytes.readUInt16LE(cdOffset + 32);
+    const localHeaderOffset = bytes.readUInt32LE(cdOffset + 42);
+    const nameStart = cdOffset + 46;
+    if (nameStart + nameLen > bytes.length) break;
     const entryName = bytes.subarray(nameStart, nameStart + nameLen).toString('utf8');
-    const dataEnd = Math.min(bytes.length, dataStart + compressedSize);
-    if (/\.(xml|txt|md|csv)$/i.test(entryName) && !/styles|theme|fontTable|settings|webSettings|rels/i.test(entryName) && compressedSize > 0) {
-      try {
-        const slice = bytes.subarray(dataStart, dataEnd);
-        const raw = compression === 0 ? slice : compression === 8 ? inflateRawSync(slice) : null;
-        if (raw) {
-          const cleaned = raw.toString('utf8')
-            .replace(/<\/(w:p|p|div|tr|li|a:p)>/gi, '\n')
-            .replace(/<[^>]+>/g, ' ')
-            .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
-            .replace(/[ \t]+/g, ' ')
-            .trim();
-          if (cleaned) texts.push(cleaned);
+
+    if (isTargetDocXml(entryName) && compressedSize > 0 && localHeaderOffset + 30 <= bytes.length && bytes.readUInt32LE(localHeaderOffset) === 0x04034b50) {
+      const localNameLen = bytes.readUInt16LE(localHeaderOffset + 26);
+      const localExtraLen = bytes.readUInt16LE(localHeaderOffset + 28);
+      const dataStart = localHeaderOffset + 30 + localNameLen + localExtraLen;
+      const dataEnd = Math.min(bytes.length, dataStart + compressedSize);
+      if (dataStart < dataEnd) {
+        try {
+          const slice = bytes.subarray(dataStart, dataEnd);
+          const raw = compression === 0 ? slice : compression === 8 ? inflateRawSync(slice) : null;
+          if (raw) {
+            const cleaned = cleanXmlEntryToText(raw.toString('utf8'));
+            if (cleaned) {
+              texts.push(cleaned);
+              seenEntries.add(entryName);
+            }
+          }
+        } catch {
+          // Ignore malformed entry
         }
-      } catch {
-        // Ignore individual malformed or data-descriptor zip entries
       }
     }
-    offset = dataEnd > offset ? dataEnd : offset + 30;
+    const nextOffset = nameStart + nameLen + extraLen + commentLen;
+    cdOffset = nextOffset > cdOffset ? nextOffset : cdOffset + 46;
   }
+
+  // 2. Fallback scan of Local File Headers (0x04034b50) for non-central-directory archives
+  if (texts.length === 0) {
+    let offset = 0;
+    while (offset + 30 <= bytes.length) {
+      if (bytes.readUInt32LE(offset) !== 0x04034b50) {
+        offset++;
+        continue;
+      }
+      const compression = bytes.readUInt16LE(offset + 8);
+      const compressedSize = bytes.readUInt32LE(offset + 18);
+      const nameLen = bytes.readUInt16LE(offset + 26);
+      const extraLen = bytes.readUInt16LE(offset + 28);
+      const nameStart = offset + 30;
+      const dataStart = nameStart + nameLen + extraLen;
+      if (dataStart > bytes.length) break;
+      const entryName = bytes.subarray(nameStart, nameStart + nameLen).toString('utf8');
+      const dataEnd = Math.min(bytes.length, dataStart + compressedSize);
+      if (!seenEntries.has(entryName) && isTargetDocXml(entryName) && compressedSize > 0) {
+        try {
+          const slice = bytes.subarray(dataStart, dataEnd);
+          const raw = compression === 0 ? slice : compression === 8 ? inflateRawSync(slice) : null;
+          if (raw) {
+            const cleaned = cleanXmlEntryToText(raw.toString('utf8'));
+            if (cleaned) texts.push(cleaned);
+          }
+        } catch {
+          // Ignore malformed entry
+        }
+      }
+      offset = dataEnd > offset ? dataEnd : offset + 30;
+    }
+  }
+
   return texts.join('\n\n').trim();
 }
 
@@ -143,30 +201,89 @@ function extractPdfText(bytes: Buffer): string {
     if (strMatches) {
       const line = strMatches
         .map(s => s.slice(1, -1).replace(/\\([()\\])/g, '$1').replace(/\\n/g, '\n'))
-        .filter(s => /[a-zA-Z0-9]{2,}/.test(s))
+        .filter(s => /[a-zA-Z]{2,}/.test(s) && !/[^\x20-\x7E\n\r\t]/.test(s))
         .join(' ');
       if (line.trim()) chunks.push(line.trim());
     }
   }
-  if (chunks.length > 0) return chunks.join('\n').slice(0, 12000);
-  const printable = bytes.toString('utf8').replace(/[^\x20-\x7E\n\r\t]/g, ' ').replace(/\s{2,}/g, ' ').trim();
-  return printable.slice(0, 12000);
+  if (chunks.length > 0) return chunks.join('\n').slice(0, 24000);
+  // Extract only multi-word human-readable phrases, never raw binary/compressed characters
+  const readablePhrases = rawLatin.match(/\b[A-Za-z][A-Za-z0-9,.;:'"?!()\- ]{12,}\b/g) ?? [];
+  const filtered = readablePhrases.filter(p => !/\b(obj|endobj|stream|endstream|xref|FlateDecode|Filter|Length|Type|Font|Page|Parent|Resources)\b/.test(p));
+  return filtered.join('\n').slice(0, 24000).trim();
 }
 
-function extractDocumentText(filename: string, bytes: Buffer): string {
+export function extractDocumentText(filename: string, bytes: Buffer): string {
   const lower = filename.toLowerCase();
   if (/\.(txt|md|csv|json|log)$/i.test(lower)) {
-    return bytes.toString('utf8').slice(0, 12000).trim();
+    return bytes.toString('utf8').slice(0, 24000).trim();
   }
   if (bytes.length >= 4 && bytes.readUInt32LE(0) === 0x04034b50) {
     const zipText = extractZipXmlText(bytes);
-    if (zipText) return zipText.slice(0, 12000);
+    if (zipText) return zipText.slice(0, 24000);
+    return `Uploaded Office document "${filename}" (${Math.max(1, Math.round(bytes.length / 1024))} KB).`;
   }
   if (lower.endsWith('.pdf') || bytes.subarray(0, 5).toString('ascii') === '%PDF-') {
     const pdfText = extractPdfText(bytes);
-    if (pdfText) return pdfText.slice(0, 12000);
+    if (pdfText) return pdfText.slice(0, 24000);
+    return `Uploaded PDF document "${filename}" (${Math.max(1, Math.round(bytes.length / 1024))} KB).`;
   }
-  return bytes.toString('utf8').replace(/[^\x20-\x7E\n\r\t]/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, 12000);
+  const readablePhrases = bytes.toString('utf8').match(/\b[A-Za-z][A-Za-z0-9,.;:'"?!()\- ]{10,}\b/g) ?? [];
+  return readablePhrases.join('\n').slice(0, 12000).trim();
+}
+
+export function selectRelevantDocContext(content: string, query: string, maxChars = 4200): string {
+  const clean = content.trim();
+  if (!clean) return '';
+  if (clean.length <= maxChars) return clean;
+  const paragraphs = clean.split(/\n{2,}|\r?\n/).map(p => p.trim()).filter(Boolean);
+  const chunks: string[] = [];
+  let current = '';
+  for (const p of paragraphs) {
+    if ((current + '\n' + p).length > 600 && current) {
+      chunks.push(current);
+      current = p.slice(0, 600);
+    } else {
+      current = current ? `${current}\n${p}` : p.slice(0, 600);
+    }
+  }
+  if (current) chunks.push(current);
+  if (chunks.length <= 1) return clean.slice(0, maxChars);
+
+  const keywords = query.toLowerCase().split(/\W+/).filter(w => w.length > 3 && !['what', 'when', 'where', 'which', 'have', 'they', 'this', 'that', 'from', 'with', 'about', 'document', 'file', 'please', 'tell', 'summarize', 'summary', 'explain', 'analyze'].includes(w));
+  const selected = new Set<number>([0]);
+  let usedChars = (chunks[0] ?? '').length;
+
+  if (keywords.length > 0) {
+    const scored = chunks.map((chunk, idx) => {
+      if (idx === 0) return { idx, score: -1 };
+      const lower = chunk.toLowerCase();
+      let score = 0;
+      for (const kw of keywords) {
+        if (lower.includes(kw)) score += 2;
+      }
+      return { idx, score };
+    }).filter(x => x.score > 0).sort((a, b) => b.score - a.score);
+
+    for (const item of scored) {
+      const chunkLen = (chunks[item.idx] ?? '').length + 2;
+      if (usedChars + chunkLen <= maxChars) {
+        selected.add(item.idx);
+        usedChars += chunkLen;
+      }
+    }
+  }
+
+  for (let i = 1; i < chunks.length && usedChars < maxChars; i++) {
+    if (selected.has(i)) continue;
+    const chunkLen = (chunks[i] ?? '').length + 2;
+    if (usedChars + chunkLen <= maxChars) {
+      selected.add(i);
+      usedChars += chunkLen;
+    }
+  }
+
+  return [...selected].sort((a, b) => a - b).map(i => chunks[i]).join('\n\n').slice(0, maxChars);
 }
 
 function inspectImageMetadata(filename: string, mimeType: string, bytes: Buffer): { format: string; width?: number; height?: number; sizeKb: number; svgText?: string } {
@@ -203,32 +320,47 @@ app.post('/api/chat',requireUser,async(req,res)=>{
     if(!config.ai.baseUrl)return res.status(503).json({error:{code:'ai_disconnected',message:'Internal AI service is not configured.'}});
     const {message,max_tokens,stream=false,use_rag=true}=req.body??{};
     if(!message||typeof message!=='string')return res.status(400).json({error:{code:'invalid_request',message:'Message is required.'}});
-    const cleanMessage=sanitizePrompt(message);
+    const cleanMessage=sanitizePrompt(message).slice(0,8000);
     if(!cleanMessage)return res.status(400).json({error:{code:'invalid_request',message:'Valid message is required.'}});
     const streamRequested=Boolean(stream===true||req.query.stream==='true'||req.header('accept')?.includes('text/event-stream'));
     const cleanUrl=buildAiUrl('/chat/completions');
     const userDoc=use_rag!==false&&req.session.user?userDocuments.get(req.session.user.id):undefined;
-    const docContext=userDoc?`\n\nUSER UPLOADED DOCUMENT ("${userDoc.filename}"):\n"""\n${userDoc.content}\n"""\nIf the user's question relates to their uploaded document or asks to summarize/analyze a document, ground your answer in the document content above.`:'';
-    const systemPrompt=`You are CloudCore AI, an intelligent partner by PTCL Smart Cloud. Help users with enterprise questions, meeting intelligence, documents, and technical solutions. Always complete your thoughts, sentences, and sections fully—never cut off mid-sentence. Keep standard replies focused and well-structured (around 150-300 words) using clean Markdown formatting with bolding and bullet points, or provide a full, comprehensive response when the user asks for detail.${docContext}`;
+    const baseSystemPrompt='You are CloudCore AI, an intelligent partner by PTCL Smart Cloud. Help users with enterprise questions, meeting intelligence, documents, and technical solutions. Always complete your thoughts, sentences, and sections fully—never cut off mid-sentence. Keep standard replies focused and well-structured (around 150-300 words) using clean Markdown formatting with bolding and bullet points, or provide a full, comprehensive response when the user asks for detail.';
+    const snippet=userDoc?selectRelevantDocContext(userDoc.content,cleanMessage,4200):'';
+    const docContext=userDoc&&snippet?`\n\nUSER UPLOADED DOCUMENT ("${userDoc.filename}"):\n"""\n${snippet}\n"""\nIf the user's question relates to their uploaded document or asks to summarize/analyze a document, ground your answer in the document content above.`:'';
+    const systemPrompt=`${baseSystemPrompt}${docContext}`;
     const effectiveMaxTokens=resolveReplyMaxTokens(cleanMessage,typeof max_tokens==='number'?max_tokens:undefined);
-    const requestPayload={
+    const buildPayload=(sys:string,usr:string,maxTok:number)=>({
       model:config.ai.momModel||'qwen2.5-7b',
       cache_prompt:true,
       ...(streamRequested?{stream:true}:{}),
       messages:[
-        {role:'system',content:systemPrompt},
-        {role:'user',content:cleanMessage}
+        {role:'system',content:sys},
+        {role:'user',content:usr}
       ],
-      max_tokens:effectiveMaxTokens
-    };
+      max_tokens:maxTok
+    });
 
     beginLiveChat();
     try{
-      const upstream=await fetch(cleanUrl,{
+      let upstream=await fetch(cleanUrl,{
         method:'POST',
         headers:buildAiHeaders({'content-type':'application/json'}),
-        body:JSON.stringify(requestPayload)
+        body:JSON.stringify(buildPayload(systemPrompt,cleanMessage,effectiveMaxTokens))
       });
+      if(upstream.status===400){
+        const errText=await upstream.text().catch(()=>'');
+        if(/exceedcontextsize|context size/i.test(errText)){
+          const compactDoc=userDoc&&snippet?`\n\nUSER UPLOADED DOCUMENT ("${userDoc.filename}"):\n"""\n${snippet.slice(0,1500)}\n"""`:'';
+          upstream=await fetch(cleanUrl,{
+            method:'POST',
+            headers:buildAiHeaders({'content-type':'application/json'}),
+            body:JSON.stringify(buildPayload(`${baseSystemPrompt}${compactDoc}`,cleanMessage.slice(0,3000),768))
+          });
+        }else{
+          return res.status(400).json({error:{code:'ai_error',message:errText}});
+        }
+      }
       if(!upstream.ok||(streamRequested&&!upstream.body)){
         const errText=await upstream.text().catch(()=>'');
         return res.status(upstream.status).json({error:{code:'ai_error',message:errText}});
