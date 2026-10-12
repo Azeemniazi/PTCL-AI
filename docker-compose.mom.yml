@@ -1,0 +1,27 @@
+services:
+  mom-qwen:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    container_name: cloudcore-ai-mom-qwen
+    restart: unless-stopped
+    ports:
+      - 127.0.0.1:8000:8080
+    volumes:
+      - /opt/ai-stack/models/mom:/models:ro
+    command:
+      - -m
+      - /models/Qwen2.5-7B-Instruct-Q4_K_M.gguf
+      - -c
+      - '8192'
+      - --host
+      - 0.0.0.0
+      - --port
+      - '8080'
+      - -t
+      - '28'
+      - -tb
+      - '28'
+      - -fa
+      - 'on'
+      - -cb
+      - --alias
+      - qwen2.5-7b
