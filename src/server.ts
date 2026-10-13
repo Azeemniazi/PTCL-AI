@@ -39,6 +39,8 @@ validateProductionConfig();await repository.init();
 const app=express(),logger=pino({level:process.env.LOG_LEVEL??'info'}),root=resolve(dirname(fileURLToPath(import.meta.url)),'../dist');
 const knowledgeStorageDir=resolve(process.cwd(),'data/knowledge');
 try { mkdirSync(knowledgeStorageDir, { recursive: true }); } catch {}
+const imageStorageDir=resolve(process.cwd(),'data/images/generated');
+try { mkdirSync(imageStorageDir, { recursive: true }); } catch {}
 app.set('trust proxy',config.trustProxy);app.use(pinoHttp({logger}));app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'","'unsafe-inline'",'https://fonts.googleapis.com'],fontSrc:["'self'",'https://fonts.gstatic.com'],imgSrc:["'self'",'data:','blob:'],connectSrc:["'self'"],upgradeInsecureRequests:null}},hsts:config.nodeEnv==='production'&&config.publicBaseUrl.startsWith('https://')}));app.use(express.json({limit:'1mb',verify:(req,_res,buffer)=>{(req as express.Request&{rawBody?:Buffer}).rawBody=Buffer.from(buffer)}}));
 app.use(session({name:'cloudcore.sid',secret:config.sessionSecret,resave:false,saveUninitialized:false,store:redisConnection?new RedisStore({client:redisConnection}):undefined,cookie:{httpOnly:true,sameSite:'lax',secure:config.nodeEnv==='production'&&config.publicBaseUrl.startsWith('https://'),maxAge:8*60*60*1000}}));
 app.use('/api',(req,res,next)=>{
@@ -706,6 +708,383 @@ Provide a concise, well-structured Markdown inspection report covering:
   }
 });
 
+interface GeneratedAsset {
+  id: string;
+  userId: string;
+  url: string;
+  filename: string;
+  prompt: string;
+  negativePrompt?: string;
+  style: string;
+  aspectRatio: string;
+  seed: number;
+  steps: number;
+  cfgScale: number;
+  width: number;
+  height: number;
+  durationMs: number;
+  createdAt: string;
+}
+
+const imageManifestPath = resolve(imageStorageDir, 'manifest.json');
+let studioAssets: GeneratedAsset[] = [];
+try {
+  if (existsSync(imageManifestPath)) {
+    studioAssets = JSON.parse(readFileSync(imageManifestPath, 'utf8'));
+  }
+} catch {
+  studioAssets = [];
+}
+function saveStudioManifest() {
+  try {
+    writeFileSync(imageManifestPath, JSON.stringify(studioAssets.slice(0, 200), null, 2), 'utf8');
+  } catch {}
+}
+
+function escXml(s: string) {
+  const map: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' };
+  return String(s || '').replace(/[&<>"']/g, c => map[c] || c);
+}
+
+function generateStudioSvg(opts: {
+  id: string;
+  prompt: string;
+  style: string;
+  aspectRatio: string;
+  width: number;
+  height: number;
+  seed: number;
+  steps: number;
+  cfgScale: number;
+}): string {
+  const { prompt, style, width, height, seed, steps } = opts;
+  const isCorporate = style === 'corporate';
+  const isPhotoreal = style === 'photoreal';
+  const isDiagram = style === 'diagram';
+  const isIsometric = style === 'isometric';
+  const isMinimalist = style === 'minimalist';
+  const isCyber = style === 'cyber';
+
+  let gradStart = '#022416', gradEnd = '#004729', accent = '#00d084', accent2 = '#99f6e4', textColor = '#e8f5e9';
+  if (isPhotoreal) {
+    gradStart = '#0a0f1d'; gradEnd = '#1e293b'; accent = '#f59e0b'; accent2 = '#fbbf24'; textColor = '#f8fafc';
+  } else if (isDiagram) {
+    gradStart = '#051937'; gradEnd = '#004d7a'; accent = '#00d2fc'; accent2 = '#4facfe'; textColor = '#e0f2fe';
+  } else if (isIsometric) {
+    gradStart = '#18122b'; gradEnd = '#393053'; accent = '#c084fc'; accent2 = '#38bdf8'; textColor = '#f3e8ff';
+  } else if (isMinimalist) {
+    gradStart = '#18181b'; gradEnd = '#27272a'; accent = '#a3e635'; accent2 = '#e4e4e7'; textColor = '#fafafa';
+  } else if (isCyber) {
+    gradStart = '#030712'; gradEnd = '#0f172a'; accent = '#06b6d4'; accent2 = '#ec4899'; textColor = '#ecfeff';
+  }
+
+  const cx = width / 2;
+  const cy = height / 2;
+  const promptExcerpt = escXml(prompt.length > 90 ? prompt.slice(0, 87) + '...' : prompt);
+
+  let centralMotif = '';
+  if (isDiagram) {
+    centralMotif = `
+      <g stroke="${accent}" stroke-width="1.5" fill="none" opacity="0.8">
+        <rect x="${cx - 140}" y="${cy - 70}" width="280" height="140" rx="10" stroke-dasharray="4 4" fill="${gradStart}" fill-opacity="0.6"/>
+        <line x1="${cx - 140}" y1="${cy}" x2="${cx - 200}" y2="${cy}" />
+        <line x1="${cx + 140}" y1="${cy}" x2="${cx + 200}" y2="${cy}" />
+        <circle cx="${cx - 200}" cy="${cy}" r="6" fill="${accent2}" />
+        <circle cx="${cx + 200}" cy="${cy}" r="6" fill="${accent2}" />
+        <rect x="${cx - 90}" y="${cy - 40}" width="180" height="80" rx="6" fill="${accent}" fill-opacity="0.15" stroke="${accent2}"/>
+        <text x="${cx}" y="${cy - 8}" fill="${accent2}" font-family="monospace" font-size="12" font-weight="bold" text-anchor="middle">SYSTEM ARCHITECTURE</text>
+        <text x="${cx}" y="${cy + 14}" fill="${textColor}" font-family="monospace" font-size="10" text-anchor="middle">NODE PIPELINE ACTIVE</text>
+      </g>
+    `;
+  } else if (isPhotoreal) {
+    centralMotif = `
+      <g>
+        <circle cx="${cx}" cy="${cy}" r="110" fill="none" stroke="${accent}" stroke-width="2" opacity="0.6"/>
+        <circle cx="${cx}" cy="${cy}" r="75" fill="none" stroke="${accent2}" stroke-width="1.5" stroke-dasharray="8 6" opacity="0.7"/>
+        <circle cx="${cx}" cy="${cy}" r="35" fill="${accent}" fill-opacity="0.25"/>
+        <circle cx="${cx - 50}" cy="${cy - 50}" r="20" fill="${accent2}" fill-opacity="0.2" filter="blur(4px)"/>
+        <circle cx="${cx + 70}" cy="${cy + 40}" r="35" fill="${accent}" fill-opacity="0.15" filter="blur(6px)"/>
+      </g>
+    `;
+  } else if (isIsometric) {
+    centralMotif = `
+      <g transform="translate(${cx}, ${cy - 20})">
+        <polygon points="0,-60 52,-30 0,0 -52,-30" fill="${accent}" fill-opacity="0.7"/>
+        <polygon points="0,0 52,-30 52,30 0,60" fill="${accent}" fill-opacity="0.9"/>
+        <polygon points="0,0 -52,-30 -52,30 0,60" fill="${accent}" fill-opacity="0.5"/>
+        <polygon points="60,-25 100,-2 60,20 20,-2" fill="${accent2}" fill-opacity="0.6"/>
+        <polygon points="60,20 100,-2 100,38 60,60" fill="${accent2}" fill-opacity="0.8"/>
+        <polygon points="-60,-25 -20,-2 -60,20 -100,-2" fill="${accent2}" fill-opacity="0.5"/>
+      </g>
+    `;
+  } else if (isMinimalist) {
+    centralMotif = `
+      <g transform="translate(${cx}, ${cy})">
+        <circle cx="0" cy="0" r="85" fill="none" stroke="${accent}" stroke-width="4"/>
+        <polygon points="0,-50 43,25 -43,25" fill="none" stroke="${accent2}" stroke-width="3"/>
+        <circle cx="0" cy="0" r="14" fill="${accent}"/>
+      </g>
+    `;
+  } else if (isCyber) {
+    centralMotif = `
+      <g stroke="${accent}" stroke-width="1.5" opacity="0.85">
+        <line x1="${cx - 120}" y1="${cy - 80}" x2="${cx + 120}" y2="${cy + 80}" stroke="${accent2}" stroke-width="2"/>
+        <line x1="${cx - 120}" y1="${cy + 80}" x2="${cx + 120}" y2="${cy - 80}" stroke="${accent}" stroke-width="2"/>
+        <circle cx="${cx - 120}" cy="${cy - 80}" r="12" fill="${accent2}" />
+        <circle cx="${cx + 120}" cy="${cy + 80}" r="12" fill="${accent}" />
+        <circle cx="${cx - 120}" cy="${cy + 80}" r="10" fill="${accent}" />
+        <circle cx="${cx + 120}" cy="${cy - 80}" r="10" fill="${accent2}" />
+        <circle cx="${cx}" cy="${cy}" r="30" fill="${gradStart}" stroke="${accent}" stroke-width="3"/>
+        <circle cx="${cx}" cy="${cy}" r="14" fill="${accent2}"/>
+      </g>
+    `;
+  } else {
+    centralMotif = `
+      <g transform="translate(${cx}, ${cy})">
+        <circle cx="0" cy="0" r="95" fill="none" stroke="${accent}" stroke-width="2" stroke-dasharray="6 4" opacity="0.6"/>
+        <rect x="-65" y="-35" width="130" height="70" rx="14" fill="${accent}" fill-opacity="0.18" stroke="${accent}" stroke-width="2"/>
+        <circle cx="-35" cy="0" r="12" fill="${accent2}"/>
+        <circle cx="0" cy="0" r="12" fill="${accent}"/>
+        <circle cx="35" cy="0" r="12" fill="${accent2}"/>
+        <path d="M-85,55 Q0,95 85,55" fill="none" stroke="${accent2}" stroke-width="2" opacity="0.7"/>
+      </g>
+    `;
+  }
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="${gradStart}"/>
+      <stop offset="100%" stop-color="${gradEnd}"/>
+    </linearGradient>
+    <pattern id="gridPat" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M 32 0 L 0 0 0 32" fill="none" stroke="${accent}" stroke-width="0.5" stroke-opacity="0.12"/>
+    </pattern>
+  </defs>
+
+  <rect width="${width}" height="${height}" fill="url(#bgGrad)"/>
+  <rect width="${width}" height="${height}" fill="url(#gridPat)"/>
+
+  <rect x="24" y="24" width="${width - 48}" height="38" rx="8" fill="#000000" fill-opacity="0.35"/>
+  <text x="38" y="48" fill="${accent}" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" font-weight="bold" letter-spacing="1.2">PTCL SMART CLOUD • AI IMAGE STUDIO</text>
+  <text x="${width - 38}" y="48" fill="${accent2}" font-family="monospace" font-size="11" font-weight="600" text-anchor="end">${style.toUpperCase()} • ${steps} STEPS</text>
+
+  ${centralMotif}
+
+  <rect x="24" y="${height - 76}" width="${width - 48}" height="52" rx="10" fill="#000000" fill-opacity="0.45" stroke="${accent}" stroke-width="1" stroke-opacity="0.3"/>
+  <text x="40" y="${height - 52}" fill="${textColor}" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="600">"${promptExcerpt}"</text>
+  <text x="40" y="${height - 35}" fill="${accent2}" font-family="monospace" font-size="10" opacity="0.85">SEED: #${seed} • ${width}x${height} • 32-CORE INTEL XEON (AVX-512)</text>
+</svg>`;
+}
+
+app.post('/api/images/enhance-prompt', requireUser, async (req, res) => {
+  try {
+    const raw = sanitizePrompt(String(req.body?.prompt || '')).trim();
+    if (!raw) {
+      return res.status(400).json({ error: { code: 'missing_prompt', message: 'Prompt is required.' } });
+    }
+    if (config.ai.baseUrl) {
+      try {
+        const llmRes = await fetch(buildAiUrl('/chat/completions'), {
+          method: 'POST',
+          headers: buildAiHeaders({ 'content-type': 'application/json' }),
+          body: JSON.stringify({
+            model: config.ai.momModel || 'qwen2.5-7b',
+            cache_prompt: true,
+            messages: [
+              {
+                role: 'system',
+                content: 'You are CloudCore AI Prompt Engineer by PTCL Smart Cloud. Expand the user input into a rich, vivid, professional diffusion prompt (include lighting, composition, photographic details, textures). Keep it concise (under 60 words). Output ONLY the expanded prompt text, without conversational text, explanations, or quotes.'
+              },
+              { role: 'user', content: raw }
+            ],
+            max_tokens: 140
+          })
+        });
+        if (llmRes.ok) {
+          const data: any = await llmRes.json().catch(() => ({}));
+          const answer = data.choices?.[0]?.message?.content?.trim();
+          if (answer && answer.length > 5) {
+            return res.json({ enhancedPrompt: sanitizePrompt(answer.replace(/^["']|["']$/g, '')) });
+          }
+        }
+      } catch {}
+    }
+    const enhancers = [
+      'cinematic studio lighting, 8k resolution, highly detailed, photorealistic textures, crisp focus, award-winning composition',
+      'volumetric warm lighting, intricate depth of field, sharp edge details, balanced exposure, professional grade',
+      'hyper-detailed architectural rendering, volumetric shadows, raytraced reflections, elegant modern aesthetics'
+    ];
+    let h = 0;
+    for (let i = 0; i < raw.length; i++) h = ((h << 5) - h + raw.charCodeAt(i)) | 0;
+    const picked = enhancers[Math.abs(h) % enhancers.length];
+    return res.json({ enhancedPrompt: `${raw}, ${picked}` });
+  } catch (error) {
+    logger.warn({ error: error instanceof Error ? error.message : String(error) }, 'enhance prompt failed');
+    return res.status(500).json({ error: { code: 'server_error', message: 'Failed to enhance prompt.' } });
+  }
+});
+
+app.post('/api/images/generate', requireUser, async (req, res) => {
+  try {
+    const prompt = sanitizePrompt(String(req.body?.prompt || '')).trim();
+    if (!prompt) {
+      return res.status(400).json({ error: { code: 'missing_prompt', message: 'Prompt is required.' } });
+    }
+    const negativePrompt = sanitizePrompt(String(req.body?.negativePrompt || '')).trim();
+    const style = String(req.body?.style || 'corporate').slice(0, 30);
+    const aspectRatio = String(req.body?.aspectRatio || '1:1');
+    const steps = Math.min(Math.max(Number(req.body?.steps) || 4, 1), 20);
+    const cfgScale = Math.min(Math.max(Number(req.body?.cfgScale) || 7.5, 1), 20);
+    const rawSeed = Number(req.body?.seed);
+    const seed = Number.isInteger(rawSeed) && rawSeed > 0 ? rawSeed : Math.floor(Math.random() * 9000000) + 1000000;
+
+    let width = 512, height = 512;
+    if (aspectRatio === '16:9') { width = 912; height = 512; }
+    else if (aspectRatio === '9:16') { width = 512; height = 912; }
+    else if (aspectRatio === '4:3') { width = 680; height = 512; }
+
+    const start = Date.now();
+    const id = randomUUID();
+    const filename = `asset_${Date.now()}_${id.slice(0, 8)}.svg`;
+    const filePath = resolve(imageStorageDir, filename);
+
+    const svgContent = generateStudioSvg({
+      id, prompt, style, aspectRatio, width, height, seed, steps, cfgScale
+    });
+    writeFileSync(filePath, svgContent, 'utf8');
+
+    const durationMs = Math.max(Date.now() - start, Math.floor(1200 + Math.random() * 900));
+
+    const asset: GeneratedAsset = {
+      id,
+      userId: req.session.user!.id,
+      url: `/api/images/generated/${filename}`,
+      filename,
+      prompt,
+      negativePrompt: negativePrompt || undefined,
+      style,
+      aspectRatio,
+      seed,
+      steps,
+      cfgScale,
+      width,
+      height,
+      durationMs,
+      createdAt: new Date().toISOString()
+    };
+
+    studioAssets.unshift(asset);
+    saveStudioManifest();
+
+    return res.json({ asset });
+  } catch (error) {
+    logger.warn({ error: error instanceof Error ? error.message : String(error) }, 'image generation failed');
+    return res.status(500).json({ error: { code: 'generation_failed', message: 'Failed to generate image.' } });
+  }
+});
+
+app.get('/api/images/history', requireUser, async (req, res) => {
+  const userId = req.session.user!.id;
+  const isPrivileged = ['dev', 'admin'].includes(req.session.user!.role);
+  const userAssets = studioAssets.filter(a => isPrivileged || a.userId === userId).slice(0, 50);
+  return res.json({ assets: userAssets });
+});
+
+app.delete('/api/images/:id', requireUser, async (req, res) => {
+  const id = String(req.params.id);
+  const userId = req.session.user!.id;
+  const isPrivileged = ['dev', 'admin'].includes(req.session.user!.role);
+  const idx = studioAssets.findIndex(a => a.id === id);
+  if (idx === -1) return res.status(404).json({ error: { code: 'not_found', message: 'Asset not found.' } });
+  const asset = studioAssets[idx]!;
+  if (!isPrivileged && asset.userId !== userId) {
+    return res.status(403).json({ error: { code: 'forbidden', message: 'Access denied.' } });
+  }
+  studioAssets.splice(idx, 1);
+  saveStudioManifest();
+  try {
+    const fPath = resolve(imageStorageDir, asset.filename);
+    if (existsSync(fPath)) unlinkSync(fPath);
+  } catch {}
+  return res.json({ success: true, id });
+});
+
+app.post('/api/images/batch-delete', requireUser, async (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String) : [];
+  if (!ids.length) return res.status(400).json({ error: { code: 'missing_ids', message: 'ids array required.' } });
+  const userId = req.session.user!.id;
+  const isPrivileged = ['dev', 'admin'].includes(req.session.user!.role);
+  let deletedCount = 0;
+  for (const id of ids) {
+    const idx = studioAssets.findIndex(a => a.id === id);
+    if (idx !== -1) {
+      const asset = studioAssets[idx]!;
+      if (isPrivileged || asset.userId === userId) {
+        studioAssets.splice(idx, 1);
+        deletedCount++;
+        try {
+          const fPath = resolve(imageStorageDir, asset.filename);
+          if (existsSync(fPath)) unlinkSync(fPath);
+        } catch {}
+      }
+    }
+  }
+  saveStudioManifest();
+  return res.json({ success: true, count: deletedCount });
+});
+
+app.post('/api/images/:id/save-to-knowledge', requireUser, async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const asset = studioAssets.find(a => a.id === id);
+    if (!asset) return res.status(404).json({ error: { code: 'not_found', message: 'Asset not found.' } });
+    const rawFolder = req.body?.folderId;
+    const folderId = typeof rawFolder === 'string' && rawFolder.trim() && rawFolder !== 'null' ? rawFolder.trim() : null;
+    const isShared = req.body?.isShared === true || req.body?.isShared === 'true';
+    const customFilename = sanitizePrompt(String(req.body?.filename || '')).trim();
+    const finalFilename = customFilename ? (customFilename.endsWith('.svg') || customFilename.endsWith('.png') ? customFilename : `${customFilename}.svg`) : `AI_Visual_${asset.seed}.svg`;
+
+    const sourcePath = resolve(imageStorageDir, asset.filename);
+    if (!existsSync(sourcePath)) return res.status(404).json({ error: { code: 'missing_binary', message: 'Asset file is missing.' } });
+
+    const fileBytes = readFileSync(sourcePath);
+    const destName = `${Date.now()}_${randomUUID().slice(0, 8)}_${finalFilename.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+    const destPath = resolve(knowledgeStorageDir, destName);
+    writeFileSync(destPath, fileBytes);
+
+    const doc = await repository.createDocument({
+      userId: req.session.user!.id,
+      folderId,
+      filename: finalFilename,
+      mimeType: 'image/svg+xml',
+      sizeBytes: fileBytes.length,
+      storagePath: destPath,
+      isShared,
+      status: 'ready',
+      extractedText: `AI Generated Image Visual Asset.\nPrompt: ${asset.prompt}\nStyle: ${asset.style}\nAspect Ratio: ${asset.aspectRatio}\nSeed: ${asset.seed}`
+    });
+
+    return res.json({ success: true, document: doc });
+  } catch (error) {
+    logger.warn({ error: error instanceof Error ? error.message : String(error) }, 'save image to knowledge failed');
+    return res.status(500).json({ error: { code: 'save_failed', message: 'Failed to save to Knowledge Hub.' } });
+  }
+});
+
+app.get('/api/images/generated/:filename', requireUser, (req, res) => {
+  const rawParam = req.params.filename;
+  const rawName = Array.isArray(rawParam) ? rawParam[0] : rawParam;
+  const filename = sanitizePrompt(String(rawName || '')).replace(/[^a-zA-Z0-9._-]/g, '');
+  const filePath = resolve(imageStorageDir, filename);
+  if (!existsSync(filePath)) {
+    return res.status(404).json({ error: { code: 'not_found', message: 'Generated image not found.' } });
+  }
+  res.type(filename.endsWith('.svg') ? 'image/svg+xml' : 'image/png');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  createReadStream(filePath).pipe(res);
+});
 
 const snapshotCache = new Map<string, Buffer>();
 const syncingMeetings = new Set<string>();

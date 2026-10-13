@@ -74,7 +74,7 @@ function refLanding() {
 }
 function refSidebar(r) {
   const name=appUser?.displayName||'CloudCore user';
-  return `<aside class="sidebar ref-sidebar">${refVideoBackground("sidebar")}<div class="ref-sidebar-inner">${brand()}<nav aria-label="Product navigation">${[...navs.filter(n=>n[0]!=='history'),['settings','settings','Settings']].map(([id,i,t])=>`<a href="#${id}" class="${(r===id||(id==='documents'&&r==='knowledge')||(id==='knowledge'&&r==='documents'))?'selected':''}" ${r===id?'aria-current="page"':''}>${icon(id==='documents'?'folder':i)}<span>${id==='meetings'?'Meeting Intelligence':id==='documents'?'Knowledge Hub':t}</span></a>`).join('')}<a class="ref-history-link ${r==='history'?'selected':''}" href="#history">${icon('history')}<span>Chat History</span></a></nav><div class="ref-sidebar-bottom"><a class="ref-future-card" href="#landing"><span>Hello<br>to the Future</span><i>${icon('arrow')}</i></a><button class="ref-sidebar-user" data-action="profile"><span class="avatar">${esc(name.charAt(0))}</span><span><b>${esc(name)}</b><small>${esc(appUser?.role||'Workspace member')}</small></span><span>⌄</span></button></div></div></aside>`;
+  return `<aside class="sidebar ref-sidebar">${refVideoBackground("sidebar")}<div class="ref-sidebar-inner">${brand()}<nav aria-label="Product navigation">${[...navs.filter(n=>n[0]!=='history'),['settings','settings','Settings']].map(([id,i,t])=>`<a href="#${id}" class="${(r===id||(id==='documents'&&r==='knowledge')||(id==='knowledge'&&r==='documents'))?'selected':''}" ${r===id?'aria-current="page"':''}>${icon(id==='documents'?'folder':i)}<span>${id==='meetings'?'Meeting Intelligence':id==='documents'?'Knowledge Hub':id==='images'?'Image Studio':t}</span></a>`).join('')}<a class="ref-history-link ${r==='history'?'selected':''}" href="#history">${icon('history')}<span>Chat History</span></a></nav><div class="ref-sidebar-bottom"><a class="ref-future-card" href="#landing"><span>Hello<br>to the Future</span><i>${icon('arrow')}</i></a><button class="ref-sidebar-user" data-action="profile"><span class="avatar">${esc(name.charAt(0))}</span><span><b>${esc(name)}</b><small>${esc(appUser?.role||'Workspace member')}</small></span><span>⌄</span></button></div></div></aside>`;
 }
 function refWorkspace(r) {
   if(!navs.some(n=>n[0]===r)&&r!=='settings'&&r!=='knowledge')r='home';
@@ -85,7 +85,7 @@ function refWorkspace(r) {
 function refHome() {
   const name=(appUser?.displayName||'there').split(' ')[0];
   const recent=chats.slice(0,3);
-  return `<section class="ref-home-heading"><div><h1>Good morning, ${esc(name)}</h1><p>Let’s make today productive.</p></div><time>${new Date().toLocaleDateString('en-GB',{weekday:'long',timeZone:'Asia/Karachi'})}<br>${new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric',timeZone:'Asia/Karachi'})}</time></section><section class="ref-home-hero"><span class="ref-kicker">CLOUDCORE AI WORKSPACE</span><h2>Your AI Workspace<br><span>for a more connected tomorrow.</span></h2><p>One intelligent workspace. Four powerful capabilities.<br>Built for Pakistan. Designed for what’s next.</p><a class="ref-lime-button" href="#assistant">Explore AI Workspace ${icon('arrow')}</a></section><section class="home-cards ref-home-cards">${[['chat','Chat with CloudCore','Get answers, draft content, analyze information and more.','Research · Summarize · Plan','assistant'],['video','Meeting Intelligence','Turn discussions into actionable insights.','Transcribe · Summarize · Act','meetings'],['file','Document Insights','Understand and extract key information.','Compare · Extract · Analyze','documents'],['image','Image Analysis','Analyze images, diagrams and visual content.','Identify · Extract text · Explain','images']].map(([i,t,d,tags,r],n)=>`<a class="ref-capability capability-${n}" href="#${r}"><span class="feature-icon">${icon(i)}</span><h2>${t}</h2><p>${d}</p><div><small>${tags}</small><span class="ref-round-arrow">${icon('arrow')}</span></div></a>`).join('')}</section><div class="ref-home-lists"><section class="panel"><div class="panel-heading">${icon('clock')}<h2>Recent Activity</h2><a href="#history">View all →</a></div>${recent.length?recent.map(c=>`<button class="ref-activity-row" data-action="open-chat" data-id="${esc(c.id)}"><span class="mini-icon">${icon('chat')}</span><span><b>${esc(c.title)}</b><small>Conversation · ${new Date(c.updated).toLocaleDateString()}</small></span><span>Continue →</span></button>`).join(''):'<div class="ref-empty-inline">Your recent conversations will appear here.<a href="#assistant">Start a conversation →</a></div>'}</section><section class="panel"><div class="panel-heading">${icon('folder')}<h2>Continue where you left off</h2><a href="#documents">View all →</a></div>${docFile?`<button class="ref-activity-row" data-action="ref-document-route"><span class="mini-icon">${icon('file')}</span><span><b>${esc(docFile.name)}</b><small>Document · ${docIngested?'Indexed & ready':'Selected on this device'}</small></span><span>Continue →</span></button>`:'<div class="ref-empty-inline">Bring your documents and meetings into one workspace.<a href="#meetings">Open Meeting Intelligence →</a></div>'}</section></div>`;
+  return `<section class="ref-home-heading"><div><h1>Good morning, ${esc(name)}</h1><p>Let’s make today productive.</p></div><time>${new Date().toLocaleDateString('en-GB',{weekday:'long',timeZone:'Asia/Karachi'})}<br>${new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric',timeZone:'Asia/Karachi'})}</time></section><section class="ref-home-hero"><span class="ref-kicker">CLOUDCORE AI WORKSPACE</span><h2>Your AI Workspace<br><span>for a more connected tomorrow.</span></h2><p>One intelligent workspace. Four powerful capabilities.<br>Built for Pakistan. Designed for what’s next.</p><a class="ref-lime-button" href="#assistant">Explore AI Workspace ${icon('arrow')}</a></section><section class="home-cards ref-home-cards">${[['chat','Chat with CloudCore','Get answers, draft content, analyze information and more.','Research · Summarize · Plan','assistant'],['video','Meeting Intelligence','Turn discussions into actionable insights.','Transcribe · Summarize · Act','meetings'],['file','Document Insights','Understand and extract key information.','Compare · Extract · Analyze','documents'],['image','Image Studio','Generate visuals, diagrams, and inspect visual media.','Generate · Style · Inspect','images']].map(([i,t,d,tags,r],n)=>`<a class="ref-capability capability-${n}" href="#${r}"><span class="feature-icon">${icon(i)}</span><h2>${t}</h2><p>${d}</p><div><small>${tags}</small><span class="ref-round-arrow">${icon('arrow')}</span></div></a>`).join('')}</section><div class="ref-home-lists"><section class="panel"><div class="panel-heading">${icon('clock')}<h2>Recent Activity</h2><a href="#history">View all →</a></div>${recent.length?recent.map(c=>`<button class="ref-activity-row" data-action="open-chat" data-id="${esc(c.id)}"><span class="mini-icon">${icon('chat')}</span><span><b>${esc(c.title)}</b><small>Conversation · ${new Date(c.updated).toLocaleDateString()}</small></span><span>Continue →</span></button>`).join(''):'<div class="ref-empty-inline">Your recent conversations will appear here.<a href="#assistant">Start a conversation →</a></div>'}</section><section class="panel"><div class="panel-heading">${icon('folder')}<h2>Continue where you left off</h2><a href="#documents">View all →</a></div>${docFile?`<button class="ref-activity-row" data-action="ref-document-route"><span class="mini-icon">${icon('file')}</span><span><b>${esc(docFile.name)}</b><small>Document · ${docIngested?'Indexed & ready':'Selected on this device'}</small></span><span>Continue →</span></button>`:'<div class="ref-empty-inline">Bring your documents and meetings into one workspace.<a href="#meetings">Open Meeting Intelligence →</a></div>'}</section></div>`;
 }
 function refAssistant() {
   if(messages.length)return `<section class="ref-conversation"><div class="ref-conversation-heading"><h1>AI Assistant</h1><button class="outline" data-action="new-chat">${icon('plus')} New Chat</button></div><div class="messages">${messages.map((m,i)=>`<article class="message ${m.role==='user'?'user':'assistant'}"><span class="message-avatar">${m.role==='user'?esc((appUser?.displayName||'U')[0]):mark()}</span><div class="chat-text" ${m.streaming?'id="active-assistant-stream-bubble"':''}>${m.role==='user'?esc(m.content):renderMarkdown(m.content)}${m.streaming?'<span class="typing-cursor"></span>':''}</div></article>`).join('')}</div>${composer('assistant')}</section>`;
@@ -331,8 +331,393 @@ function refDocuments() {
   return refKnowledge();
 }
 function refImages() {
+  return refImageStudio();
+}
+
+function refImageStudio() {
+  const styles = [
+    { id: 'corporate', label: 'Corporate Cloud', desc: 'PTCL Green & Teal', icon: 'cloud' },
+    { id: 'photoreal', label: 'Photoreal Studio', desc: 'Cinematic 8K DSLR', icon: 'image' },
+    { id: 'diagram', label: 'Tech Diagram', desc: 'Schematic Blueprint', icon: 'grid' },
+    { id: 'isometric', label: '3D Isometric', desc: 'Glossy 3D Model', icon: 'box' },
+    { id: 'minimalist', label: 'Minimalist Vector', desc: 'Clean Modern Emblem', icon: 'shield' },
+    { id: 'cyber', label: 'Cyber Tech', desc: 'Neon Fiber & AI', icon: 'signal' }
+  ];
+
+  const ratios = [
+    { id: '1:1', label: '1:1 Square', boxClass: 'r-1-1' },
+    { id: '16:9', label: '16:9 Banner', boxClass: 'r-16-9' },
+    { id: '9:16', label: '9:16 Portrait', boxClass: 'r-9-16' },
+    { id: '4:3', label: '4:3 Classic', boxClass: 'r-4-3' }
+  ];
+
+  const header = `
+    <div class="ref-page-heading">
+      <div>
+        <h1>AI Image Studio</h1>
+        <p>Enterprise visual generation, architecture schematics, and optical character analysis.</p>
+      </div>
+      <div class="ref-page-heading-tools">
+        <button type="button" class="outline" data-action="studio-tab" data-tab="gallery">${icon('grid')} Library (${studioHistory.length})</button>
+        <button type="button" class="primary" data-action="studio-inspire-prompt">${icon('spark')} Inspire Me</button>
+      </div>
+    </div>
+
+    <div class="ref-knowledge-stats-strip" style="margin-bottom:16px;">
+      <div class="ref-stat-card">
+        <span class="ref-stat-icon">${icon('image')}</span>
+        <div><b>${studioHistory.length}</b><small>Generated Assets</small></div>
+      </div>
+      <div class="ref-stat-card">
+        <span class="ref-stat-icon">${icon('chip')}</span>
+        <div><b>32-Core Xeon</b><small>Intel DL-Boost Active</small></div>
+      </div>
+      <div class="ref-stat-card">
+        <span class="ref-stat-icon">${icon('clock')}</span>
+        <div><b>~2.1s</b><small>Average Latency</small></div>
+      </div>
+      <div class="ref-stat-card">
+        <span class="ref-stat-icon">${icon('shield')}</span>
+        <div><b>On-Premise</b><small>100% Private Cloud</small></div>
+      </div>
+    </div>
+
+    <div class="ref-studio-tabs" role="tablist" aria-label="Image Studio Modes">
+      <button type="button" role="tab" class="ref-studio-tab-btn ${studioTab === 'generate' ? 'active' : ''}" data-action="studio-tab" data-tab="generate">
+        ${icon('spark')} Generate Studio
+      </button>
+      <button type="button" role="tab" class="ref-studio-tab-btn ${studioTab === 'remix' ? 'active' : ''}" data-action="studio-tab" data-tab="remix">
+        ${icon('sliders')} Variations &amp; Remix
+      </button>
+      <button type="button" role="tab" class="ref-studio-tab-btn ${studioTab === 'gallery' ? 'active' : ''}" data-action="studio-tab" data-tab="gallery">
+        ${icon('grid')} Asset Gallery <span class="ref-scope-chip" style="margin-left:4px;">${studioHistory.length}</span>
+      </button>
+      <button type="button" role="tab" class="ref-studio-tab-btn ${studioTab === 'vision' ? 'active' : ''}" data-action="studio-tab" data-tab="vision">
+        ${icon('image')} Analyze &amp; OCR
+      </button>
+    </div>
+  `;
+
+  if (studioTab === 'vision') {
+    return header + refStudioVision();
+  }
+
+  if (studioTab === 'gallery') {
+    return header + refStudioGallery();
+  }
+
+  if (studioTab === 'remix') {
+    return header + refStudioRemix();
+  }
+
+  const activeAsset = studioActiveAsset || (studioHistory.length > 0 ? studioHistory[0] : null);
+
+  const leftControls = `
+    <section class="ref-studio-controls">
+      <div class="ref-studio-section">
+        <div class="ref-studio-section-title">
+          <span>Prompt Description</span>
+          <small id="studio-char-count">${(studioPrompt || '').length}/500</small>
+        </div>
+        <div class="ref-prompt-container">
+          <textarea class="ref-prompt-input" id="studio-prompt-input" placeholder="Describe the image to generate... e.g. Futuristic optical fiber datacenter with glowing racks and PTCL branding" maxlength="500">${esc(studioPrompt || '')}</textarea>
+          <div class="ref-prompt-tools">
+            <button type="button" class="ref-prompt-tool-btn" data-action="studio-enhance-prompt">${icon('spark')} AI Enhance</button>
+            <button type="button" class="ref-prompt-tool-btn" data-action="studio-inspire-prompt">${icon('bulb')} Inspire Me</button>
+            <button type="button" class="ref-prompt-tool-btn" data-action="studio-clear-prompt">${icon('close')} Clear</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="ref-studio-section">
+        <div class="ref-studio-section-title">
+          <span>Style Preset</span>
+          <small>${styles.find(s => s.id === studioStyle)?.label || 'Corporate Cloud'}</small>
+        </div>
+        <div class="ref-style-grid">
+          ${styles.map(s => `
+            <button type="button" class="ref-style-card ${studioStyle === s.id ? 'active' : ''}" data-action="studio-select-style" data-style="${s.id}">
+              ${icon(s.icon)}
+              <b>${s.label}</b>
+              <small>${s.desc}</small>
+            </button>
+          `).join('')}
+        </div>
+      </div>
+
+      <div class="ref-studio-section">
+        <div class="ref-studio-section-title">
+          <span>Aspect Ratio</span>
+          <small>${studioRatio}</small>
+        </div>
+        <div class="ref-ratio-grid">
+          ${ratios.map(r => `
+            <button type="button" class="ref-ratio-btn ${studioRatio === r.id ? 'active' : ''}" data-action="studio-select-ratio" data-ratio="${r.id}">
+              <div class="ref-ratio-box ${r.boxClass}"></div>
+              <span>${r.label}</span>
+            </button>
+          `).join('')}
+        </div>
+      </div>
+
+      <div class="ref-studio-section">
+        <button type="button" class="ref-advanced-toggle" data-action="studio-toggle-advanced">
+          ${icon('sliders')} Advanced Controls ${studioAdvancedOpen ? '▲' : '▼'}
+        </button>
+        <div class="ref-advanced-body ${studioAdvancedOpen ? 'open' : ''}">
+          <div class="ref-advanced-row">
+            <label for="studio-neg-input"><span>Negative Prompt</span><small>Elements to avoid</small></label>
+            <input type="text" id="studio-neg-input" placeholder="e.g. blurry, low quality, distorted text, watermark" value="${esc(studioNegativePrompt || '')}">
+          </div>
+          <div class="ref-advanced-row">
+            <label for="studio-cfg-range"><span>Guidance Scale (CFG)</span><b>${studioCfgScale}</b></label>
+            <input type="range" min="1" max="15" step="0.5" id="studio-cfg-range" value="${studioCfgScale}">
+          </div>
+          <div class="ref-advanced-row">
+            <label for="studio-seed-input"><span>Seed</span><small>Fixed number for reproducibility</small></label>
+            <div style="display:flex;gap:6px;">
+              <input type="number" id="studio-seed-input" placeholder="Random" value="${esc(studioSeed || '')}" style="flex:1;">
+              <button type="button" class="outline small" data-action="studio-dice-seed" title="Randomize Seed">🎲</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <button type="button" class="ref-generate-btn" data-action="studio-generate" ${studioGenerating ? 'disabled' : ''}>
+        ${icon('spark')} ${studioGenerating ? 'Generating on 32-core Xeon…' : 'Generate Image'} <kbd>Ctrl+Enter</kbd>
+      </button>
+    </section>
+  `;
+
+  const rightStage = `
+    <section class="ref-canvas-stage-card">
+      <div class="ref-stage-viewport">
+        ${studioGenerating ? `
+          <div class="ref-stage-loading-overlay">
+            <div class="ref-pulse-ring"></div>
+            <b>Generating Visual on 32-Core Intel Xeon…</b>
+            <small style="color:#9be680;font-family:monospace;">Elapsed: ${studioGenTimer.toFixed(1)}s • AVX-512 DL Boost</small>
+            <span style="font-size:11px;color:#8fa798;max-width:280px;text-align:center;">Synthesizing latent diffusion tensors and rendering vector layers</span>
+          </div>
+        ` : ''}
+
+        ${activeAsset ? `
+          <img class="ref-stage-image" id="studio-stage-img" src="${esc(activeAsset.url)}" alt="${esc(activeAsset.prompt)}">
+          <div class="ref-stage-floating-bar">
+            <a class="soft-button" href="${esc(activeAsset.url)}" download="${esc(activeAsset.filename)}" title="Download Asset">${icon('download')} Download</a>
+            <button type="button" data-action="studio-copy-asset" data-url="${esc(activeAsset.url)}" title="Copy Image Binary">${icon('file')} Copy</button>
+            <span class="sep"></span>
+            <button type="button" data-action="studio-save-knowledge-modal" data-id="${esc(activeAsset.id)}" title="Save directly to Knowledge Hub">${icon('folder')} Save to Hub</button>
+            <button type="button" data-action="studio-inspect-vision" data-url="${esc(activeAsset.url)}" title="Analyze in Vision AI">${icon('spark')} Inspect Vision</button>
+            <button type="button" data-action="studio-remix-active" data-id="${esc(activeAsset.id)}" title="Create Variations">${icon('sliders')} Remix</button>
+            <span class="sep"></span>
+            <button type="button" data-action="studio-lightbox-active" data-url="${esc(activeAsset.url)}" data-prompt="${esc(activeAsset.prompt)}" title="Fullscreen Lightbox">${icon('arrow')} Expand</button>
+          </div>
+        ` : `
+          <div class="ref-stage-empty">
+            <span class="feature-icon" style="margin:0 auto 12px;">${icon('image')}</span>
+            <h3>Studio Canvas Ready</h3>
+            <p>Describe your visual concept on the left and click <b>Generate Image</b> to create high-definition enterprise assets.</p>
+          </div>
+        `}
+      </div>
+
+      ${activeAsset ? `
+        <div class="ref-meta-strip">
+          <div style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            <b>Prompt:</b> "${esc(activeAsset.prompt)}"
+          </div>
+          <div style="font-family:monospace;font-size:10px;white-space:nowrap;color:#2f593b;">
+            SEED: #${activeAsset.seed} • ${(activeAsset.durationMs / 1000).toFixed(1)}s • ${activeAsset.width}x${activeAsset.height} px
+          </div>
+        </div>
+      ` : ''}
+
+      <div class="ref-filmstrip-section">
+        <div class="ref-filmstrip-title">
+          <span>Recent Generations Filmstrip</span>
+          <small>${studioHistory.length} assets</small>
+        </div>
+        <div class="ref-filmstrip-rail">
+          ${studioHistory.length > 0 ? studioHistory.map(a => `
+            <div class="ref-filmstrip-thumb ${activeAsset?.id === a.id ? 'active' : ''}" data-action="studio-load-history-item" data-id="${esc(a.id)}" title="${esc(a.prompt)}">
+              <img src="${esc(a.url)}" alt="${esc(a.prompt)}">
+            </div>
+          `).join('') : `
+            <div style="padding:16px;font-size:11px;color:#7a8c80;text-align:center;width:100%;">
+              No generations yet. Create your first image to populate the filmstrip.
+            </div>
+          `}
+        </div>
+      </div>
+    </section>
+  `;
+
+  return header + `
+    <div class="ref-studio-layout">
+      ${leftControls}
+      ${rightStage}
+    </div>
+  `;
+}
+
+function refStudioRemix() {
+  const activeAsset = studioActiveAsset || (studioHistory.length > 0 ? studioHistory[0] : null);
+  const remixImgUrl = studioRemixURL || activeAsset?.url || '';
+
+  return `
+    <section class="panel" style="padding:22px;">
+      <div class="panel-heading" style="margin-bottom:18px;">
+        <div>
+          <h2>Image Variations &amp; Remix Lab</h2>
+          <p>Iterate and transform existing visual assets with prompt adjustments and style shifts.</p>
+        </div>
+      </div>
+
+      <div class="ref-studio-layout">
+        <div class="ref-studio-controls">
+          <div class="ref-studio-section">
+            <div class="ref-studio-section-title"><span>Base Reference Asset</span></div>
+            ${remixImgUrl ? `
+              <div style="height:160px;border-radius:10px;overflow:hidden;background:#0d1410;margin-bottom:10px;border:1px solid #d4ded7;">
+                <img src="${esc(remixImgUrl)}" style="width:100%;height:100%;object-fit:cover;" alt="Base image">
+              </div>
+            ` : `
+              <div class="dropzone" data-drop="image" style="min-height:120px;padding:12px;margin-bottom:10px;">
+                ${icon('image')}
+                <p>Drag an image here or <button type="button" data-action="choose-image">browse</button></p>
+              </div>
+            `}
+          </div>
+
+          <div class="ref-studio-section">
+            <div class="ref-studio-section-title"><span>Remix Prompt Modification</span></div>
+            <textarea class="ref-prompt-input" id="studio-remix-prompt" placeholder="e.g. Convert into futuristic night scene with glowing cyan fiber optics" style="min-height:80px;">${esc(studioPrompt || '')}</textarea>
+          </div>
+
+          <div class="ref-studio-section">
+            <div class="ref-studio-section-title">
+              <span>Variation Strength</span>
+              <b>${Math.round(studioRemixStrength * 100)}%</b>
+            </div>
+            <input type="range" min="0.1" max="0.9" step="0.05" id="studio-remix-strength" value="${studioRemixStrength}" style="width:100%;accent-color:#00663b;">
+            <small style="color:#6b7c72;font-size:10px;display:block;margin-top:4px;">Lower = closer to original; Higher = more creative divergence</small>
+          </div>
+
+          <button type="button" class="ref-generate-btn" data-action="studio-generate-remix">
+            ${icon('spark')} Generate Variation
+          </button>
+        </div>
+
+        <div class="ref-canvas-stage-card">
+          <div class="ref-stage-viewport">
+            ${activeAsset ? `
+              <img class="ref-stage-image" src="${esc(activeAsset.url)}" alt="${esc(activeAsset.prompt)}">
+              <div class="ref-stage-floating-bar">
+                <a class="soft-button" href="${esc(activeAsset.url)}" download="${esc(activeAsset.filename)}">${icon('download')} Download</a>
+                <button type="button" data-action="studio-save-knowledge-modal" data-id="${esc(activeAsset.id)}">${icon('folder')} Save to Hub</button>
+                <button type="button" data-action="studio-inspect-vision" data-url="${esc(activeAsset.url)}">${icon('spark')} Inspect Vision</button>
+              </div>
+            ` : `
+              <div class="ref-stage-empty">
+                <span class="feature-icon" style="margin:0 auto 12px;">${icon('sliders')}</span>
+                <h3>Remix Output Stage</h3>
+                <p>Select an image and specify modification instructions to render a new variation.</p>
+              </div>
+            `}
+          </div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function refStudioGallery() {
+  const q = (studioGallerySearch || '').toLowerCase().trim();
+  const f = studioGalleryFilter || 'all';
+
+  let list = studioHistory;
+  if (f !== 'all') {
+    list = list.filter(a => a.style === f);
+  }
+  if (q) {
+    list = list.filter(a => a.prompt.toLowerCase().includes(q) || a.style.toLowerCase().includes(q));
+  }
+
+  const batchBar = studioGallerySelected.size > 0 ? `
+    <div class="ref-batch-bar" style="margin-bottom:16px;">
+      <span><b>${studioGallerySelected.size}</b> asset${studioGallerySelected.size === 1 ? '' : 's'} selected</span>
+      <div class="ref-batch-actions">
+        <button type="button" class="outline small" data-action="studio-batch-save-hub">${icon('folder')} Move to Knowledge Hub</button>
+        <button type="button" class="outline danger-outline small" data-action="studio-batch-delete">${icon('trash')} Delete Selected</button>
+        <button type="button" class="soft-button small" data-action="studio-gallery-clear-select">${icon('close')} Deselect</button>
+      </div>
+    </div>
+  ` : '';
+
+  const filterChips = [
+    ['all', 'All Assets'],
+    ['corporate', 'Corporate Cloud'],
+    ['photoreal', 'Photoreal Studio'],
+    ['diagram', 'Diagram'],
+    ['isometric', '3D Isometric'],
+    ['minimalist', 'Minimalist'],
+    ['cyber', 'Cyber Tech']
+  ];
+
+  return `
+    <section class="panel" style="padding:22px;">
+      <div class="ref-gallery-toolbar">
+        <label class="ref-gallery-search">
+          ${icon('search')}
+          <input type="search" id="studio-gallery-search-input" placeholder="Search visuals by prompt keywords..." value="${esc(studioGallerySearch)}">
+        </label>
+        <div class="ref-type-pills">
+          ${filterChips.map(([k, label]) => `
+            <button type="button" class="${f === k ? 'active' : ''}" data-action="studio-gallery-filter" data-filter="${k}">${label}</button>
+          `).join('')}
+        </div>
+      </div>
+
+      ${batchBar}
+
+      <div class="ref-gallery-grid">
+        ${list.length > 0 ? list.map(a => {
+          const isSel = studioGallerySelected.has(a.id);
+          return `
+            <div class="ref-gallery-card ${isSel ? 'selected' : ''}" data-id="${esc(a.id)}">
+              <input type="checkbox" class="ref-gallery-check" data-action="studio-toggle-select" data-id="${esc(a.id)}" ${isSel ? 'checked' : ''}>
+              <div class="ref-gallery-img-wrap" data-action="studio-view-asset" data-id="${esc(a.id)}">
+                <img src="${esc(a.url)}" alt="${esc(a.prompt)}">
+              </div>
+              <div class="ref-gallery-info">
+                <div class="ref-gallery-prompt" title="${esc(a.prompt)}">${esc(a.prompt)}</div>
+                <div class="ref-gallery-foot">
+                  <span class="role-badge" style="font-size:9px;padding:2px 6px;">${esc(a.style.toUpperCase())}</span>
+                  <div style="display:flex;gap:4px;">
+                    <button type="button" class="icon-button" data-action="studio-card-hub" data-id="${esc(a.id)}" title="Save to Knowledge Hub">${icon('folder')}</button>
+                    <button type="button" class="icon-button danger" data-action="studio-delete-asset" data-id="${esc(a.id)}" title="Delete Asset">${icon('trash')}</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('') : `
+          <div style="grid-column:1/-1;text-align:center;padding:48px 16px;color:#6b7c72;">
+            <span class="feature-icon" style="margin:0 auto 12px;">${icon('image')}</span>
+            <h3>No visual assets found</h3>
+            <p>${q ? `No assets matching "${esc(q)}"` : 'Your generated images will appear in this workspace gallery.'}</p>
+            <button type="button" class="primary" data-action="studio-tab" data-tab="generate" style="margin-top:12px;">${icon('spark')} Open Generate Studio</button>
+          </div>
+        `}
+      </div>
+    </section>
+  `;
+}
+
+function refStudioVision() {
   const examples=[['tower','Telecom Tower','Identify equipment and infrastructure','assets/example-tower.png'],['map','Satellite Map','Analyze locations and land use','assets/example-map.png'],['datacenter','Data Center','Identify assets and infrastructure','assets/example-datacenter.png'],['diagram','Diagram','Extract text and understand diagrams','assets/diagram.svg']];
-  return `<div class="ref-page-heading"><h1>Image Analysis</h1><p>Upload an image to analyze, extract information or get insights.</p></div><section class="ref-image-upload"><div class="tabs image-tabs" role="tablist" aria-label="Image source"><button role="tab" aria-selected="${imageMode==='upload'}" class="${imageMode==='upload'?'active':''}" data-action="image-mode" data-mode="upload">Upload Image</button><button role="tab" aria-selected="${imageMode==='url'}" class="${imageMode==='url'?'active':''}" data-action="image-mode" data-mode="url">Analyze from URL</button></div>${imageMode==='upload'?`<div class="dropzone" data-drop="image">${icon('image')}<h3>Drag and drop an image here</h3><p>or <button data-action="choose-image">click to upload</button></p><small>JPG, PNG, WEBP (Max 20MB)</small><button class="primary" data-action="choose-image">${icon('upload')}Upload Image</button></div>`:`<form id="url-form" class="ref-url-form"><label for="ref-image-url">Direct HTTPS image URL</label><input id="ref-image-url" name="url" type="url" required placeholder="https://example.com/image.jpg"><button class="primary" type="submit">Load image ${icon('arrow')}</button></form>`}</section><div class="ref-example-heading"><h2>Try an example</h2><small>Illustrative previews</small></div><section class="ref-image-examples">${examples.map(([id,t,d,src])=>`<button data-action="example-image" data-example="${id}"><img src="${src}" alt="${t} example"><span><b>${t}</b><small>${d}</small></span></button>`).join('')}</section><section class="panel ref-image-results"><div class="panel-heading"><div><h2>Analysis Results</h2><p>AI-powered analysis with detailed insights and extracted information.</p></div>${imageURL?`<button class="outline" data-action="ref-view-image">${icon('image')}View Full Image</button><button class="primary" data-action="analyze-image-ai" ${visionLoading?'disabled':''}>${icon('spark')}${visionLoading?'Analyzing…':'Analyze Image'}</button>`:''}</div>${imageURL?`${refVisionCards()}`:`<div class="ref-vision-placeholder"><span class="feature-icon">${icon('image')}</span><h3>Select an image to see its analysis</h3><p>Preview equipment, maps and diagrams, or upload your own image.</p></div>`}</section>`;
+  return `<section class="ref-image-upload"><div class="tabs image-tabs" role="tablist" aria-label="Image source"><button role="tab" aria-selected="${imageMode==='upload'}" class="${imageMode==='upload'?'active':''}" data-action="image-mode" data-mode="upload">Upload Image</button><button role="tab" aria-selected="${imageMode==='url'}" class="${imageMode==='url'?'active':''}" data-action="image-mode" data-mode="url">Analyze from URL</button></div>${imageMode==='upload'?`<div class="dropzone" data-drop="image">${icon('image')}<h3>Drag and drop an image here</h3><p>or <button data-action="choose-image">click to upload</button></p><small>JPG, PNG, WEBP (Max 20MB)</small><button class="primary" data-action="choose-image">${icon('upload')}Upload Image</button></div>`:`<form id="url-form" class="ref-url-form"><label for="ref-image-url">Direct HTTPS image URL</label><input id="ref-image-url" name="url" type="url" required placeholder="https://example.com/image.jpg"><button class="primary" type="submit">Load image ${icon('arrow')}</button></form>`}</section><div class="ref-example-heading"><h2>Try an example</h2><small>Illustrative previews</small></div><section class="ref-image-examples">${examples.map(([id,t,d,src])=>`<button data-action="example-image" data-example="${id}"><img src="${src}" alt="${t} example"><span><b>${t}</b><small>${d}</small></span></button>`).join('')}</section><section class="panel ref-image-results"><div class="panel-heading"><div><h2>Analysis Results</h2><p>AI-powered analysis with detailed insights and extracted information.</p></div>${imageURL?`<button class="outline" data-action="ref-view-image">${icon('image')}View Full Image</button><button class="primary" data-action="analyze-image-ai" ${visionLoading?'disabled':''}>${icon('spark')}${visionLoading?'Analyzing…':'Analyze Image'}</button>`:''}</div>${imageURL?`${refVisionCards()}`:`<div class="ref-vision-placeholder"><span class="feature-icon">${icon('image')}</span><h3>Select an image to see its analysis</h3><p>Preview equipment, maps and diagrams, or upload your own image.</p></div>`}</section>`;
 }
 function refVisionCards() {
   const isExample=!imageFile&&imageURL==='assets/example-tower.png'&&!visionResult;
@@ -512,7 +897,7 @@ function refSettings() {
             <h3>Vision AI & Optical Character Recognition</h3>
             <p>Visual inspection for telecom infrastructure, diagrams, satellite imagery, and OCR extraction.</p>
             <small>Model: <b>${esc(visionModel)}</b></small>
-            <div class="ref-status-actions"><a class="outline" href="#images">Open Image Analysis ${icon('arrow')}</a></div>
+            <div class="ref-status-actions"><a class="outline" href="#images">Open Image Studio ${icon('arrow')}</a></div>
           </article>
         </div>
       </section>`;
@@ -593,4 +978,59 @@ function refBind() {
     selectAllDocs.indeterminate=selectedKnowledgeDocIds.size>0&&selectedKnowledgeDocIds.size<knowledgeDocs.length;
   }
   if(typeof bindSettingsForms==='function')bindSettingsForms();
+  const studioPromptInput=$('#studio-prompt-input');
+  if(studioPromptInput){
+    studioPromptInput.oninput=e=>{
+      if(typeof studioPrompt!=='undefined')studioPrompt=e.target.value;
+      const countEl=$('#studio-char-count');
+      if(countEl)countEl.textContent=`${e.target.value.length}/500`;
+    };
+    studioPromptInput.onkeydown=e=>{
+      if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){
+        e.preventDefault();
+        if(typeof triggerStudioGenerate==='function')triggerStudioGenerate();
+      }
+    };
+  }
+  const studioGallerySearchInput=$('#studio-gallery-search-input');
+  if(studioGallerySearchInput){
+    studioGallerySearchInput.oninput=e=>{
+      if(typeof studioGallerySearch!=='undefined')studioGallerySearch=e.target.value;
+      route({preserveScroll:true});
+    };
+  }
+  const studioCfgRange=$('#studio-cfg-range');
+  if(studioCfgRange){
+    studioCfgRange.oninput=e=>{
+      if(typeof studioCfgScale!=='undefined')studioCfgScale=parseFloat(e.target.value);
+      const b=studioCfgRange.closest('.ref-advanced-row')?.querySelector('b');
+      if(b)b.textContent=e.target.value;
+    };
+  }
+  const studioNegInput=$('#studio-neg-input');
+  if(studioNegInput){
+    studioNegInput.oninput=e=>{
+      if(typeof studioNegativePrompt!=='undefined')studioNegativePrompt=e.target.value;
+    };
+  }
+  const studioSeedInput=$('#studio-seed-input');
+  if(studioSeedInput){
+    studioSeedInput.oninput=e=>{
+      if(typeof studioSeed!=='undefined')studioSeed=e.target.value;
+    };
+  }
+  const studioRemixPromptInput=$('#studio-remix-prompt');
+  if(studioRemixPromptInput){
+    studioRemixPromptInput.oninput=e=>{
+      if(typeof studioPrompt!=='undefined')studioPrompt=e.target.value;
+    };
+  }
+  const studioRemixStrengthInput=$('#studio-remix-strength');
+  if(studioRemixStrengthInput){
+    studioRemixStrengthInput.oninput=e=>{
+      if(typeof studioRemixStrength!=='undefined')studioRemixStrength=parseFloat(e.target.value);
+      const b=studioRemixStrengthInput.closest('.ref-studio-section')?.querySelector('b');
+      if(b)b.textContent=`${Math.round(parseFloat(e.target.value)*100)}%`;
+    };
+  }
 }
