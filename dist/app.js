@@ -586,34 +586,215 @@ function openBatchUploadModal(){
   }
 }
 
-async function openPreviewDocModal(id){
+async function openDocumentViewerModal(id){
   try{
     const res=await fetch(`/api/knowledge/documents/${encodeURIComponent(id)}`,{headers:{'x-requested-with':'CloudCoreAI'}});
     if(!res.ok)throw Error('Failed to load document details.');
     const data=await res.json();
     const doc=data.document;
-    const ext=doc.filename.split('.').pop()?.toUpperCase()||'DOC';
-    modal(`
-      <div class="ref-modal-box" style="max-width:680px;">
-        <div class="panel-heading">
-          <span class="ref-ext-badge ext-${esc(ext.toLowerCase())}" style="font-size:14px;padding:8px 12px;">${esc(ext)}</span>
-          <div>
-            <h2 style="font-size:18px;margin:0;">${esc(doc.filename)}</h2>
-            <p style="margin:4px 0 0;font-size:12px;color:#607386;">Folder: <b>${esc(doc.folderName||'Root')}</b> · Size: <b>${formatBytes(doc.sizeBytes)}</b> · Owner: <b>${esc(doc.creatorName||'User')}</b> · ${doc.isShared?'Workspace Shared':'Private'}</p>
+    const rawExt=doc.filename.split('.').pop()||'DOC';
+    const ext=rawExt.toLowerCase();
+
+    // 1. PDF in-browser viewer
+    if(ext==='pdf'){
+      modal(`
+        <div class="ref-viewer-modal">
+          <div class="ref-viewer-header">
+            <div class="ref-viewer-meta">
+              <span class="ref-ext-badge ext-pdf">PDF</span>
+              <div>
+                <h3 title="${esc(doc.filename)}">${esc(doc.filename)}</h3>
+                <p>${formatBytes(doc.sizeBytes)} · Folder: <b>${esc(doc.folderName||'Root')}</b> · Owner: <b>${esc(doc.creatorName||'User')}</b> · ${doc.isShared?'Workspace Shared':'Private'}</p>
+              </div>
+            </div>
+            <div class="ref-viewer-header-actions">
+              <a class="outline small" href="/api/knowledge/documents/${encodeURIComponent(doc.id)}/view" target="_blank" title="Open full screen in a new tab">${icon('arrow')} Pop out</a>
+              <a class="outline small" href="/api/knowledge/documents/${encodeURIComponent(doc.id)}/download" download="${esc(doc.filename)}" title="Download PDF">${icon('download')} Download</a>
+              <button type="button" class="icon-button dialog-close" data-action="close-dialog" aria-label="Close">${icon('close')}</button>
+            </div>
           </div>
-          <a class="primary small" style="margin-left:auto;" href="/api/knowledge/documents/${encodeURIComponent(doc.id)}/download" download="${esc(doc.filename)}">${icon('download')} Download</a>
+          <div class="ref-viewer-body" style="height:74vh;background:#525659;">
+            <iframe src="/api/knowledge/documents/${encodeURIComponent(doc.id)}/view#toolbar=1&navpanes=1" style="width:100%;height:100%;border:0;" title="${esc(doc.filename)}"></iframe>
+          </div>
         </div>
-        <div style="margin-top:16px;">
-          <h4 style="margin:0 0 8px;font-size:13px;color:#183224;">Parsed Content Preview (${doc.tokenCount||0} estimated tokens)</h4>
-          <div style="background:#f8faf9;border:1px solid #dbe8e0;border-radius:10px;padding:14px;max-height:300px;overflow-y:auto;font-family:monospace;font-size:12px;line-height:1.6;white-space:pre-wrap;color:#1c2e24;">${esc(doc.extractedText||'No text could be extracted from this document.')}</div>
+      `);
+      bindDialog();
+      return;
+    }
+
+    // 2. Spreadsheet viewer (XLSX, XLS, CSV)
+    if(['xlsx','xls','csv'].includes(ext)){
+      modal(`
+        <div class="ref-viewer-modal">
+          <div class="ref-viewer-header">
+            <div class="ref-viewer-meta">
+              <span class="ref-ext-badge ext-${ext}">${ext.toUpperCase()}</span>
+              <div>
+                <h3 title="${esc(doc.filename)}">${esc(doc.filename)}</h3>
+                <p>${formatBytes(doc.sizeBytes)} · Folder: <b>${esc(doc.folderName||'Root')}</b> · Spreadsheet</p>
+              </div>
+            </div>
+            <div class="ref-viewer-header-actions">
+              <label class="ref-sheet-search" style="display:none;" id="ref-sheet-search-wrap">${icon('search')}<input id="ref-sheet-filter-input" placeholder="Search sheet rows…" aria-label="Search rows"></label>
+              <a class="outline small" href="/api/knowledge/documents/${encodeURIComponent(doc.id)}/download" download="${esc(doc.filename)}" title="Download file">${icon('download')} Download</a>
+              <button type="button" class="icon-button dialog-close" data-action="close-dialog" aria-label="Close">${icon('close')}</button>
+            </div>
+          </div>
+          <div id="ref-sheet-tabs-container"></div>
+          <div class="ref-viewer-body ref-sheet-scroll" id="ref-sheet-container" style="height:68vh;overflow:auto;background:#fff;">
+            <div style="text-align:center;padding:48px;color:#617281;"><span class="feature-icon" style="margin:0 auto 12px;">${icon('chart')}</span><p>Parsing spreadsheet data…</p></div>
+          </div>
+          <div class="ref-sheet-statusbar" id="ref-sheet-statusbar" style="display:none;"></div>
         </div>
-        <div class="dialog-actions" style="margin-top:18px;">
-          <button type="button" class="outline" data-action="close-dialog">Close</button>
+      `);
+      bindDialog();
+
+      try{
+        const sRes=await fetch(`/api/knowledge/documents/${encodeURIComponent(doc.id)}/sheet-data`,{headers:{'x-requested-with':'CloudCoreAI'}});
+        if(!sRes.ok)throw Error('Could not parse spreadsheet structure.');
+        const sData=await sRes.json();
+        const sheets=sData.sheets||[];
+        if(!sheets.length)throw Error('No sheet tables found.');
+
+        let activeSheetIdx=0;
+        const container=$('#ref-sheet-container');
+        const tabsBox=$('#ref-sheet-tabs-container');
+        const searchWrap=$('#ref-sheet-search-wrap');
+        const filterInput=$('#ref-sheet-filter-input');
+        const statusbar=$('#ref-sheet-statusbar');
+
+        if(searchWrap)searchWrap.style.display='inline-flex';
+        if(statusbar)statusbar.style.display='flex';
+
+        function renderSheet(idx,filterTerm=''){
+          activeSheetIdx=idx;
+          const curSheet=sheets[idx];
+          if(!curSheet)return;
+          const rows=curSheet.rows||[];
+          const term=filterTerm.trim().toLowerCase();
+          const filteredRows=term?rows.filter(r=>r.some(c=>String(c||'').toLowerCase().includes(term))):rows;
+
+          if(tabsBox && sheets.length>1){
+            tabsBox.innerHTML=`<div class="ref-sheet-tabs-bar">${sheets.map((s,i)=>`
+              <button type="button" class="ref-sheet-tab-btn ${i===activeSheetIdx?'active':''}" data-sheet-idx="${i}">📊 ${esc(s.name)} <small>(${s.totalRows} rows)</small></button>
+            `).join('')}</div>`;
+            tabsBox.querySelectorAll('[data-sheet-idx]').forEach(btn=>{
+              btn.onclick=()=>renderSheet(parseInt(btn.dataset.sheetIdx,10),filterInput?.value||'');
+            });
+          }
+
+          if(!filteredRows.length){
+            if(container)container.innerHTML=`<div style="text-align:center;padding:40px;color:#718292;"><p>No rows matching "${esc(filterTerm)}"</p></div>`;
+            if(statusbar)statusbar.innerHTML=`<span>Showing <b>0</b> of ${rows.length} rows · Active Sheet: <b>${esc(curSheet.name)}</b></span>`;
+            return;
+          }
+
+          const colCount=Math.max(...filteredRows.map(r=>r.length),1);
+          const colLetters=[];
+          for(let c=0;c<colCount;c++){
+            let letter='';
+            let temp=c;
+            while(temp>=0){
+              letter=String.fromCharCode(65+(temp%26))+letter;
+              temp=Math.floor(temp/26)-1;
+            }
+            colLetters.push(letter);
+          }
+
+          let html=`<table class="ref-excel-table"><thead><tr><th class="ref-cell-num">#</th>${colLetters.map(l=>`<th class="ref-cell-col-header">${l}</th>`).join('')}</tr></thead><tbody>`;
+          filteredRows.forEach((r,rIdx)=>{
+            html+=`<tr><td class="ref-cell-num">${rIdx+1}</td>`;
+            for(let c=0;c<colCount;c++){
+              const val=r[c]!==undefined?String(r[c]):'';
+              const isNum=/^-?\d+(\.\d+)?%?$/.test(val.trim());
+              html+=`<td class="${isNum?'ref-cell-number':''}">${esc(val)}</td>`;
+            }
+            html+='</tr>';
+          });
+          html+='</tbody></table>';
+          if(container)container.innerHTML=html;
+          if(statusbar)statusbar.innerHTML=`<span>Showing <b>${filteredRows.length}</b> rows · <b>${colCount}</b> columns · Active Sheet: <b>${esc(curSheet.name)}</b></span>`;
+        }
+
+        renderSheet(0);
+
+        if(filterInput){
+          let searchTimer;
+          filterInput.oninput=()=>{
+            clearTimeout(searchTimer);
+            searchTimer=setTimeout(()=>{
+              renderSheet(activeSheetIdx,filterInput.value);
+            },200);
+          };
+        }
+      }catch(sheetErr){
+        const container=$('#ref-sheet-container');
+        if(container){
+          container.innerHTML=`
+            <div style="padding:20px;">
+              <div style="padding:10px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;margin-bottom:14px;font-size:12px;color:#991b1b;">
+                Spreadsheet grid view not available. Displaying extracted text preview below.
+              </div>
+              <pre style="font-family:monospace;font-size:12px;line-height:1.6;white-space:pre-wrap;color:#1e293b;background:#f8fafc;padding:14px;border-radius:10px;border:1px solid #e2e8f0;max-height:58vh;overflow:auto;">${esc(doc.extractedText||'No text content.')}</pre>
+            </div>
+          `;
+        }
+      }
+      return;
+    }
+
+    // 3. Image inline viewer
+    if(['png','jpg','jpeg','webp','svg','gif'].includes(ext)){
+      modal(`
+        <div class="ref-viewer-modal">
+          <div class="ref-viewer-header">
+            <div class="ref-viewer-meta">
+              <span class="ref-ext-badge ext-png">IMG</span>
+              <div>
+                <h3 title="${esc(doc.filename)}">${esc(doc.filename)}</h3>
+                <p>${formatBytes(doc.sizeBytes)} · Folder: <b>${esc(doc.folderName||'Root')}</b> · Image</p>
+              </div>
+            </div>
+            <div class="ref-viewer-header-actions">
+              <a class="outline small" href="/api/knowledge/documents/${encodeURIComponent(doc.id)}/view" target="_blank">${icon('arrow')} Full Size</a>
+              <a class="outline small" href="/api/knowledge/documents/${encodeURIComponent(doc.id)}/download" download="${esc(doc.filename)}">${icon('download')} Download</a>
+              <button type="button" class="icon-button dialog-close" data-action="close-dialog" aria-label="Close">${icon('close')}</button>
+            </div>
+          </div>
+          <div class="ref-viewer-body" style="height:72vh;display:grid;place-items:center;background:#0f172a;padding:20px;overflow:auto;">
+            <img src="/api/knowledge/documents/${encodeURIComponent(doc.id)}/view" style="max-height:68vh;max-width:100%;object-fit:contain;border-radius:8px;box-shadow:0 10px 25px rgba(0,0,0,0.5);" alt="${esc(doc.filename)}">
+          </div>
+        </div>
+      `);
+      bindDialog();
+      return;
+    }
+
+    // 4. Default / Word / Text / Markdown viewer
+    modal(`
+      <div class="ref-viewer-modal">
+        <div class="ref-viewer-header">
+          <div class="ref-viewer-meta">
+            <span class="ref-ext-badge ext-${esc(ext)}">${esc(ext.toUpperCase())}</span>
+            <div>
+              <h3 title="${esc(doc.filename)}">${esc(doc.filename)}</h3>
+              <p>${formatBytes(doc.sizeBytes)} · Folder: <b>${esc(doc.folderName||'Root')}</b> · Owner: <b>${esc(doc.creatorName||'User')}</b> · ${doc.tokenCount||0} tokens</p>
+            </div>
+          </div>
+          <div class="ref-viewer-header-actions">
+            <a class="primary small" href="/api/knowledge/documents/${encodeURIComponent(doc.id)}/download" download="${esc(doc.filename)}">${icon('download')} Download</a>
+            <button type="button" class="icon-button dialog-close" data-action="close-dialog" aria-label="Close">${icon('close')}</button>
+          </div>
+        </div>
+        <div class="ref-viewer-body" style="height:72vh;overflow-y:auto;padding:24px 30px;background:#fbfdfc;">
+          <article class="ref-doc-formatted-reader" style="max-width:860px;margin:0 auto;background:#fff;padding:32px 36px;border:1px solid #dce8e0;border-radius:14px;box-shadow:0 4px 16px rgba(0,0,0,0.03);line-height:1.75;font-size:14px;color:#1e293b;white-space:pre-wrap;font-family:system-ui,-apple-system,sans-serif;">${esc(doc.extractedText||'No text could be extracted from this document.')}</article>
         </div>
       </div>
     `);
+    bindDialog();
   }catch(err){toast(err.message);}
 }
+const openPreviewDocModal=openDocumentViewerModal;
 
 function openMoveDocModal(id){
   const doc=knowledgeDocs.find(d=>d.id===id);
@@ -1729,7 +1910,7 @@ function selectImage(file){
     toast(`"${file.name}" loaded. Click Analyze Image to inspect.`);
   }
 }
-function actions(a,el){if(refHandleAction(a,el)){bindDialog();return;}if(a==='knowledge-scope'){switchKnowledgeScope(el.dataset.scope||'shared')}else if(a==='select-folder'){selectKnowledgeFolder(el.dataset.id||null)}else if(a==='clear-folder-filter'){selectKnowledgeFolder(null)}else if(a==='new-folder'){openNewFolderModal()}else if(a==='rename-folder'){openRenameFolderModal(el.dataset.id,el.dataset.name,el.dataset.shared==='true')}else if(a==='delete-folder'){openDeleteFolderModal(el.dataset.id,el.dataset.name,parseInt(el.dataset.count||'0',10))}else if(a==='batch-upload'){openBatchUploadModal()}else if(a==='filter-type'){knowledgeTypeFilter=el.dataset.type||'all';loadKnowledge()}else if(a==='toggle-select-all'){toggleSelectAllDocs()}else if(a==='toggle-doc-select'){toggleSelectDoc(el.dataset.id)}else if(a==='preview-doc'){openPreviewDocModal(el.dataset.id)}else if(a==='move-doc'){openMoveDocModal(el.dataset.id)}else if(a==='delete-doc'){openDeleteDocModal(el.dataset.id,el.dataset.filename)}else if(a==='confirm-delete-single-doc'){(async()=>{try{const res=await fetch(`/api/knowledge/documents/${encodeURIComponent(el.dataset.id)}`,{method:'DELETE',headers:{'x-requested-with':'CloudCoreAI'}});const data=await res.json().catch(()=>({}));if(!res.ok)throw Error(data.error?.message||'Failed to delete document.');selectedKnowledgeDocIds.delete(el.dataset.id);$('#dialog')?.close();toast(`Document "${el.dataset.filename||'document'}" deleted.`);loadKnowledge();}catch(err){toast(err.message)}})()}else if(a==='batch-move-docs'){openBatchMoveDocsModal()}else if(a==='batch-delete-docs'){confirmBatchDeleteDocs()}else if(a==='confirm-delete-batch-docs'){const ids=[...selectedKnowledgeDocIds];(async()=>{try{const res=await fetch('/api/knowledge/batch-delete',{method:'POST',headers:{'content-type':'application/json','x-requested-with':'CloudCoreAI'},body:JSON.stringify({documentIds:ids})});const data=await res.json().catch(()=>({}));if(!res.ok)throw Error(data.error?.message||'Failed to batch delete documents.');selectedKnowledgeDocIds.clear();$('#dialog')?.close();toast(`${data.deletedIds?.length||ids.length} documents deleted.`);loadKnowledge();}catch(err){toast(err.message)}})()}else if(a==='clear-doc-selection'){selectedKnowledgeDocIds.clear();route({preserveScroll:true})}else if(a==='new-chat'){messages=[];currentChat=null;location.hash='assistant';route()}else if(a==='set-pref'){const k=el.dataset.key,v=el.dataset.val;if(k&&v){userPrefs[k]=v;saveUserPrefs();if(typeof refSyncMotion==='function')refSyncMotion();route({preserveScroll:true});toast('Preference saved.')}}else if(a==='export-chats'){if(!chats.length)return toast('No conversations to export yet.');const blob=new Blob([JSON.stringify(chats,null,2)],{type:'application/json'}),link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download=`cloudcore-chats-${new Date().toISOString().slice(0,10)}.json`;link.click();URL.revokeObjectURL(link.href);toast('Chat history exported.')}else if(a==='clear-all-chats'){if(!chats.length)return toast('Your chat history is already empty.');modal(`<h2>Clear all local conversations?</h2><p>This will permanently remove ${chats.length} saved conversation${chats.length===1?'':'s'} from this browser.</p><div class="dialog-actions"><button type="button" class="outline" data-action="close-dialog">Cancel</button><button type="button" class="primary" data-action="confirm-clear-all-chats">Clear all history</button></div>`)}else if(a==='confirm-clear-all-chats'){chats=[];messages=[];currentChat=null;saveChats();if($('#dialog')?.open)$('#dialog').close();route({preserveScroll:true});toast('All local conversations cleared.')}else if(a==='refresh-settings-users'){loadSettingsUsers(true)}else if(a==='refresh-integrations'){loadAiHealth(true)}else if(a==='settings-reset-pw'){const targetUser=el.dataset.user,targetId=el.dataset.id;modal(`<h2>Reset Password for '${esc(targetUser)}'</h2><p>Enter a new temporary or permanent password (minimum 6 characters).</p><form id="modal-reset-user-pw-form" style="margin-top:12px;"><label style="display:block;font-size:12px;color:#5a7366;margin-bottom:6px;">New Password</label><input name="newPassword" type="text" minlength="6" required placeholder="At least 6 characters" style="width:100%;padding:10px 12px;border:1px solid #d4e2d9;border-radius:10px;margin-bottom:14px;"><div class="dialog-actions"><button type="button" class="outline" data-action="close-dialog">Cancel</button><button type="submit" class="primary">${icon('check')} Update Password</button></div></form>`);const rf=document.querySelector('#modal-reset-user-pw-form');if(rf)rf.onsubmit=async e=>{e.preventDefault();const newPassword=String(new FormData(rf).get('newPassword')||'');if(newPassword.length<6)return toast('Password must be at least 6 characters.');try{const res=await fetch(`/api/admin/users/${encodeURIComponent(targetId)}/reset-password`,{method:'POST',headers:{'content-type':'application/json','x-requested-with':'CloudCoreAI'},body:JSON.stringify({newPassword})});const data=await res.json().catch(()=>({}));if(!res.ok)throw Error(data.error?.message||'Failed to reset password.');if($('#dialog')?.open)$('#dialog').close();toast(`Password for '${targetUser}' reset successfully.`);loadSettingsUsers();}catch(err){toast(err.message)}}}else if(a==='settings-delete-user'){const targetUser=el.dataset.user,targetId=el.dataset.id;modal(`<h2>Delete user '${esc(targetUser)}'?</h2><p>This permanently removes the account '${esc(targetUser)}' and reassigns any meeting records.</p><div class="dialog-actions"><button type="button" class="outline" data-action="close-dialog">Cancel</button><button type="button" class="primary" data-action="confirm-delete-user" data-id="${esc(targetId)}" data-user="${esc(targetUser)}">Delete User</button></div>`)}else if(a==='confirm-delete-user'){const targetId=el.dataset.id,targetUser=el.dataset.user;(async()=>{try{const res=await fetch(`/api/admin/users/${encodeURIComponent(targetId)}`,{method:'DELETE',headers:{'x-requested-with':'CloudCoreAI'}});const data=await res.json().catch(()=>({}));if(!res.ok)throw Error(data.error?.message||'Failed to delete user.');if($('#dialog')?.open)$('#dialog').close();toast(`User '${targetUser}' deleted.`);loadSettingsUsers();}catch(err){toast(err.message)}})()}else if(a==='suggestion'){const t=el.dataset.prompt;if(t==='Summarize this document'){if(docFile)sendMessage(`Please summarize "${docFile.name}" and highlight key takeaways.`);else{attachContext='assistant';pendingDocAutoPrompt='Please summarize this document and highlight key takeaways and action items.';$('#document-input')?.click()}}else if(t==='What is in this image?'){if(imageFile){chatImageAttached=true;sendMessage(`What is in "${imageFile.name}"?`)}else{attachContext='assistant';pendingImageAutoPrompt='Please analyze this image and describe what is in it.';$('#image-input')?.click()}}else sendMessage(t)}else if(a==='assistant-doc-card'){if(docFile)sendMessage(`Please summarize "${docFile.name}" with key points and action items.`);else{attachContext='assistant';pendingDocAutoPrompt='Please summarize this document with key points and action items.';$('#document-input')?.click()}}else if(a==='assistant-image-card'){if(imageFile){chatImageAttached=true;sendMessage(`Please analyze "${imageFile.name}" and extract key observations.`)}else{attachContext='assistant';pendingImageAutoPrompt='Please analyze this image thoroughly and highlight key observations.';$('#image-input')?.click()}}else if(a==='attach-document'){attachContext='assistant';$('#document-input')?.click()}else if(a==='choose-document'){attachContext='documents';$('#document-input')?.click()}else if(a==='attach-image'){attachContext='assistant';$('#image-input')?.click()}else if(a==='choose-image'){attachContext='images';$('#image-input')?.click()}else if(a==='remove-attached-doc'){docFile=null;docIngested=false;docIngesting=false;docJobStatus='';route({preserveScroll:true});toast('Document attachment removed.')}else if(a==='remove-attached-image'){chatImageAttached=false;imageFile=null;route({preserveScroll:true});toast('Image attachment removed.')}else if(a==='clear-notifications'){appNotifications=[];openNotificationsModal()}else if(a==='ask-doc-ai'){if($('#dialog')?.open)$('#dialog').close();if(docFile)sendMessage(`Please summarize "${docFile.name}" and highlight its key takeaways and action items.`);else{location.hash='assistant';route()}}else if(a==='doc-tab'){docTab=el.dataset.tab;route({preserveScroll:true})}else if(a==='image-mode'){imageMode=el.dataset.mode;route({preserveScroll:true})}else if(a==='example-image'){visionResult='';if(imageURL.startsWith('blob:'))URL.revokeObjectURL(imageURL);imageFile=null;imageURL=({tower:'assets/example-tower.png',map:'assets/example-map.png',datacenter:'assets/example-datacenter.png',diagram:'assets/diagram.svg',screenshot:'assets/reference-home.png'})[el.dataset.example]||'assets/hero.png';imageMode='upload';route({preserveScroll:true});toast('Example image selected. Click Analyze Image to run Vision AI.')}else if(a==='cloud-source')modal(`<h2>Connect ${el.dataset.source}</h2><p>Cloud storage connections will be available when the account integration is configured. For now, download your document and choose it from your device.</p><button class="primary" data-action="choose-document">Choose a local file</button>`);else if(a==='full-analysis'||a==='document-action'){const actTitle=el.dataset.title||'Document Analysis';if(docFile){const promptMap={'Summarize document':`Please provide an executive summary of "${docFile.name}" with key takeaways.`,'Compare document':`Please analyze "${docFile.name}" and compare its key options, trade-offs, and recommendations.`,'Extract document':`Please extract all key facts, figures, dates, entities, and deliverables from "${docFile.name}".`,'Analyze document':`Please analyze "${docFile.name}" to identify key trends, risks, decisions, and action items.`};sendMessage(promptMap[actTitle]||`Please analyze "${docFile.name}" and provide key insights.`)}else{modal(`<span class="feature-icon">${icon('file')}</span><h2>${esc(actTitle)}</h2><p>Upload a PDF, Word, Excel, PowerPoint, or text file to run live AI analysis on your own document, or explore the example below.</p><p>${sampleSummary}</p><h3>Key points</h3><ul><li>Enterprise connectivity and cloud services</li><li>Flexible deployment options</li><li>Managed support and service-level agreements</li></ul><div class="dialog-actions"><button class="outline" data-action="close-dialog">Close</button><button class="primary" data-action="choose-document">${icon('upload')} Upload a document</button></div>`)}}else if(a==='view-documents')modal(`<h2>Recent Documents</h2><p>${docFile?esc(docFile.name)+' — indexed in workspace.':'No documents uploaded yet. The proposal displayed is an example.'}</p>`);else if(a==='menu')$('.sidebar').classList.toggle('mobile-open');else if(a==='close-dialog')$('#dialog').close();else if(a==='open-chat'){const c=chats.find(c=>c.id===el.dataset.id);messages=[...c.messages];currentChat=c.id;location.hash='assistant'}else if(a==='delete-chat')modal(`<h2>Delete this conversation?</h2><p>This removes the conversation from this device.</p><div class="dialog-actions"><button class="outline" data-action="close-dialog">Cancel</button><button class="primary" data-action="confirm-delete" data-id="${el.dataset.id}">Delete conversation</button></div>`);else if(a==='confirm-delete'){chats=chats.filter(c=>c.id!==el.dataset.id);saveChats();route();toast('Conversation deleted.')}else if(a==='settings'){location.hash='settings';route()}else if(a==='profile')openProfileModal();else if(a==='signout')handleSignOut();else if(a==='help')modal('<h2>How can we help?</h2><p><b>AI Assistant:</b> Start a conversation, or attach a PDF/Word file or image directly using the paperclip and image icons in the chat bar.</p><p><b>Document Insight:</b> Upload a document and use Summarize, Compare, Extract, or Analyze.</p><p><b>Image Analysis:</b> Upload an image or select an example and click Analyze Image.</p><p><b>Chat History:</b> Reopen or delete conversations saved on this device.</p>');else if(a==='solutions')modal(`<h2>PTCL Business Solutions</h2><p>Explore connectivity, cloud, security and intelligent support.</p><div class="solution-list">${[['signal','Reliable Connectivity','Keep your business connected.'],['cloud','Cloud & Data Solutions','Infrastructure that grows with you.'],['shield','Cyber Security','Protect your business and its data.'],['chip','AI-Powered Support','Find the right support for your business.']].map(([i,t,d])=>`<div>${icon(i)}<span><b>${t}</b><p>${d}</p></span></div>`).join('')}</div>`);else if(a==='ingest-document-ai'){if(!docFile)return toast('Please choose a document first.');if(typeof fetch!=='function')return toast('AI service connection required.');ingestDocumentNow(docFile)}else if(a==='analyze-image-ai'){if(!imageFile&&!imageURL)return toast('Please choose or upload an image first.');if(typeof fetch!=='function')return toast('AI service connection required.');visionLoading=true;visionResult='';route({preserveScroll:true});(async()=>{try{const form=new FormData();form.append('question','Please analyze this image thoroughly: identify all objects, extract visible text via OCR, describe layout and context, and highlight key actionable observations.');if(imageFile){form.append('image',imageFile)}else{const blob=await fetch(imageURL).then(r=>r.blob());form.append('image',blob,'image.png')}const r=await fetch('/api/vision',{method:'POST',headers:{'x-requested-with':'CloudCoreAI'},body:form});if(!r.ok){const err=await r.json().catch(()=>({}));throw Error(err.error?.message||err.detail||`Vision request failed (${r.status})`)}const data=await r.json();visionResult=data.answer||'No analysis returned.';pushNotification('Image Analyzed','Vision AI completed analysis of your selected image.');toast('Vision analysis complete.')}catch(err){toast(`Vision analysis failed: ${err.message}`);visionResult=`Analysis failed: ${err.message}`}finally{visionLoading=false;route({preserveScroll:true})}})()}else if(a==='clear-vision'){visionResult='';route({preserveScroll:true})}bindDialog()}
+function actions(a,el){if(refHandleAction(a,el)){bindDialog();return;}if(a==='knowledge-scope'){switchKnowledgeScope(el.dataset.scope||'shared')}else if(a==='select-folder'){selectKnowledgeFolder(el.dataset.id||null)}else if(a==='clear-folder-filter'){selectKnowledgeFolder(null)}else if(a==='new-folder'){openNewFolderModal()}else if(a==='rename-folder'){openRenameFolderModal(el.dataset.id,el.dataset.name,el.dataset.shared==='true')}else if(a==='delete-folder'){openDeleteFolderModal(el.dataset.id,el.dataset.name,parseInt(el.dataset.count||'0',10))}else if(a==='batch-upload'){openBatchUploadModal()}else if(a==='filter-type'){knowledgeTypeFilter=el.dataset.type||'all';loadKnowledge()}else if(a==='toggle-select-all'){toggleSelectAllDocs()}else if(a==='toggle-doc-select'){toggleSelectDoc(el.dataset.id)}else if(a==='view-doc'||a==='preview-doc'){openDocumentViewerModal(el.dataset.id)}else if(a==='move-doc'){openMoveDocModal(el.dataset.id)}else if(a==='delete-doc'){openDeleteDocModal(el.dataset.id,el.dataset.filename)}else if(a==='confirm-delete-single-doc'){(async()=>{try{const res=await fetch(`/api/knowledge/documents/${encodeURIComponent(el.dataset.id)}`,{method:'DELETE',headers:{'x-requested-with':'CloudCoreAI'}});const data=await res.json().catch(()=>({}));if(!res.ok)throw Error(data.error?.message||'Failed to delete document.');selectedKnowledgeDocIds.delete(el.dataset.id);$('#dialog')?.close();toast(`Document "${el.dataset.filename||'document'}" deleted.`);loadKnowledge();}catch(err){toast(err.message)}})()}else if(a==='batch-move-docs'){openBatchMoveDocsModal()}else if(a==='batch-delete-docs'){confirmBatchDeleteDocs()}else if(a==='confirm-delete-batch-docs'){const ids=[...selectedKnowledgeDocIds];(async()=>{try{const res=await fetch('/api/knowledge/batch-delete',{method:'POST',headers:{'content-type':'application/json','x-requested-with':'CloudCoreAI'},body:JSON.stringify({documentIds:ids})});const data=await res.json().catch(()=>({}));if(!res.ok)throw Error(data.error?.message||'Failed to batch delete documents.');selectedKnowledgeDocIds.clear();$('#dialog')?.close();toast(`${data.deletedIds?.length||ids.length} documents deleted.`);loadKnowledge();}catch(err){toast(err.message)}})()}else if(a==='clear-doc-selection'){selectedKnowledgeDocIds.clear();route({preserveScroll:true})}else if(a==='new-chat'){messages=[];currentChat=null;location.hash='assistant';route()}else if(a==='set-pref'){const k=el.dataset.key,v=el.dataset.val;if(k&&v){userPrefs[k]=v;saveUserPrefs();if(typeof refSyncMotion==='function')refSyncMotion();route({preserveScroll:true});toast('Preference saved.')}}else if(a==='export-chats'){if(!chats.length)return toast('No conversations to export yet.');const blob=new Blob([JSON.stringify(chats,null,2)],{type:'application/json'}),link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download=`cloudcore-chats-${new Date().toISOString().slice(0,10)}.json`;link.click();URL.revokeObjectURL(link.href);toast('Chat history exported.')}else if(a==='clear-all-chats'){if(!chats.length)return toast('Your chat history is already empty.');modal(`<h2>Clear all local conversations?</h2><p>This will permanently remove ${chats.length} saved conversation${chats.length===1?'':'s'} from this browser.</p><div class="dialog-actions"><button type="button" class="outline" data-action="close-dialog">Cancel</button><button type="button" class="primary" data-action="confirm-clear-all-chats">Clear all history</button></div>`)}else if(a==='confirm-clear-all-chats'){chats=[];messages=[];currentChat=null;saveChats();if($('#dialog')?.open)$('#dialog').close();route({preserveScroll:true});toast('All local conversations cleared.')}else if(a==='refresh-settings-users'){loadSettingsUsers(true)}else if(a==='refresh-integrations'){loadAiHealth(true)}else if(a==='settings-reset-pw'){const targetUser=el.dataset.user,targetId=el.dataset.id;modal(`<h2>Reset Password for '${esc(targetUser)}'</h2><p>Enter a new temporary or permanent password (minimum 6 characters).</p><form id="modal-reset-user-pw-form" style="margin-top:12px;"><label style="display:block;font-size:12px;color:#5a7366;margin-bottom:6px;">New Password</label><input name="newPassword" type="text" minlength="6" required placeholder="At least 6 characters" style="width:100%;padding:10px 12px;border:1px solid #d4e2d9;border-radius:10px;margin-bottom:14px;"><div class="dialog-actions"><button type="button" class="outline" data-action="close-dialog">Cancel</button><button type="submit" class="primary">${icon('check')} Update Password</button></div></form>`);const rf=document.querySelector('#modal-reset-user-pw-form');if(rf)rf.onsubmit=async e=>{e.preventDefault();const newPassword=String(new FormData(rf).get('newPassword')||'');if(newPassword.length<6)return toast('Password must be at least 6 characters.');try{const res=await fetch(`/api/admin/users/${encodeURIComponent(targetId)}/reset-password`,{method:'POST',headers:{'content-type':'application/json','x-requested-with':'CloudCoreAI'},body:JSON.stringify({newPassword})});const data=await res.json().catch(()=>({}));if(!res.ok)throw Error(data.error?.message||'Failed to reset password.');if($('#dialog')?.open)$('#dialog').close();toast(`Password for '${targetUser}' reset successfully.`);loadSettingsUsers();}catch(err){toast(err.message)}}}else if(a==='settings-delete-user'){const targetUser=el.dataset.user,targetId=el.dataset.id;modal(`<h2>Delete user '${esc(targetUser)}'?</h2><p>This permanently removes the account '${esc(targetUser)}' and reassigns any meeting records.</p><div class="dialog-actions"><button type="button" class="outline" data-action="close-dialog">Cancel</button><button type="button" class="primary" data-action="confirm-delete-user" data-id="${esc(targetId)}" data-user="${esc(targetUser)}">Delete User</button></div>`)}else if(a==='confirm-delete-user'){const targetId=el.dataset.id,targetUser=el.dataset.user;(async()=>{try{const res=await fetch(`/api/admin/users/${encodeURIComponent(targetId)}`,{method:'DELETE',headers:{'x-requested-with':'CloudCoreAI'}});const data=await res.json().catch(()=>({}));if(!res.ok)throw Error(data.error?.message||'Failed to delete user.');if($('#dialog')?.open)$('#dialog').close();toast(`User '${targetUser}' deleted.`);loadSettingsUsers();}catch(err){toast(err.message)}})()}else if(a==='suggestion'){const t=el.dataset.prompt;if(t==='Summarize this document'){if(docFile)sendMessage(`Please summarize "${docFile.name}" and highlight key takeaways.`);else{attachContext='assistant';pendingDocAutoPrompt='Please summarize this document and highlight key takeaways and action items.';$('#document-input')?.click()}}else if(t==='What is in this image?'){if(imageFile){chatImageAttached=true;sendMessage(`What is in "${imageFile.name}"?`)}else{attachContext='assistant';pendingImageAutoPrompt='Please analyze this image and describe what is in it.';$('#image-input')?.click()}}else sendMessage(t)}else if(a==='assistant-doc-card'){if(docFile)sendMessage(`Please summarize "${docFile.name}" with key points and action items.`);else{attachContext='assistant';pendingDocAutoPrompt='Please summarize this document with key points and action items.';$('#document-input')?.click()}}else if(a==='assistant-image-card'){if(imageFile){chatImageAttached=true;sendMessage(`Please analyze "${imageFile.name}" and extract key observations.`)}else{attachContext='assistant';pendingImageAutoPrompt='Please analyze this image thoroughly and highlight key observations.';$('#image-input')?.click()}}else if(a==='attach-document'){attachContext='assistant';$('#document-input')?.click()}else if(a==='choose-document'){attachContext='documents';$('#document-input')?.click()}else if(a==='attach-image'){attachContext='assistant';$('#image-input')?.click()}else if(a==='choose-image'){attachContext='images';$('#image-input')?.click()}else if(a==='remove-attached-doc'){docFile=null;docIngested=false;docIngesting=false;docJobStatus='';route({preserveScroll:true});toast('Document attachment removed.')}else if(a==='remove-attached-image'){chatImageAttached=false;imageFile=null;route({preserveScroll:true});toast('Image attachment removed.')}else if(a==='clear-notifications'){appNotifications=[];openNotificationsModal()}else if(a==='ask-doc-ai'){if($('#dialog')?.open)$('#dialog').close();if(docFile)sendMessage(`Please summarize "${docFile.name}" and highlight its key takeaways and action items.`);else{location.hash='assistant';route()}}else if(a==='doc-tab'){docTab=el.dataset.tab;route({preserveScroll:true})}else if(a==='image-mode'){imageMode=el.dataset.mode;route({preserveScroll:true})}else if(a==='example-image'){visionResult='';if(imageURL.startsWith('blob:'))URL.revokeObjectURL(imageURL);imageFile=null;imageURL=({tower:'assets/example-tower.png',map:'assets/example-map.png',datacenter:'assets/example-datacenter.png',diagram:'assets/diagram.svg',screenshot:'assets/reference-home.png'})[el.dataset.example]||'assets/hero.png';imageMode='upload';route({preserveScroll:true});toast('Example image selected. Click Analyze Image to run Vision AI.')}else if(a==='cloud-source')modal(`<h2>Connect ${el.dataset.source}</h2><p>Cloud storage connections will be available when the account integration is configured. For now, download your document and choose it from your device.</p><button class="primary" data-action="choose-document">Choose a local file</button>`);else if(a==='full-analysis'||a==='document-action'){const actTitle=el.dataset.title||'Document Analysis';if(docFile){const promptMap={'Summarize document':`Please provide an executive summary of "${docFile.name}" with key takeaways.`,'Compare document':`Please analyze "${docFile.name}" and compare its key options, trade-offs, and recommendations.`,'Extract document':`Please extract all key facts, figures, dates, entities, and deliverables from "${docFile.name}".`,'Analyze document':`Please analyze "${docFile.name}" to identify key trends, risks, decisions, and action items.`};sendMessage(promptMap[actTitle]||`Please analyze "${docFile.name}" and provide key insights.`)}else{modal(`<span class="feature-icon">${icon('file')}</span><h2>${esc(actTitle)}</h2><p>Upload a PDF, Word, Excel, PowerPoint, or text file to run live AI analysis on your own document, or explore the example below.</p><p>${sampleSummary}</p><h3>Key points</h3><ul><li>Enterprise connectivity and cloud services</li><li>Flexible deployment options</li><li>Managed support and service-level agreements</li></ul><div class="dialog-actions"><button class="outline" data-action="close-dialog">Close</button><button class="primary" data-action="choose-document">${icon('upload')} Upload a document</button></div>`)}}else if(a==='view-documents')modal(`<h2>Recent Documents</h2><p>${docFile?esc(docFile.name)+' — indexed in workspace.':'No documents uploaded yet. The proposal displayed is an example.'}</p>`);else if(a==='menu')$('.sidebar').classList.toggle('mobile-open');else if(a==='close-dialog')$('#dialog').close();else if(a==='open-chat'){const c=chats.find(c=>c.id===el.dataset.id);messages=[...c.messages];currentChat=c.id;location.hash='assistant'}else if(a==='delete-chat')modal(`<h2>Delete this conversation?</h2><p>This removes the conversation from this device.</p><div class="dialog-actions"><button class="outline" data-action="close-dialog">Cancel</button><button class="primary" data-action="confirm-delete" data-id="${el.dataset.id}">Delete conversation</button></div>`);else if(a==='confirm-delete'){chats=chats.filter(c=>c.id!==el.dataset.id);saveChats();route();toast('Conversation deleted.')}else if(a==='settings'){location.hash='settings';route()}else if(a==='profile')openProfileModal();else if(a==='signout')handleSignOut();else if(a==='help')modal('<h2>How can we help?</h2><p><b>AI Assistant:</b> Start a conversation, or attach a PDF/Word file or image directly using the paperclip and image icons in the chat bar.</p><p><b>Document Insight:</b> Upload a document and use Summarize, Compare, Extract, or Analyze.</p><p><b>Image Analysis:</b> Upload an image or select an example and click Analyze Image.</p><p><b>Chat History:</b> Reopen or delete conversations saved on this device.</p>');else if(a==='solutions')modal(`<h2>PTCL Business Solutions</h2><p>Explore connectivity, cloud, security and intelligent support.</p><div class="solution-list">${[['signal','Reliable Connectivity','Keep your business connected.'],['cloud','Cloud & Data Solutions','Infrastructure that grows with you.'],['shield','Cyber Security','Protect your business and its data.'],['chip','AI-Powered Support','Find the right support for your business.']].map(([i,t,d])=>`<div>${icon(i)}<span><b>${t}</b><p>${d}</p></span></div>`).join('')}</div>`);else if(a==='ingest-document-ai'){if(!docFile)return toast('Please choose a document first.');if(typeof fetch!=='function')return toast('AI service connection required.');ingestDocumentNow(docFile)}else if(a==='analyze-image-ai'){if(!imageFile&&!imageURL)return toast('Please choose or upload an image first.');if(typeof fetch!=='function')return toast('AI service connection required.');visionLoading=true;visionResult='';route({preserveScroll:true});(async()=>{try{const form=new FormData();form.append('question','Please analyze this image thoroughly: identify all objects, extract visible text via OCR, describe layout and context, and highlight key actionable observations.');if(imageFile){form.append('image',imageFile)}else{const blob=await fetch(imageURL).then(r=>r.blob());form.append('image',blob,'image.png')}const r=await fetch('/api/vision',{method:'POST',headers:{'x-requested-with':'CloudCoreAI'},body:form});if(!r.ok){const err=await r.json().catch(()=>({}));throw Error(err.error?.message||err.detail||`Vision request failed (${r.status})`)}const data=await r.json();visionResult=data.answer||'No analysis returned.';pushNotification('Image Analyzed','Vision AI completed analysis of your selected image.');toast('Vision analysis complete.')}catch(err){toast(`Vision analysis failed: ${err.message}`);visionResult=`Analysis failed: ${err.message}`}finally{visionLoading=false;route({preserveScroll:true})}})()}else if(a==='clear-vision'){visionResult='';route({preserveScroll:true})}bindDialog()}
 function bindDialog(){document.querySelectorAll('#dialog [data-action]').forEach(el=>el.onclick=()=>actions(el.dataset.action,el))}
 const baseBind=bind;bind=function(){baseBind();document.querySelectorAll('.composer').forEach(f=>f.onsubmit=e=>{e.preventDefault();sendMessage(new FormData(f).get('prompt'))});if($('#search-form'))$('#search-form').onsubmit=e=>{e.preventDefault();const q=($('#search-form input').value||'').trim();if(!q)return;const exactMatch=navs.find(n=>n[2].toLowerCase()===q.toLowerCase()||n[0].toLowerCase()===q.toLowerCase());if(exactMatch)location.hash=exactMatch[0];else sendMessage(q)};if($('#document-input'))$('#document-input').onchange=e=>{const f=e.target.files[0];try{e.target.value=''}catch{}selectDocument(f)};if($('#image-input'))$('#image-input').onchange=e=>{const f=e.target.files[0];try{e.target.value=''}catch{}selectImage(f)};document.querySelectorAll('[data-drop]').forEach(d=>{d.ondragover=e=>{e.preventDefault();d.classList.add('dragging')};d.ondragleave=()=>d.classList.remove('dragging');d.ondrop=e=>{e.preventDefault();d.classList.remove('dragging');(d.dataset.drop==='image'?selectImage:selectDocument)(e.dataTransfer.files[0])}});if($('#url-form'))$('#url-form').onsubmit=e=>{e.preventDefault();const url=new FormData(e.target).get('url');try{if(new URL(url).protocol!=='https:')throw Error();}catch{return toast('Please enter a valid HTTPS image URL.')}const image=new Image();image.onload=()=>{visionResult='';if(imageURL.startsWith('blob:'))URL.revokeObjectURL(imageURL);imageFile=null;imageURL=url;imageMode='upload';route()};image.onerror=()=>toast('The image could not be loaded. Check the link or upload a file.');image.src=url};if($('#history-search'))$('#history-search').oninput=e=>{historySearch=e.target.value;const start=e.target.selectionStart;route();$('#history-search').focus();$('#history-search').setSelectionRange(start,start)};if($('#dialog'))$('#dialog').onclick=e=>{if(e.target===$('#dialog'))$('#dialog').close()};};
 const productBind=bind;bind=function(){productBind();clearTimeout(meetingsTimer);meetingsTimer=null;const on=(selector,handler)=>document.querySelectorAll(selector).forEach(el=>el.onclick=()=>handler(el));on('[data-action="open-meeting"]',el=>{meetingTab='overview';meetingsState.detail=null;location.hash=`meetings/${el.dataset.id}`;refreshMeetings(true)});on('[data-action="refresh-meetings"]',()=>refreshMeetings(true));on('[data-action="meeting-tab"]',el=>{meetingTab=el.dataset.tab;route();if(meetingTab==='chat'){requestAnimationFrame(()=>{const box=document.querySelector('.meeting-chat-messages');if(box)box.scrollTop=box.scrollHeight})}});on('[data-action="stop-meeting"]',el=>meetingCommand(el.dataset.id,'/stop'));on('[data-action="regenerate-mom"]',el=>meetingCommand(el.dataset.id,'/regenerate-mom'));on('[data-action="delete-meeting"]',el=>{if(window.confirm('Permanently delete this meeting and all of its audio, transcript, snapshots and MOM?'))meetingCommand(el.dataset.id,'','DELETE')});on('[data-action="copy-mom"]',()=>{navigator.clipboard?.writeText(momMarkdown(meetingsState.detail));toast('MOM copied to clipboard.')});on('[data-action="download-mom"]',()=>{const blob=new Blob([momMarkdown(meetingsState.detail)],{type:'text/markdown'}),link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download='meeting-mom.md';link.click();URL.revokeObjectURL(link.href)});on('[data-action="preview-mom"]',()=>previewMomPdf(meetingsState.detail));on('[data-action="print-mom"]',()=>printMomPdf(meetingsState.detail));on('[data-action="profile"]',()=>openProfileModal());on('[data-action="settings"]',()=>{location.hash='settings';route()});on('[data-action="signout"]',()=>handleSignOut());on('[data-prompt="Start a Teams meeting bot"]',()=>location.hash='meetings');on('[data-action="quick-meeting-ask"]',el=>{if(selectedMeetingId)sendMeetingChat(selectedMeetingId,el.dataset.query)});on('[data-action="refresh-live-screenshot"]',()=>{const img=$('#live-bot-screen-img');if(img&&selectedMeetingId)img.src=`/api/meetings/${encodeURIComponent(selectedMeetingId)}/live-screenshot?t=${Date.now()}`});const transcriptInput=$('#transcript-filter');if(transcriptInput){transcriptInput.oninput=e=>{transcriptSearch=e.target.value;const term=transcriptSearch.trim().toLowerCase();const articles=document.querySelectorAll('.transcript-list article');let visible=0;articles.forEach(art=>{const match=!term||art.textContent.toLowerCase().includes(term);art.style.display=match?'':'none';if(match)visible++});const metaSpan=document.querySelector('.transcript-meta-strip span:last-child');if(metaSpan)metaSpan.textContent=`${visible} of ${articles.length} segments`}};const meetingChatForm=$('#meeting-chat-form');if(meetingChatForm){meetingChatForm.onsubmit=e=>{e.preventDefault();const p=new FormData(meetingChatForm).get('chatPrompt');if(selectedMeetingId)sendMeetingChat(selectedMeetingId,p)}};if($('#meeting-form'))$('#meeting-form').onsubmit=e=>{e.preventDefault();startMeeting(e.target)};if($('#mom-form'))$('#mom-form').onsubmit=async e=>{e.preventDefault();try{const mom=momFromForm(e.target,meetingsState.detail.mom);await api(`/api/meetings/${encodeURIComponent(meetingsState.detail.id)}/mom`,{method:'PUT',body:JSON.stringify(mom)});toast('MOM changes saved.');await refreshMeetings(true)}catch(error){toast(error.message)}};if(location.hash.startsWith('#meetings')){if(selectedMeetingId&&(!meetingsState.detail||meetingsState.detail.id!==selectedMeetingId)){refreshMeetings(true)}else if(!meetingsState.lastLoaded&&!meetingsLoading){refreshMeetings()}else{scheduleMeetingsPoll()}}};

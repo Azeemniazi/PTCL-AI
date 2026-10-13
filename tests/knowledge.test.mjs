@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { hashPassword } from '../build/crypto.js';
 import { Repository } from '../build/repository.js';
+import { parseCsvRows, colLetterToIndex } from '../build/parsers.js';
 
 test('Knowledge Hub: folder creation, scope filtering, and permissions', async () => {
   const repo = new Repository();
@@ -161,4 +162,19 @@ test('Knowledge Hub: document lifecycle, batch upload, moving, and cascading del
   await repo.deleteFolder(folder.id, user.id, true, false);
   const remaining = await repo.getDocumentById(doc3.id);
   assert.equal(remaining, undefined, 'Document should be deleted when parent folder is deleted with cascade');
+});
+
+test('Knowledge Hub: parses CSV rows and calculates spreadsheet column coordinates', () => {
+  const csv = 'Name,Role,Budget\n"Niazi, Azeem",Dev,15000\n"Smart Bot",Bot,2500';
+  const rows = parseCsvRows(csv);
+  assert.equal(rows.length, 3);
+  assert.deepEqual(rows[0], ['Name', 'Role', 'Budget']);
+  assert.deepEqual(rows[1], ['Niazi, Azeem', 'Dev', '15000']);
+  assert.deepEqual(rows[2], ['Smart Bot', 'Bot', '2500']);
+
+  assert.equal(colLetterToIndex('A'), 0);
+  assert.equal(colLetterToIndex('B'), 1);
+  assert.equal(colLetterToIndex('Z'), 25);
+  assert.equal(colLetterToIndex('AA'), 26);
+  assert.equal(colLetterToIndex('AB'), 27);
 });

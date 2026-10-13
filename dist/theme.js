@@ -218,32 +218,32 @@ function refKnowledge() {
 
     <div class="ref-knowledge-stats-strip">
       <div class="ref-stat-card">
-        <span class="mini-icon">${icon('file')}</span>
+        <span class="ref-stat-icon">${icon('file')}</span>
         <div><b>${totalDocs}</b><small>Total Documents</small></div>
       </div>
       <div class="ref-stat-card">
-        <span class="mini-icon">${icon('folder')}</span>
+        <span class="ref-stat-icon">${icon('folder')}</span>
         <div><b>${totalFolders}</b><small>Active Folders</small></div>
       </div>
       <div class="ref-stat-card">
-        <span class="mini-icon">${icon('chart')}</span>
-        <div><b>${formatBytes(totalBytes)}</b><small>Total Size</small></div>
+        <span class="ref-stat-icon">${icon('chart')}</span>
+        <div><b>${formatBytes(totalBytes)}</b><small>Total Storage</small></div>
       </div>
       <div class="ref-stat-card">
-        <span class="mini-icon">${icon('shield')}</span>
+        <span class="ref-stat-icon">${icon('shield')}</span>
         <div><b>${scope === 'shared' ? 'Workspace Shared' : scope === 'personal' ? 'My Personal Drive' : 'All Files'}</b><small>Current Scope</small></div>
       </div>
     </div>
 
     <nav class="ref-knowledge-scope-tabs" role="tablist" aria-label="Knowledge Hub scope">
       <button type="button" role="tab" aria-selected="${scope === 'shared'}" class="${scope === 'shared' ? 'active' : ''}" data-action="knowledge-scope" data-scope="shared">
-        ${icon('globe')} Workspace Shared (${sharedDocs})
+        ${icon('globe')} Workspace Shared <span class="ref-scope-chip">${sharedDocs}</span>
       </button>
       <button type="button" role="tab" aria-selected="${scope === 'personal'}" class="${scope === 'personal' ? 'active' : ''}" data-action="knowledge-scope" data-scope="personal">
-        ${icon('lock')} My Personal Drive (${personalDocs})
+        ${icon('lock')} My Personal Drive <span class="ref-scope-chip">${personalDocs}</span>
       </button>
       <button type="button" role="tab" aria-selected="${scope === 'all'}" class="${scope === 'all' ? 'active' : ''}" data-action="knowledge-scope" data-scope="all">
-        ${icon('folder')} All Files (${totalDocs})
+        ${icon('folder')} All Files <span class="ref-scope-chip">${totalDocs}</span>
       </button>
     </nav>
 
@@ -290,7 +290,7 @@ function refKnowledge() {
                   <td>
                     <div style="display:flex;align-items:center;gap:10px;">
                       <span class="ref-ext-badge ext-${esc(ext.toLowerCase())}">${esc(ext)}</span>
-                      <b class="ref-doc-name-cell" title="${esc(d.filename)}">${esc(d.filename)}</b>
+                      <a href="#view" class="ref-doc-name-cell ref-doc-name-link" data-action="view-doc" data-id="${esc(d.id)}" title="Click to view online without downloading">${esc(d.filename)}</a>
                     </div>
                   </td>
                   <td><span class="ref-crumb-pill">${esc(d.folderName || 'Unfiled')}</span></td>
@@ -300,9 +300,9 @@ function refKnowledge() {
                   <td>${d.createdAt ? new Date(d.createdAt).toLocaleDateString() : '—'}</td>
                   <td>
                     <div class="ref-row-actions">
-                      <button type="button" class="soft-button small" data-action="preview-doc" data-id="${esc(d.id)}" title="Preview extracted text">${icon('eye')} Preview</button>
-                      <a class="icon-button" href="/api/knowledge/documents/${encodeURIComponent(d.id)}/download" download="${esc(d.filename)}" title="Download file">${icon('download')}</a>
+                      <button type="button" class="ref-view-btn" data-action="view-doc" data-id="${esc(d.id)}" title="View file online without downloading">${icon('eye')} View</button>
                       <button type="button" class="icon-button" data-action="move-doc" data-id="${esc(d.id)}" title="Move to folder">${icon('folder')}</button>
+                      <a class="icon-button" href="/api/knowledge/documents/${encodeURIComponent(d.id)}/download" download="${esc(d.filename)}" title="Download file">${icon('download')}</a>
                       <button type="button" class="icon-button danger" data-action="delete-doc" data-id="${esc(d.id)}" data-filename="${esc(d.filename)}" title="Delete document">${icon('trash')}</button>
                     </div>
                   </td>
