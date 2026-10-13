@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { hashPassword } from '../build/crypto.js';
 import { Repository } from '../build/repository.js';
-import { parseCsvRows, colLetterToIndex } from '../build/parsers.js';
+import { parseCsvRows, colLetterToIndex, parseXlsxSheets } from '../build/parsers.js';
 
 test('Knowledge Hub: folder creation, scope filtering, and permissions', async () => {
   const repo = new Repository();
@@ -177,4 +177,7 @@ test('Knowledge Hub: parses CSV rows and calculates spreadsheet column coordinat
   assert.equal(colLetterToIndex('Z'), 25);
   assert.equal(colLetterToIndex('AA'), 26);
   assert.equal(colLetterToIndex('AB'), 27);
+
+  assert.equal(parseXlsxSheets(Buffer.from('')), null);
+  assert.equal(parseXlsxSheets(Buffer.from('not-a-zip')), null);
 });

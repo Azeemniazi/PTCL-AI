@@ -332,8 +332,20 @@ app.delete('/api/knowledge/folders/:id', requireUser, async (req, res) => {
     const id = String(req.params.id);
     const cascade = req.query.cascade === 'true';
     const isPrivileged = ['dev', 'admin'].includes(req.session.user!.role);
+    let folderDocs: any[] = [];
+    if (cascade) {
+      folderDocs = await repository.listDocuments(req.session.user!.id, { folderId: id }).catch(() => []);
+    }
     const deleted = await repository.deleteFolder(id, req.session.user!.id, cascade, isPrivileged);
     if (!deleted) return res.status(404).json({ error: { code: 'not_found', message: 'Folder not found.' } });
+    if (cascade && folderDocs.length > 0) {
+      for (const d of folderDocs) {
+        try {
+          const fullPath = resolve(knowledgeStorageDir, d.storagePath);
+          if (existsSync(fullPath)) unlinkSync(fullPath);
+        } catch {}
+      }
+    }
     return res.json({ success: true, id });
   } catch (err: any) {
     if (err.message?.includes('Unauthorized')) return res.status(403).json({ error: { code: 'forbidden', message: err.message } });

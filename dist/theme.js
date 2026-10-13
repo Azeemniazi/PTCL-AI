@@ -176,7 +176,7 @@ function refKnowledge() {
             </div>
             <div class="ref-folder-card-footer">
               <small>By ${esc(f.creatorName || 'Team')}</small>
-              <div class="ref-card-actions" onclick="event.stopPropagation()">
+              <div class="ref-card-actions">
                 <button type="button" class="icon-button" data-action="rename-folder" data-id="${esc(f.id)}" data-name="${esc(f.name)}" data-shared="${f.isShared}" title="Rename folder">${icon('sliders')}</button>
                 <button type="button" class="icon-button danger" data-action="delete-folder" data-id="${esc(f.id)}" data-name="${esc(f.name)}" data-count="${f.fileCount || 0}" title="Delete folder">${icon('trash')}</button>
               </div>
@@ -584,6 +584,13 @@ function refBind() {
         if(typeof loadKnowledge==='function')loadKnowledge();
       }
     };
+  }
+  document.querySelectorAll('.ref-card-actions').forEach(el=>{
+    el.onclick=e=>e.stopPropagation();
+  });
+  const selectAllDocs=$('#ref-select-all-docs');
+  if(selectAllDocs&&typeof selectedKnowledgeDocIds!=='undefined'&&typeof knowledgeDocs!=='undefined'){
+    selectAllDocs.indeterminate=selectedKnowledgeDocIds.size>0&&selectedKnowledgeDocIds.size<knowledgeDocs.length;
   }
   if(typeof bindSettingsForms==='function')bindSettingsForms();
 }

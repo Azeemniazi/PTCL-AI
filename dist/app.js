@@ -478,7 +478,7 @@ function openBatchUploadModal(){
           <b style="display:block;margin:6px 0 2px;">Choose files or drag & drop here</b>
           <small style="color:#64748b;display:block;margin-bottom:12px;">PDF, DOCX, PPTX, XLSX, CSV, TXT, MD (Max 100MB per batch)</small>
           <input type="file" id="batch-file-input" name="files" multiple accept=".pdf,.docx,.pptx,.xlsx,.txt,.md,.csv,.json" style="display:none;">
-          <button type="button" class="outline small" onclick="$('#batch-file-input').click()">${icon('plus')} Select Files</button>
+          <button type="button" class="outline small" id="batch-choose-files-btn">${icon('plus')} Select Files</button>
         </div>
         <div id="batch-file-list" style="max-height:160px;overflow-y:auto;margin:12px 0;display:none;"></div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0;">
@@ -506,6 +506,10 @@ function openBatchUploadModal(){
   `);
 
   const fileInput=$('#batch-file-input');
+  const chooseFilesBtn=$('#batch-choose-files-btn');
+  if(chooseFilesBtn&&fileInput){
+    chooseFilesBtn.onclick=()=>fileInput.click();
+  }
   const dropzone=$('#batch-dropzone');
   const listEl=$('#batch-file-list');
   const submitBtn=$('#batch-upload-submit-btn');
@@ -522,20 +526,22 @@ function openBatchUploadModal(){
       listEl.innerHTML=selectedFiles.map((f,idx)=>`
         <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:#f8faf9;border:1px solid #e2ede6;border-radius:8px;margin-bottom:6px;font-size:12px;">
           <span><b>${esc(f.name)}</b> <small style="color:#64748b;">(${formatBytes(f.size)})</small></span>
-          <button type="button" class="icon-button" style="width:22px;height:22px;" onclick="window.removeUploadFile(${idx})">×</button>
+          <button type="button" class="icon-button" style="width:22px;height:22px;" data-remove-upload-idx="${idx}" aria-label="Remove ${esc(f.name)}">×</button>
         </div>
       `).join('');
+      listEl.querySelectorAll('[data-remove-upload-idx]').forEach(btn=>{
+        btn.onclick=()=>{
+          const i=parseInt(btn.dataset.removeUploadIdx,10);
+          selectedFiles.splice(i,1);
+          renderSelectedFiles();
+        };
+      });
     }
     if(submitBtn){
       submitBtn.disabled=false;
       submitBtn.innerHTML=`${icon('upload')} Upload ${selectedFiles.length} File${selectedFiles.length===1?'':'s'}`;
     }
   }
-
-  window.removeUploadFile=(idx)=>{
-    selectedFiles.splice(idx,1);
-    renderSelectedFiles();
-  };
 
   if(fileInput){
     fileInput.onchange=()=>{
@@ -1355,6 +1361,7 @@ function modal(content,{uncloseable=false}={}){
     $('#dialog').classList.toggle('uncloseable',uncloseable);
     $('#dialog').showModal();
   }
+  if(typeof bindDialog==='function')bindDialog();
 }
 
 function loginView(){

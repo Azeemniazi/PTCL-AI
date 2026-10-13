@@ -163,15 +163,38 @@ export function parseXlsxSheets(bytes: Buffer): { name: string; totalRows: numbe
       }
     }
 
+    const relsMap = new Map<string, string>();
+    const relsBuf = entries.get('xl/_rels/workbook.xml.rels');
+    if (relsBuf) {
+      const relsXml = relsBuf.toString('utf8');
+      const relRegex = /<Relationship\b[^>]*Id="([^"]+)"[^>]*Target="([^"]+)"/gi;
+      let rm: RegExpExecArray | null;
+      while ((rm = relRegex.exec(relsXml)) !== null) {
+        const relId = rm[1] ?? '';
+        const rawTarget = rm[2] ?? '';
+        let target = rawTarget.replace(/^\/?xl\//, '').replace(/^\//, '');
+        if (!target.startsWith('worksheets/') && target.endsWith('.xml')) target = `worksheets/${target}`;
+        if (relId) relsMap.set(relId, `xl/${target}`);
+      }
+    }
+
     const sheetsMeta: { name: string; file: string }[] = [];
     const wbBuf = entries.get('xl/workbook.xml');
     if (wbBuf) {
       const wbXml = wbBuf.toString('utf8');
-      const sheetRegex = /<sheet\b[^>]*name="([^"]+)"[^>]*sheetId="([^"]+)"[^>]*\/>/g;
+      const sheetRegex = /<sheet\b([^>]*)(?:\/|>[\s\S]*?<\/sheet>)/gi;
       let sMatch: RegExpExecArray | null;
       let idx = 1;
       while ((sMatch = sheetRegex.exec(wbXml)) !== null) {
-        sheetsMeta.push({ name: sMatch[1] ?? `Sheet ${idx}`, file: `xl/worksheets/sheet${idx}.xml` });
+        const attrs = sMatch[1] ?? '';
+        const nameMatch = /name="([^"]+)"/i.exec(attrs);
+        const rIdMatch = /r:id="([^"]+)"/i.exec(attrs);
+        const sheetIdMatch = /sheetId="([^"]+)"/i.exec(attrs);
+        const rawName = (nameMatch && nameMatch[1]) ? nameMatch[1] : `Sheet ${idx}`;
+        const name = rawName.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+        const rId = (rIdMatch && rIdMatch[1]) ? rIdMatch[1] : '';
+        const targetFile = (rId && relsMap.get(rId)) || `xl/worksheets/sheet${sheetIdMatch && sheetIdMatch[1] ? sheetIdMatch[1] : idx}.xml`;
+        sheetsMeta.push({ name, file: targetFile });
         idx++;
       }
     }
@@ -191,36 +214,45 @@ export function parseXlsxSheets(bytes: Buffer): { name: string; totalRows: numbe
       const sheetXml = sheetBuf.toString('utf8');
 
       const rows: string[][] = [];
-      const rowRegex = /<row\b[^>]*>([\s\S]*?)<\/row>/g;
+      const rowRegex = /<row\b[^>]*>([\s\S]*?)<\/row>/gi;
       let rMatch: RegExpExecArray | null;
       while ((rMatch = rowRegex.exec(sheetXml)) !== null) {
         const rowContent = rMatch[1] ?? '';
-        const cellRegex = /<c\b([^>]*)>(?:<is><t[^>]*>([\s\S]*?)<\/t><\/is>|<v>([\s\S]*?)<\/v>)?<\/c>/g;
+        const cellRegex = /<c\b([^>]*)>([\s\S]*?)<\/c>/gi;
         let cMatch: RegExpExecArray | null;
         let maxCol = 0;
         const cellMap = new Map<number, string>();
 
         while ((cMatch = cellRegex.exec(rowContent)) !== null) {
           const attrs = cMatch[1] ?? '';
-          const inlineText = cMatch[2];
-          const valText = cMatch[3];
+          const body = cMatch[2] ?? '';
 
-          const rAttrMatch = /r="([A-Z]+)(\d+)"/.exec(attrs);
-          const colLetters = rAttrMatch ? rAttrMatch[1] : '';
+          const rAttrMatch = /r="([A-Z]+)(\d+)"/i.exec(attrs);
+          const colLetters = (rAttrMatch && rAttrMatch[1]) ? rAttrMatch[1].toUpperCase() : '';
           const colIdx = colLetters ? colLetterToIndex(colLetters) : 0;
           if (colIdx > maxCol) maxCol = colIdx;
 
-          const isString = /t="s"/.test(attrs);
-          const isInline = /t="inlineStr"/.test(attrs);
+          const isString = /t="s"/i.test(attrs);
+          const isInline = /t="inlineStr"/i.test(attrs);
           let cellVal = '';
 
-          if (isInline && inlineText !== undefined) {
-            cellVal = inlineText.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
-          } else if (isString && valText !== undefined) {
-            const sIndex = parseInt(valText, 10);
-            cellVal = sharedStrings[sIndex] || '';
-          } else if (valText !== undefined) {
-            cellVal = valText;
+          if (isInline) {
+            const tMatch = /<t\b[^>]*>([\s\S]*?)<\/t>/i.exec(body);
+            if (tMatch && tMatch[1] !== undefined) cellVal = tMatch[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+          } else if (isString) {
+            const vMatch = /<v>([\s\S]*?)<\/v>/i.exec(body);
+            if (vMatch && vMatch[1] !== undefined) {
+              const sIndex = parseInt(vMatch[1], 10);
+              cellVal = sharedStrings[sIndex] || '';
+            }
+          } else {
+            const vMatch = /<v>([\s\S]*?)<\/v>/i.exec(body);
+            if (vMatch && vMatch[1] !== undefined) {
+              cellVal = vMatch[1];
+            } else {
+              const tMatch = /<t\b[^>]*>([\s\S]*?)<\/t>/i.exec(body);
+              if (tMatch && tMatch[1] !== undefined) cellVal = tMatch[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+            }
           }
 
           cellMap.set(colIdx, cellVal);
