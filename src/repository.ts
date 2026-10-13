@@ -831,8 +831,13 @@ export class Repository {
     }
 
     let filterClause = '(f.is_shared = true OR f.user_id = $1)';
-    if (scope === 'shared') filterClause = 'f.is_shared = true';
-    else if (scope === 'personal') filterClause = '(f.is_shared = false AND f.user_id = $1)';
+    const params: any[] = [userId];
+    if (scope === 'shared') {
+      filterClause = 'f.is_shared = true';
+      params.length = 0;
+    } else if (scope === 'personal') {
+      filterClause = '(f.is_shared = false AND f.user_id = $1)';
+    }
 
     const q = await this.pool.query(
       `SELECT f.*, u.display_name AS creator_name,
@@ -844,7 +849,7 @@ export class Repository {
        WHERE ${filterClause}
        GROUP BY f.id, u.display_name
        ORDER BY f.created_at ASC`,
-      [userId]
+      params
     );
     return q.rows.map(folderRow);
   }
@@ -1035,14 +1040,16 @@ export class Repository {
     }
 
     const conditions: string[] = [];
-    const params: any[] = [userId];
+    const params: any[] = [];
 
     if (filters?.scope === 'shared') {
       conditions.push('d.is_shared = true');
     } else if (filters?.scope === 'personal') {
-      conditions.push('d.is_shared = false AND d.user_id = $1');
+      params.push(userId);
+      conditions.push(`d.is_shared = false AND d.user_id = $${params.length}`);
     } else {
-      conditions.push('(d.is_shared = true OR d.user_id = $1)');
+      params.push(userId);
+      conditions.push(`(d.is_shared = true OR d.user_id = $${params.length})`);
     }
 
     if (filters?.folderId !== undefined) {
