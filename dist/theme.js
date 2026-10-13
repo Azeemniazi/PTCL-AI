@@ -74,11 +74,11 @@ function refLanding() {
 }
 function refSidebar(r) {
   const name=appUser?.displayName||'CloudCore user';
-  return `<aside class="sidebar ref-sidebar">${refVideoBackground("sidebar")}<div class="ref-sidebar-inner">${brand()}<nav aria-label="Product navigation">${[...navs.filter(n=>n[0]!=='history'),['settings','settings','Settings']].map(([id,i,t])=>`<a href="#${id}" class="${r===id?'selected':''}" ${r===id?'aria-current="page"':''}>${icon(i)}<span>${id==='meetings'?'Meeting Intelligence':id==='documents'?'Document Insights':t}</span></a>`).join('')}<a class="ref-history-link ${r==='history'?'selected':''}" href="#history">${icon('history')}<span>Chat History</span></a></nav><div class="ref-sidebar-bottom"><a class="ref-future-card" href="#landing"><span>Hello<br>to the Future</span><i>${icon('arrow')}</i></a><button class="ref-sidebar-user" data-action="profile"><span class="avatar">${esc(name.charAt(0))}</span><span><b>${esc(name)}</b><small>${esc(appUser?.role||'Workspace member')}</small></span><span>⌄</span></button></div></div></aside>`;
+  return `<aside class="sidebar ref-sidebar">${refVideoBackground("sidebar")}<div class="ref-sidebar-inner">${brand()}<nav aria-label="Product navigation">${[...navs.filter(n=>n[0]!=='history'),['settings','settings','Settings']].map(([id,i,t])=>`<a href="#${id}" class="${(r===id||(id==='documents'&&r==='knowledge')||(id==='knowledge'&&r==='documents'))?'selected':''}" ${r===id?'aria-current="page"':''}>${icon(id==='documents'?'folder':i)}<span>${id==='meetings'?'Meeting Intelligence':id==='documents'?'Knowledge Hub':t}</span></a>`).join('')}<a class="ref-history-link ${r==='history'?'selected':''}" href="#history">${icon('history')}<span>Chat History</span></a></nav><div class="ref-sidebar-bottom"><a class="ref-future-card" href="#landing"><span>Hello<br>to the Future</span><i>${icon('arrow')}</i></a><button class="ref-sidebar-user" data-action="profile"><span class="avatar">${esc(name.charAt(0))}</span><span><b>${esc(name)}</b><small>${esc(appUser?.role||'Workspace member')}</small></span><span>⌄</span></button></div></div></aside>`;
 }
 function refWorkspace(r) {
-  if(!navs.some(n=>n[0]===r)&&r!=='settings')r='home';
-  const body=r==='home'?refHome():r==='meetings'?refMeetings():r==='documents'?refDocuments():r==='images'?refImages():r==='history'?refHistory():r==='settings'?refSettings():refAssistant();
+  if(!navs.some(n=>n[0]===r)&&r!=='settings'&&r!=='knowledge')r='home';
+  const body=r==='home'?refHome():r==='meetings'?refMeetings():(r==='documents'||r==='knowledge')?refKnowledge():r==='images'?refImages():r==='history'?refHistory():r==='settings'?refSettings():refAssistant();
   const unread=typeof hasUnreadNotifications==='function'&&hasUnreadNotifications();
   return `<div class="workspace ref-workspace ${r}-workspace ${r==='assistant'&&!messages.length?'ref-assistant-empty':''}">${refSidebar(r)}<div class="workspace-body">${r==='assistant'&&!messages.length?refVideoBackground("assistant"):''}<header class="workspace-header"><button class="mobile-menu icon-button" data-action="menu" aria-label="Toggle navigation">${icon('menu')}</button><form class="global-search" id="search-form">${icon('search')}<input aria-label="Search products, guides, solutions" placeholder="Search across your workspace, documents, meetings, images..."></form><button class="icon-button notification ${unread?'has-unread':''}" data-action="notifications" aria-label="Notifications">${icon('bell')}${unread?'<i></i>':''}</button>${r==='assistant'?'<button class="ref-glass-button ref-new-chat" data-action="new-chat">'+icon('spark')+' New Chat</button>':''}</header><main class="workspace-main">${body}</main></div></div><input hidden type="file" id="document-input" accept=".pdf,.docx,.pptx,.xlsx,.txt,.md,.csv,.json"><input hidden type="file" id="image-input" accept="image/png,image/jpeg,image/webp"><dialog id="dialog"><button class="dialog-close icon-button" data-action="close-dialog" aria-label="Close">${icon('close')}</button><div id="dialog-content"></div></dialog>`;
 }
@@ -103,9 +103,232 @@ function refHistory() {
   const items=chats.filter(c=>!historySearch||c.title.toLowerCase().includes(historySearch.toLowerCase()));
   return `${title('YOUR WORKSPACE','Chat History','Revisit your conversations and continue your work.')}<section class="panel ref-history-panel"><label class="ref-search">${icon('search')}<input id="history-search" type="search" placeholder="Search conversations..." value="${esc(historySearch)}" aria-label="Search conversations"></label>${items.length?items.map(c=>`<article class="ref-history-row"><span class="mini-icon">${icon('chat')}</span><button data-action="open-chat" data-id="${esc(c.id)}"><b>${esc(c.title)}</b><small>${new Date(c.updated).toLocaleString()} · ${c.messages.length} messages</small></button><button class="icon-button danger" data-action="delete-chat" data-id="${esc(c.id)}" aria-label="Delete conversation">${icon('trash')}</button></article>`).join(''):`<div class="ref-empty"><span class="feature-icon">${icon('chat')}</span><h2>${historySearch?'No matching conversations':'Your history starts here'}</h2><p>${historySearch?'Try another search.':'Conversations are saved on this device.'}</p><a class="primary" href="#assistant">Start a conversation ${icon('arrow')}</a></div>`}</section>`;
 }
+function formatBytes(bytes) {
+  if (!bytes || bytes <= 0) return '0 B';
+  const k = 1024, dm = 1, sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
+function refKnowledge() {
+  const folders = (typeof knowledgeFolders !== 'undefined' && Array.isArray(knowledgeFolders)) ? knowledgeFolders : [];
+  const docs = (typeof knowledgeDocs !== 'undefined' && Array.isArray(knowledgeDocs)) ? knowledgeDocs : [];
+  const scope = typeof knowledgeScope === 'string' ? knowledgeScope : 'shared';
+  const activeFolder = activeKnowledgeFolderId ? folders.find(f => f.id === activeKnowledgeFolderId) : null;
+  const filterType = typeof knowledgeTypeFilter === 'string' ? knowledgeTypeFilter : 'all';
+  const searchVal = typeof knowledgeSearch === 'string' ? knowledgeSearch : '';
+  const selectedSet = (typeof selectedKnowledgeDocIds !== 'undefined' && selectedKnowledgeDocIds instanceof Set) ? selectedKnowledgeDocIds : new Set();
+
+  const totalDocs = docs.length;
+  const totalFolders = folders.length;
+  const totalBytes = docs.reduce((acc, d) => acc + (d.sizeBytes || 0), 0);
+  const sharedDocs = docs.filter(d => d.isShared).length;
+  const personalDocs = docs.filter(d => !d.isShared).length;
+
+  const typePills = [
+    ['all', 'All Files'],
+    ['pdf', 'PDF'],
+    ['word', 'Word'],
+    ['excel', 'Excel / CSV'],
+    ['text', 'Text / MD']
+  ];
+
+  const breadcrumb = activeFolder
+    ? `<div class="ref-knowledge-breadcrumb"><button type="button" class="ref-crumb-btn" data-action="select-folder" data-id="">Knowledge Hub</button> <span class="ref-crumb-sep">/</span> <span class="ref-crumb-cur">${esc(activeFolder.name)}</span> <button type="button" class="soft-button small" data-action="clear-folder-filter" title="Back to all files">✕ Back</button></div>`
+    : `<div class="ref-knowledge-breadcrumb"><span class="ref-crumb-cur">Knowledge Hub</span> <span class="ref-crumb-sep">/</span> <span style="color:#78889a;">${scope === 'shared' ? 'Workspace Shared' : scope === 'personal' ? 'My Personal Drive' : 'All Accessible Files'}</span></div>`;
+
+  const activeFolderBanner = activeFolder ? `
+    <div class="ref-active-folder-banner">
+      <div class="ref-active-folder-info">
+        <span class="ref-folder-icon">${icon('folder')}</span>
+        <div>
+          <h3>${esc(activeFolder.name)}</h3>
+          <p>${activeFolder.fileCount || 0} file${activeFolder.fileCount === 1 ? '' : 's'} · ${formatBytes(activeFolder.totalSizeBytes || 0)} · Created by <b>${esc(activeFolder.creatorName || 'User')}</b> · <span class="ref-folder-badge ${activeFolder.isShared ? 'shared' : 'private'}">${activeFolder.isShared ? '🌐 Workspace Shared' : '🔒 Private'}</span></p>
+        </div>
+      </div>
+      <div class="ref-folder-actions">
+        <button type="button" class="outline small" data-action="rename-folder" data-id="${esc(activeFolder.id)}" data-name="${esc(activeFolder.name)}" data-shared="${activeFolder.isShared}">${icon('sliders')} Rename</button>
+        <button type="button" class="outline danger-outline small" data-action="delete-folder" data-id="${esc(activeFolder.id)}" data-name="${esc(activeFolder.name)}" data-count="${activeFolder.fileCount || 0}">${icon('trash')} Delete Folder</button>
+      </div>
+    </div>
+  ` : '';
+
+  const foldersShelf = (!activeFolder) ? `
+    <section class="ref-folder-section">
+      <div class="ref-folder-header">
+        <div>
+          <h2>Folders (${folders.length})</h2>
+          <p>Organize team knowledge by department, project, or category.</p>
+        </div>
+        <button type="button" class="soft-button" data-action="new-folder">${icon('plus')} New Folder</button>
+      </div>
+      <div class="ref-folder-grid">
+        ${folders.length ? folders.map(f => `
+          <div class="ref-folder-card" data-action="select-folder" data-id="${esc(f.id)}">
+            <div class="ref-folder-card-top">
+              <span class="ref-folder-card-icon" style="color:${esc(f.color || '#005437')}">${icon('folder')}</span>
+              <span class="ref-folder-badge ${f.isShared ? 'shared' : 'private'}">${f.isShared ? '🌐 Shared' : '🔒 Private'}</span>
+            </div>
+            <h4 title="${esc(f.name)}">${esc(f.name)}</h4>
+            <div class="ref-folder-card-meta">
+              <span>${f.fileCount || 0} file${f.fileCount === 1 ? '' : 's'}</span>
+              <span>${formatBytes(f.totalSizeBytes || 0)}</span>
+            </div>
+            <div class="ref-folder-card-footer">
+              <small>By ${esc(f.creatorName || 'Team')}</small>
+              <div class="ref-card-actions" onclick="event.stopPropagation()">
+                <button type="button" class="icon-button" data-action="rename-folder" data-id="${esc(f.id)}" data-name="${esc(f.name)}" data-shared="${f.isShared}" title="Rename folder">${icon('sliders')}</button>
+                <button type="button" class="icon-button danger" data-action="delete-folder" data-id="${esc(f.id)}" data-name="${esc(f.name)}" data-count="${f.fileCount || 0}" title="Delete folder">${icon('trash')}</button>
+              </div>
+            </div>
+          </div>
+        `).join('') : `
+          <div class="ref-folder-empty-card" data-action="new-folder">
+            <span class="mini-icon">${icon('plus')}</span>
+            <b>Create First Folder</b>
+            <small>Organize documents into shared or personal folders</small>
+          </div>
+        `}
+      </div>
+    </section>
+  ` : '';
+
+  const batchBar = selectedSet.size > 0 ? `
+    <div class="ref-batch-bar">
+      <span><b>${selectedSet.size}</b> document${selectedSet.size === 1 ? '' : 's'} selected</span>
+      <div class="ref-batch-actions">
+        <button type="button" class="outline small" data-action="batch-move-docs">${icon('folder')} Move to Folder</button>
+        <button type="button" class="outline danger-outline small" data-action="batch-delete-docs">${icon('trash')} Delete Selected</button>
+        <button type="button" class="soft-button small" data-action="clear-doc-selection">${icon('close')} Deselect</button>
+      </div>
+    </div>
+  ` : '';
+
+  return `
+    <div class="ref-page-heading">
+      <div>
+        <h1>Knowledge Hub</h1>
+        <p>Centralized repository for enterprise manuals, technical specs, and team knowledge.</p>
+      </div>
+      <div class="ref-page-heading-tools">
+        <button type="button" class="outline" data-action="new-folder">${icon('plus')} New Folder</button>
+        <button type="button" class="primary" data-action="batch-upload">${icon('upload')} Upload Files</button>
+      </div>
+    </div>
+
+    <div class="ref-knowledge-stats-strip">
+      <div class="ref-stat-card">
+        <span class="mini-icon">${icon('file')}</span>
+        <div><b>${totalDocs}</b><small>Total Documents</small></div>
+      </div>
+      <div class="ref-stat-card">
+        <span class="mini-icon">${icon('folder')}</span>
+        <div><b>${totalFolders}</b><small>Active Folders</small></div>
+      </div>
+      <div class="ref-stat-card">
+        <span class="mini-icon">${icon('chart')}</span>
+        <div><b>${formatBytes(totalBytes)}</b><small>Total Size</small></div>
+      </div>
+      <div class="ref-stat-card">
+        <span class="mini-icon">${icon('shield')}</span>
+        <div><b>${scope === 'shared' ? 'Workspace Shared' : scope === 'personal' ? 'My Personal Drive' : 'All Files'}</b><small>Current Scope</small></div>
+      </div>
+    </div>
+
+    <nav class="ref-knowledge-scope-tabs" role="tablist" aria-label="Knowledge Hub scope">
+      <button type="button" role="tab" aria-selected="${scope === 'shared'}" class="${scope === 'shared' ? 'active' : ''}" data-action="knowledge-scope" data-scope="shared">
+        ${icon('globe')} Workspace Shared (${sharedDocs})
+      </button>
+      <button type="button" role="tab" aria-selected="${scope === 'personal'}" class="${scope === 'personal' ? 'active' : ''}" data-action="knowledge-scope" data-scope="personal">
+        ${icon('lock')} My Personal Drive (${personalDocs})
+      </button>
+      <button type="button" role="tab" aria-selected="${scope === 'all'}" class="${scope === 'all' ? 'active' : ''}" data-action="knowledge-scope" data-scope="all">
+        ${icon('folder')} All Files (${totalDocs})
+      </button>
+    </nav>
+
+    ${activeFolderBanner}
+    ${foldersShelf}
+
+    <section class="panel ref-knowledge-files-panel">
+      <div class="ref-knowledge-toolbar">
+        ${breadcrumb}
+        <div class="ref-toolbar-controls">
+          <label class="ref-search">
+            ${icon('search')}
+            <input id="ref-knowledge-search-input" placeholder="Search filenames or extracted text..." value="${esc(searchVal)}" aria-label="Search documents">
+          </label>
+          <div class="ref-type-pills" role="group" aria-label="Filter by file type">
+            ${typePills.map(([val, label]) => `
+              <button type="button" class="${filterType === val ? 'active' : ''}" data-action="filter-type" data-type="${val}">${label}</button>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+
+      <div class="ref-table-wrap" style="margin-top:12px;">
+        <table class="ref-knowledge-table">
+          <thead>
+            <tr>
+              <th style="width:40px;"><input type="checkbox" id="ref-select-all-docs" ${docs.length && selectedSet.size === docs.length ? 'checked' : ''} data-action="toggle-select-all" aria-label="Select all documents"></th>
+              <th>Filename</th>
+              <th>Folder</th>
+              <th>Scope</th>
+              <th>Size</th>
+              <th>Owner</th>
+              <th>Uploaded</th>
+              <th style="text-align:right;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${docs.length ? docs.map(d => {
+              const ext = d.filename.split('.').pop()?.toUpperCase() || 'FILE';
+              const isChecked = selectedSet.has(d.id);
+              return `
+                <tr class="${isChecked ? 'row-selected' : ''}">
+                  <td><input type="checkbox" ${isChecked ? 'checked' : ''} data-action="toggle-doc-select" data-id="${esc(d.id)}" aria-label="Select ${esc(d.filename)}"></td>
+                  <td>
+                    <div style="display:flex;align-items:center;gap:10px;">
+                      <span class="ref-ext-badge ext-${esc(ext.toLowerCase())}">${esc(ext)}</span>
+                      <b class="ref-doc-name-cell" title="${esc(d.filename)}">${esc(d.filename)}</b>
+                    </div>
+                  </td>
+                  <td><span class="ref-crumb-pill">${esc(d.folderName || 'Unfiled')}</span></td>
+                  <td><span class="ref-folder-badge ${d.isShared ? 'shared' : 'private'}">${d.isShared ? '🌐 Shared' : '🔒 Private'}</span></td>
+                  <td>${formatBytes(d.sizeBytes)}</td>
+                  <td>${esc(d.creatorName || 'User')}</td>
+                  <td>${d.createdAt ? new Date(d.createdAt).toLocaleDateString() : '—'}</td>
+                  <td>
+                    <div class="ref-row-actions">
+                      <button type="button" class="soft-button small" data-action="preview-doc" data-id="${esc(d.id)}" title="Preview extracted text">${icon('eye')} Preview</button>
+                      <a class="icon-button" href="/api/knowledge/documents/${encodeURIComponent(d.id)}/download" download="${esc(d.filename)}" title="Download file">${icon('download')}</a>
+                      <button type="button" class="icon-button" data-action="move-doc" data-id="${esc(d.id)}" title="Move to folder">${icon('folder')}</button>
+                      <button type="button" class="icon-button danger" data-action="delete-doc" data-id="${esc(d.id)}" data-filename="${esc(d.filename)}" title="Delete document">${icon('trash')}</button>
+                    </div>
+                  </td>
+                </tr>
+              `;
+            }).join('') : `
+              <tr>
+                <td colspan="8" style="text-align:center;padding:36px 16px;color:#6b7c8f;">
+                  <span class="feature-icon" style="margin:0 auto 12px;">${icon('file')}</span>
+                  <h3 style="margin:0 0 4px;font-size:15px;color:#182820;">No documents in this view</h3>
+                  <p style="margin:0 0 16px;font-size:13px;">${searchVal ? `No results matching "${esc(searchVal)}"` : activeFolder ? `Folder "${esc(activeFolder.name)}" is empty.` : 'Upload documents or choose a different scope above.'}</p>
+                  <button type="button" class="primary" data-action="batch-upload">${icon('upload')} Upload Files</button>
+                </td>
+              </tr>
+            `}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    ${batchBar}
+  `;
+}
+
 function refDocuments() {
-  const examples=[['CloudCore_Enterprise_Proposal.pdf','PDF','4.2 MB'],['Network_Strategy.docx','Document','2.4 MB'],['Infrastructure_Plan.pptx','Presentation','3.1 MB']];
-  return `<section class="ref-document-heading"><div><h1>Document Insights</h1><p>Understand. Compare. Extract.</p></div><span class="ref-document-symbol">${icon('file')}${icon('spark')}</span><span>Turn your documents<br>into actionable insights<br>with AI</span></section><section class="panel ref-document-upload"><div class="dropzone" data-drop="document"><span class="feature-icon">${icon('file')}</span><h3>${docFile?esc(docFile.name):'Upload a document'}</h3><p>${docFile?(docIngested?'Indexed & ready for AI questions':'Your document is ready to review'):'Drag and drop or <button data-action="choose-document">click to upload</button>'}</p><small>PDF, DOCX, PPTX, TXT, XLSX (Max 50MB)</small><button class="primary" data-action="choose-document">${icon('upload')}${docFile?'Choose another document':'Upload Document'}${icon('arrow')}</button></div></section><section class="ref-document-actions">${[['file','Summarize','Get key takeaways instantly.'],['grid','Compare','Find differences and insights.'],['file','Extract','Pull key information.'],['chart','Analyze','Identify trends and risks.']].map(([i,t,d],n)=>`<button class="panel capability-${n}" data-action="document-action" data-title="${t} document"><span class="mini-icon">${icon(i)}</span><span><b>${t}</b><small>${d}</small></span><i class="ref-round-arrow">${icon('arrow')}</i></button>`).join('')}</section>${docFile?`<section class="panel ref-document-ready"><div class="panel-heading">${icon('spark')}<div><h2>${esc(docFile.name)}</h2><p>${esc(docJobStatus||'Selected and ready for AI analysis.')}</p></div><button class="primary" data-action="${docIngested?'ask-doc-ai':'ingest-document-ai'}" ${docIngesting?'disabled':''}>${docIngesting?'Indexing…':docIngested?'Ask AI about document':'Analyze document'}</button></div><div class="tabs" role="tablist" aria-label="Document analysis">${['Summary','Key Points','Actions'].map(t=>`<button role="tab" aria-selected="${docTab===t}" data-action="doc-tab" data-tab="${t}" class="${docTab===t?'active':''}">${t}</button>`).join('')}</div><p class="ref-analysis-note">${docTab==='Summary'?'Click Summarize above or Ask about this document below to generate an executive summary grounded in your file.':docTab==='Key Points'?'Click Extract above or ask the assistant to pull key facts, metrics, and clauses from your document.':'Click Analyze above or ask the assistant to identify decisions, action items, and risks.'}</p><button class="outline" data-action="ask-doc-ai">Ask about this document ${icon('arrow')}</button></section>`:''}<section class="ref-recent-documents"><div class="ref-table-heading"><div><h2>Recent Documents</h2><p>${docFile?'Your selected document and example files.':'Example files — select a document to start your own analysis.'}</p></div><label class="ref-search">${icon('search')}<input id="ref-document-search" placeholder="Search documents..." aria-label="Search documents"></label></div><div class="panel ref-table-wrap"><table><thead><tr><th>Name</th><th>Type</th><th>Uploaded</th><th>Size</th><th>Key Insights</th><th>Status</th></tr></thead><tbody>${(docFile?[[docFile.name,docFile.name.split('.').pop().toUpperCase(),(docFile.size/1048576).toFixed(2)+' MB'],...examples]:examples).map(([n,t,s],i)=>`<tr data-document-name="${esc(n.toLowerCase())}"><td><span class="mini-icon">${icon('file')}</span><b>${esc(n)}</b></td><td><span class="ref-type">${esc(t)}</span></td><td>${docFile&&i===0?'Just uploaded':'Example file'}</td><td>${s}</td><td>${docFile&&i===0?(docIngested?'Indexed in AI':'Ready to analyze'):'Preview available'}</td><td><button class="soft-button" data-action="${docFile&&i===0?'full-analysis':'ref-example-document'}">${docFile&&i===0?(docIngested?'Ask AI':'Analyze'):'View example'}${icon('arrow')}</button></td></tr>`).join('')}</tbody></table></div></section>`;
+  return refKnowledge();
 }
 function refImages() {
   const examples=[['tower','Telecom Tower','Identify equipment and infrastructure','assets/example-tower.png'],['map','Satellite Map','Analyze locations and land use','assets/example-map.png'],['datacenter','Data Center','Identify assets and infrastructure','assets/example-datacenter.png'],['diagram','Diagram','Extract text and understand diagrams','assets/diagram.svg']];
@@ -344,5 +567,23 @@ function refBind() {
   refSyncMotion();
   const search=$('#ref-document-search');if(search)search.oninput=e=>{const q=e.target.value.toLowerCase();document.querySelectorAll('[data-document-name]').forEach(row=>row.hidden=!row.dataset.documentName.includes(q));};
   const meetingsSearch=$('#ref-meeting-search');if(meetingsSearch)meetingsSearch.oninput=e=>{const q=e.target.value.toLowerCase();document.querySelectorAll('.meeting-row').forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(q));};
+  const kSearch=$('#ref-knowledge-search-input');
+  if(kSearch){
+    let kTimer;
+    kSearch.oninput=e=>{
+      if(typeof knowledgeSearch!=='undefined')knowledgeSearch=e.target.value;
+      clearTimeout(kTimer);
+      kTimer=setTimeout(()=>{
+        if(typeof loadKnowledge==='function')loadKnowledge();
+      },300);
+    };
+    kSearch.onkeydown=e=>{
+      if(e.key==='Enter'){
+        e.preventDefault();
+        clearTimeout(kTimer);
+        if(typeof loadKnowledge==='function')loadKnowledge();
+      }
+    };
+  }
   if(typeof bindSettingsForms==='function')bindSettingsForms();
 }

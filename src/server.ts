@@ -1,4 +1,5 @@
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createReadStream, existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
@@ -37,6 +38,8 @@ export function verifyCsrfOrigin(originHeader: string | undefined, hostHeader: s
 
 validateProductionConfig();await repository.init();
 const app=express(),logger=pino({level:process.env.LOG_LEVEL??'info'}),root=resolve(dirname(fileURLToPath(import.meta.url)),'../dist');
+const knowledgeStorageDir=resolve(process.cwd(),'data/knowledge');
+try { mkdirSync(knowledgeStorageDir, { recursive: true }); } catch {}
 app.set('trust proxy',config.trustProxy);app.use(pinoHttp({logger}));app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'","'unsafe-inline'",'https://fonts.googleapis.com'],fontSrc:["'self'",'https://fonts.gstatic.com'],imgSrc:["'self'",'data:','blob:'],connectSrc:["'self'"],upgradeInsecureRequests:null}},hsts:config.nodeEnv==='production'&&config.publicBaseUrl.startsWith('https://')}));app.use(express.json({limit:'1mb',verify:(req,_res,buffer)=>{(req as express.Request&{rawBody?:Buffer}).rawBody=Buffer.from(buffer)}}));
 app.use(session({name:'cloudcore.sid',secret:config.sessionSecret,resave:false,saveUninitialized:false,store:redisConnection?new RedisStore({client:redisConnection}):undefined,cookie:{httpOnly:true,sameSite:'lax',secure:config.nodeEnv==='production'&&config.publicBaseUrl.startsWith('https://'),maxAge:8*60*60*1000}}));
 app.use('/api',(req,res,next)=>{
@@ -464,6 +467,270 @@ app.post('/api/documents/upload',requireUser,async(req,res)=>{
     return res.status(502).json({error:{code:'ai_unavailable',message:error instanceof Error?error.message:'Document upload failed.'}});
   }
 });
+
+// ==========================================
+// KNOWLEDGE HUB ENDPOINTS
+// ==========================================
+
+app.get('/api/knowledge/folders', requireUser, async (req, res) => {
+  try {
+    const scope = (req.query.scope as 'all' | 'shared' | 'personal') || 'all';
+    const folders = await repository.listFolders(req.session.user!.id, scope);
+    return res.json({ folders });
+  } catch (err) {
+    logger.warn({ error: err instanceof Error ? err.message : String(err) }, 'Failed to list knowledge folders');
+    return res.status(500).json({ error: { code: 'server_error', message: 'Failed to retrieve folders.' } });
+  }
+});
+
+app.post('/api/knowledge/folders', requireUser, async (req, res) => {
+  try {
+    const name = String(req.body?.name || '').trim();
+    if (!name || name.length > 120) {
+      return res.status(400).json({ error: { code: 'invalid_name', message: 'Folder name must be between 1 and 120 characters.' } });
+    }
+    const isShared = req.body?.isShared !== false;
+    const parentId = typeof req.body?.parentId === 'string' && req.body.parentId.trim() ? req.body.parentId.trim() : null;
+    const color = typeof req.body?.color === 'string' ? req.body.color : '#005437';
+
+    const folder = await repository.createFolder({
+      userId: req.session.user!.id,
+      name,
+      isShared,
+      parentId,
+      color
+    });
+    return res.status(201).json({ folder });
+  } catch (err) {
+    logger.warn({ error: err instanceof Error ? err.message : String(err) }, 'Failed to create knowledge folder');
+    return res.status(500).json({ error: { code: 'server_error', message: 'Failed to create folder.' } });
+  }
+});
+
+app.patch('/api/knowledge/folders/:id', requireUser, async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const isPrivileged = ['dev', 'admin'].includes(req.session.user!.role);
+    const updates: { name?: string; isShared?: boolean } = {};
+    if (typeof req.body?.name === 'string') {
+      const n = req.body.name.trim();
+      if (!n || n.length > 120) return res.status(400).json({ error: { code: 'invalid_name', message: 'Folder name must be between 1 and 120 characters.' } });
+      updates.name = n;
+    }
+    if (typeof req.body?.isShared === 'boolean') {
+      updates.isShared = req.body.isShared;
+    }
+    const folder = await repository.updateFolder(id, req.session.user!.id, updates, isPrivileged);
+    if (!folder) return res.status(404).json({ error: { code: 'not_found', message: 'Folder not found.' } });
+    return res.json({ folder });
+  } catch (err: any) {
+    if (err.message?.includes('Unauthorized')) return res.status(403).json({ error: { code: 'forbidden', message: err.message } });
+    return res.status(500).json({ error: { code: 'server_error', message: 'Failed to update folder.' } });
+  }
+});
+
+app.delete('/api/knowledge/folders/:id', requireUser, async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const cascade = req.query.cascade === 'true';
+    const isPrivileged = ['dev', 'admin'].includes(req.session.user!.role);
+    const deleted = await repository.deleteFolder(id, req.session.user!.id, cascade, isPrivileged);
+    if (!deleted) return res.status(404).json({ error: { code: 'not_found', message: 'Folder not found.' } });
+    return res.json({ success: true, id });
+  } catch (err: any) {
+    if (err.message?.includes('Unauthorized')) return res.status(403).json({ error: { code: 'forbidden', message: err.message } });
+    return res.status(500).json({ error: { code: 'server_error', message: 'Failed to delete folder.' } });
+  }
+});
+
+app.get('/api/knowledge/documents', requireUser, async (req, res) => {
+  try {
+    const folderId = req.query.folderId !== undefined
+      ? (req.query.folderId === 'null' || req.query.folderId === '' ? null : String(req.query.folderId))
+      : undefined;
+    const scope = (req.query.scope as 'all' | 'shared' | 'personal') || 'all';
+    const search = typeof req.query.search === 'string' ? req.query.search : undefined;
+    const type = typeof req.query.type === 'string' ? req.query.type : undefined;
+
+    const documents = await repository.listDocuments(req.session.user!.id, {
+      folderId,
+      scope,
+      search,
+      type
+    });
+    return res.json({ documents });
+  } catch (err) {
+    logger.warn({ error: err instanceof Error ? err.message : String(err) }, 'Failed to list knowledge documents');
+    return res.status(500).json({ error: { code: 'server_error', message: 'Failed to list documents.' } });
+  }
+});
+
+app.post('/api/knowledge/upload', requireUser, async (req, res) => {
+  try {
+    const contentType = req.header('content-type') || '';
+    if (!contentType.includes('multipart/form-data')) {
+      return res.status(400).json({ error: { code: 'invalid_content_type', message: 'Multipart form data is required.' } });
+    }
+    const rawBuffer = await readRequestBuffer(req, 100 * 1048576);
+    const formData = await new Response(new Uint8Array(rawBuffer), { headers: { 'content-type': contentType } }).formData();
+
+    const rawFolderId = formData.get('folderId');
+    const folderId = (typeof rawFolderId === 'string' && rawFolderId.trim() && rawFolderId !== 'null') ? rawFolderId.trim() : null;
+    const rawIsShared = formData.get('isShared');
+    const isShared = rawIsShared === 'false' ? false : true;
+
+    const entries = [...formData.getAll('files'), ...formData.getAll('file')].filter(
+      (e): e is File => typeof e === 'object' && typeof (e as any).arrayBuffer === 'function' && typeof (e as any).name === 'string' && Boolean((e as any).name)
+    );
+
+    if (!entries.length) {
+      return res.status(400).json({ error: { code: 'no_files', message: 'No valid files provided in upload.' } });
+    }
+
+    const uploadedDocs = [];
+    for (const entry of entries) {
+      const filename = sanitizePrompt(entry.name).slice(0, 200) || 'document.txt';
+      const fileBytes = Buffer.from(await entry.arrayBuffer());
+      const ext = filename.split('.').pop()?.toLowerCase() || 'bin';
+      const docId = randomUUID();
+      const storageFilename = `${docId}.${ext}`;
+      const storagePath = resolve(knowledgeStorageDir, storageFilename);
+
+      writeFileSync(storagePath, fileBytes);
+
+      const extractedText = extractDocumentText(filename, fileBytes) || '';
+      const tokenCount = Math.round(extractedText.split(/\s+/).filter(Boolean).length * 1.3);
+
+      const doc = await repository.createDocument({
+        userId: req.session.user!.id,
+        folderId,
+        filename,
+        mimeType: entry.type || 'application/octet-stream',
+        sizeBytes: fileBytes.length,
+        storagePath: storageFilename,
+        isShared,
+        status: 'ready',
+        extractedText,
+        tokenCount
+      });
+      uploadedDocs.push(doc);
+    }
+
+    return res.status(201).json({ uploaded: uploadedDocs });
+  } catch (err) {
+    logger.warn({ error: err instanceof Error ? err.message : String(err) }, 'Knowledge Hub upload failed');
+    return res.status(500).json({ error: { code: 'upload_failed', message: 'Failed to process document upload.' } });
+  }
+});
+
+app.get('/api/knowledge/documents/:id', requireUser, async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const doc = await repository.getDocumentById(id);
+    if (!doc) return res.status(404).json({ error: { code: 'not_found', message: 'Document not found.' } });
+    if (!doc.isShared && doc.userId !== req.session.user!.id && !['dev', 'admin'].includes(req.session.user!.role)) {
+      return res.status(403).json({ error: { code: 'forbidden', message: 'Access denied to this document.' } });
+    }
+    return res.json({ document: doc });
+  } catch (err) {
+    return res.status(500).json({ error: { code: 'server_error', message: 'Failed to retrieve document.' } });
+  }
+});
+
+app.get('/api/knowledge/documents/:id/download', requireUser, async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const doc = await repository.getDocumentById(id);
+    if (!doc) return res.status(404).json({ error: { code: 'not_found', message: 'Document not found.' } });
+    if (!doc.isShared && doc.userId !== req.session.user!.id && !['dev', 'admin'].includes(req.session.user!.role)) {
+      return res.status(403).json({ error: { code: 'forbidden', message: 'Access denied.' } });
+    }
+    const fullPath = resolve(knowledgeStorageDir, doc.storagePath);
+    if (!existsSync(fullPath)) {
+      return res.status(404).json({ error: { code: 'file_missing', message: 'Stored file binary was not found.' } });
+    }
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(doc.filename)}"`);
+    res.setHeader('Content-Type', doc.mimeType || 'application/octet-stream');
+    createReadStream(fullPath).pipe(res);
+  } catch (err) {
+    return res.status(500).json({ error: { code: 'server_error', message: 'Failed to download file.' } });
+  }
+});
+
+app.patch('/api/knowledge/documents/:id', requireUser, async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const isPrivileged = ['dev', 'admin'].includes(req.session.user!.role);
+    const updates: { filename?: string; folderId?: string | null; isShared?: boolean } = {};
+    if (typeof req.body?.filename === 'string') {
+      const fn = req.body.filename.trim();
+      if (!fn || fn.length > 200) return res.status(400).json({ error: { code: 'invalid_filename', message: 'Filename must be between 1 and 200 characters.' } });
+      updates.filename = fn;
+    }
+    if (req.body?.folderId !== undefined) {
+      updates.folderId = req.body.folderId === null || req.body.folderId === '' ? null : String(req.body.folderId);
+    }
+    if (typeof req.body?.isShared === 'boolean') {
+      updates.isShared = req.body.isShared;
+    }
+    const doc = await repository.updateDocument(id, req.session.user!.id, updates, isPrivileged);
+    if (!doc) return res.status(404).json({ error: { code: 'not_found', message: 'Document not found.' } });
+    return res.json({ document: doc });
+  } catch (err: any) {
+    if (err.message?.includes('Unauthorized')) return res.status(403).json({ error: { code: 'forbidden', message: err.message } });
+    return res.status(500).json({ error: { code: 'server_error', message: 'Failed to update document.' } });
+  }
+});
+
+app.delete('/api/knowledge/documents/:id', requireUser, async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const isPrivileged = ['dev', 'admin'].includes(req.session.user!.role);
+    const doc = await repository.deleteDocument(id, req.session.user!.id, isPrivileged);
+    if (!doc) return res.status(404).json({ error: { code: 'not_found', message: 'Document not found.' } });
+    try {
+      const fullPath = resolve(knowledgeStorageDir, doc.storagePath);
+      if (existsSync(fullPath)) unlinkSync(fullPath);
+    } catch {}
+    return res.json({ success: true, id });
+  } catch (err: any) {
+    if (err.message?.includes('Unauthorized')) return res.status(403).json({ error: { code: 'forbidden', message: err.message } });
+    return res.status(500).json({ error: { code: 'server_error', message: 'Failed to delete document.' } });
+  }
+});
+
+app.post('/api/knowledge/batch-delete', requireUser, async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body?.documentIds) ? req.body.documentIds.map(String) : [];
+    if (!ids.length) return res.status(400).json({ error: { code: 'missing_ids', message: 'documentIds array required.' } });
+    const isPrivileged = ['dev', 'admin'].includes(req.session.user!.role);
+    const deletedDocs = await repository.batchDeleteDocuments(ids, req.session.user!.id, isPrivileged);
+    for (const doc of deletedDocs) {
+      try {
+        const fullPath = resolve(knowledgeStorageDir, doc.storagePath);
+        if (existsSync(fullPath)) unlinkSync(fullPath);
+      } catch {}
+    }
+    return res.json({ deletedIds: deletedDocs.map(d => d.id) });
+  } catch (err) {
+    return res.status(500).json({ error: { code: 'server_error', message: 'Failed to batch delete documents.' } });
+  }
+});
+
+app.post('/api/knowledge/batch-move', requireUser, async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body?.documentIds) ? req.body.documentIds.map(String) : [];
+    if (!ids.length) return res.status(400).json({ error: { code: 'missing_ids', message: 'documentIds array required.' } });
+    const rawTarget = req.body?.targetFolderId;
+    const targetFolderId = (typeof rawTarget === 'string' && rawTarget.trim() && rawTarget !== 'null') ? rawTarget.trim() : null;
+    const isPrivileged = ['dev', 'admin'].includes(req.session.user!.role);
+    const movedIds = await repository.batchMoveDocuments(ids, targetFolderId, req.session.user!.id, isPrivileged);
+    return res.json({ movedIds });
+  } catch (err) {
+    return res.status(500).json({ error: { code: 'server_error', message: 'Failed to batch move documents.' } });
+  }
+});
+
 app.get('/api/jobs/:id',requireUser,async(req,res)=>{
   try{
     const jobId=String(req.params.id);

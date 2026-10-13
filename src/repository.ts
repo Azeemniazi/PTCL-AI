@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { config } from './config.js';
 import { hashPassword } from './crypto.js';
-import { activeStatuses, type Meeting, type MeetingStatus, type Mom, type Participant, type Snapshot, type TranscriptSegment, type User, type UserWithSecret, type Role } from './models.js';
+import { activeStatuses, type Meeting, type MeetingStatus, type Mom, type Participant, type Snapshot, type TranscriptSegment, type User, type UserWithSecret, type Role, type KnowledgeFolder, type KnowledgeDocument } from './models.js';
 const { Pool } = pg;
 
 const iso = (value: unknown) => value ? new Date(value as string).toISOString() : undefined;
@@ -74,6 +74,42 @@ function meetingRow(r: any): Meeting {
   };
 }
 
+function folderRow(r: any): KnowledgeFolder {
+  return {
+    id: r.id,
+    userId: r.user_id ?? r.userId,
+    parentId: r.parent_id ?? r.parentId ?? null,
+    name: r.name,
+    isShared: Boolean(r.is_shared ?? r.isShared ?? true),
+    color: r.color ?? '#005437',
+    createdAt: iso(r.created_at ?? r.createdAt)!,
+    updatedAt: iso(r.updated_at ?? r.updatedAt)!,
+    creatorName: r.creator_name ?? r.creatorName,
+    fileCount: typeof r.file_count === 'number' ? Number(r.file_count) : (typeof r.fileCount === 'number' ? r.fileCount : undefined),
+    totalSizeBytes: typeof r.total_size_bytes === 'number' ? Number(r.total_size_bytes) : (typeof r.totalSizeBytes === 'number' ? r.totalSizeBytes : undefined),
+  };
+}
+
+function documentRow(r: any): KnowledgeDocument {
+  return {
+    id: r.id,
+    userId: r.user_id ?? r.userId,
+    folderId: r.folder_id ?? r.folderId ?? null,
+    filename: r.filename,
+    mimeType: r.mime_type ?? r.mimeType ?? 'application/octet-stream',
+    sizeBytes: Number(r.size_bytes ?? r.sizeBytes ?? 0),
+    storagePath: r.storage_path ?? r.storagePath ?? '',
+    isShared: Boolean(r.is_shared ?? r.isShared ?? true),
+    status: r.status ?? 'ready',
+    extractedText: r.extracted_text ?? r.extractedText,
+    tokenCount: Number(r.token_count ?? r.tokenCount ?? 0),
+    createdAt: iso(r.created_at ?? r.createdAt)!,
+    updatedAt: iso(r.updated_at ?? r.updatedAt)!,
+    creatorName: r.creator_name ?? r.creatorName,
+    folderName: r.folder_name ?? r.folderName,
+  };
+}
+
 export class Repository {
   private pool = config.databaseUrl ? new Pool({
     connectionString: config.databaseUrl,
@@ -87,6 +123,8 @@ export class Repository {
   private transcript: TranscriptSegment[] = [];
   private snapshots: Snapshot[] = [];
   private moms = new Map<string, Mom[]>();
+  private knowledgeFolders = new Map<string, KnowledgeFolder>();
+  private knowledgeDocuments = new Map<string, KnowledgeDocument>();
 
   constructor() {
     this.pool?.on('error', (err) => {
@@ -97,7 +135,7 @@ export class Repository {
   async init() {
     if (this.pool) {
       const dir = dirname(fileURLToPath(import.meta.url));
-      for (const file of ['001_init.sql', '002_auth_users.sql', '003_scalability_and_indexes.sql']) {
+      for (const file of ['001_init.sql', '002_auth_users.sql', '003_scalability_and_indexes.sql', '004_knowledge_hub.sql']) {
         await this.pool.query(await readFile(resolve(dir, '../migrations', file), 'utf8'));
       }
     }
@@ -729,6 +767,401 @@ export class Repository {
       return;
     }
     await this.pool.query(`UPDATE meetings SET encrypted_url=NULL WHERE ended_at<now()-interval '24 hours'`);
+  }
+
+  // --- KNOWLEDGE HUB ---
+
+  async createFolder(input: { userId: string; name: string; isShared?: boolean; parentId?: string | null; color?: string }): Promise<KnowledgeFolder> {
+    const id = randomUUID();
+    const isShared = input.isShared ?? true;
+    const parentId = input.parentId ?? null;
+    const color = input.color ?? '#005437';
+    const now = new Date().toISOString();
+    const user = await this.findUserById(input.userId);
+    const creatorName = user?.displayName || 'User';
+
+    if (!this.pool) {
+      const folder: KnowledgeFolder = {
+        id,
+        userId: input.userId,
+        name: input.name,
+        isShared,
+        parentId,
+        color,
+        createdAt: now,
+        updatedAt: now,
+        creatorName,
+        fileCount: 0,
+        totalSizeBytes: 0
+      };
+      this.knowledgeFolders.set(id, folder);
+      return folder;
+    }
+
+    const q = await this.pool.query(
+      `INSERT INTO knowledge_folders(id, user_id, parent_id, name, is_shared, color, created_at, updated_at)
+       VALUES($1, $2, $3, $4, $5, $6, $7, $7)
+       RETURNING *`,
+      [id, input.userId, parentId, input.name, isShared, color, now]
+    );
+    const row = q.rows[0];
+    row.creator_name = creatorName;
+    row.file_count = 0;
+    row.total_size_bytes = 0;
+    return folderRow(row);
+  }
+
+  async listFolders(userId: string, scope?: 'all' | 'shared' | 'personal'): Promise<KnowledgeFolder[]> {
+    if (!this.pool) {
+      const folders = [...this.knowledgeFolders.values()].filter(f => {
+        if (scope === 'shared') return f.isShared;
+        if (scope === 'personal') return !f.isShared && f.userId === userId;
+        return f.isShared || f.userId === userId;
+      });
+      return folders.map(f => {
+        const files = [...this.knowledgeDocuments.values()].filter(d => d.folderId === f.id);
+        const user = this.users.get(f.userId);
+        return {
+          ...f,
+          creatorName: user?.displayName || f.creatorName,
+          fileCount: files.length,
+          totalSizeBytes: files.reduce((acc, doc) => acc + doc.sizeBytes, 0)
+        };
+      });
+    }
+
+    let filterClause = '(f.is_shared = true OR f.user_id = $1)';
+    if (scope === 'shared') filterClause = 'f.is_shared = true';
+    else if (scope === 'personal') filterClause = '(f.is_shared = false AND f.user_id = $1)';
+
+    const q = await this.pool.query(
+      `SELECT f.*, u.display_name AS creator_name,
+              COUNT(d.id)::int AS file_count,
+              COALESCE(SUM(d.size_bytes), 0)::bigint AS total_size_bytes
+       FROM knowledge_folders f
+       LEFT JOIN users u ON f.user_id = u.id
+       LEFT JOIN knowledge_documents d ON d.folder_id = f.id
+       WHERE ${filterClause}
+       GROUP BY f.id, u.display_name
+       ORDER BY f.created_at ASC`,
+      [userId]
+    );
+    return q.rows.map(folderRow);
+  }
+
+  async getFolderById(id: string): Promise<KnowledgeFolder | undefined> {
+    if (!this.pool) {
+      const f = this.knowledgeFolders.get(id);
+      if (!f) return undefined;
+      const files = [...this.knowledgeDocuments.values()].filter(d => d.folderId === f.id);
+      const user = this.users.get(f.userId);
+      return {
+        ...f,
+        creatorName: user?.displayName || f.creatorName,
+        fileCount: files.length,
+        totalSizeBytes: files.reduce((acc, doc) => acc + doc.sizeBytes, 0)
+      };
+    }
+    const q = await this.pool.query(
+      `SELECT f.*, u.display_name AS creator_name,
+              COUNT(d.id)::int AS file_count,
+              COALESCE(SUM(d.size_bytes), 0)::bigint AS total_size_bytes
+       FROM knowledge_folders f
+       LEFT JOIN users u ON f.user_id = u.id
+       LEFT JOIN knowledge_documents d ON d.folder_id = f.id
+       WHERE f.id = $1
+       GROUP BY f.id, u.display_name`,
+      [id]
+    );
+    return q.rows[0] ? folderRow(q.rows[0]) : undefined;
+  }
+
+  async updateFolder(id: string, userId: string, input: { name?: string; isShared?: boolean }, isPrivileged = false): Promise<KnowledgeFolder | undefined> {
+    const existing = await this.getFolderById(id);
+    if (!existing) return undefined;
+    if (existing.userId !== userId && !isPrivileged) throw new Error('Unauthorized to modify this folder.');
+
+    const name = input.name?.trim() || existing.name;
+    const isShared = typeof input.isShared === 'boolean' ? input.isShared : existing.isShared;
+    const now = new Date().toISOString();
+
+    if (!this.pool) {
+      existing.name = name;
+      existing.isShared = isShared;
+      existing.updatedAt = now;
+      this.knowledgeFolders.set(id, existing);
+      return existing;
+    }
+
+    const q = await this.pool.query(
+      `UPDATE knowledge_folders
+       SET name = $2, is_shared = $3, updated_at = $4
+       WHERE id = $1
+       RETURNING *`,
+      [id, name, isShared, now]
+    );
+    return q.rows[0] ? folderRow(q.rows[0]) : undefined;
+  }
+
+  async deleteFolder(id: string, userId: string, cascade = false, isPrivileged = false): Promise<boolean> {
+    const existing = await this.getFolderById(id);
+    if (!existing) return false;
+    if (existing.userId !== userId && !isPrivileged) throw new Error('Unauthorized to delete this folder.');
+
+    if (!this.pool) {
+      if (cascade) {
+        for (const [docId, doc] of this.knowledgeDocuments.entries()) {
+          if (doc.folderId === id) this.knowledgeDocuments.delete(docId);
+        }
+      } else {
+        for (const doc of this.knowledgeDocuments.values()) {
+          if (doc.folderId === id) doc.folderId = null;
+        }
+      }
+      return this.knowledgeFolders.delete(id);
+    }
+
+    if (cascade) {
+      await this.pool.query('DELETE FROM knowledge_documents WHERE folder_id = $1', [id]);
+    } else {
+      await this.pool.query('UPDATE knowledge_documents SET folder_id = NULL WHERE folder_id = $1', [id]);
+    }
+    const q = await this.pool.query('DELETE FROM knowledge_folders WHERE id = $1', [id]);
+    return (q.rowCount ?? 0) > 0;
+  }
+
+  async createDocument(input: {
+    userId: string;
+    folderId?: string | null;
+    filename: string;
+    mimeType: string;
+    sizeBytes: number;
+    storagePath: string;
+    isShared?: boolean;
+    status?: 'ready' | 'indexing' | 'failed';
+    extractedText?: string;
+    tokenCount?: number;
+  }): Promise<KnowledgeDocument> {
+    const id = randomUUID();
+    const folderId = input.folderId ?? null;
+    const isShared = input.isShared ?? true;
+    const status = input.status ?? 'ready';
+    const now = new Date().toISOString();
+    const user = await this.findUserById(input.userId);
+    const creatorName = user?.displayName || 'User';
+
+    let folderName: string | undefined;
+    if (folderId) {
+      const f = await this.getFolderById(folderId);
+      folderName = f?.name;
+    }
+
+    if (!this.pool) {
+      const doc: KnowledgeDocument = {
+        id,
+        userId: input.userId,
+        folderId,
+        filename: input.filename,
+        mimeType: input.mimeType,
+        sizeBytes: input.sizeBytes,
+        storagePath: input.storagePath,
+        isShared,
+        status,
+        extractedText: input.extractedText,
+        tokenCount: input.tokenCount ?? 0,
+        createdAt: now,
+        updatedAt: now,
+        creatorName,
+        folderName
+      };
+      this.knowledgeDocuments.set(id, doc);
+      return doc;
+    }
+
+    const q = await this.pool.query(
+      `INSERT INTO knowledge_documents(id, user_id, folder_id, filename, mime_type, size_bytes, storage_path, is_shared, status, extracted_text, token_count, created_at, updated_at)
+       VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12)
+       RETURNING *`,
+      [id, input.userId, folderId, input.filename, input.mimeType, input.sizeBytes, input.storagePath, isShared, status, input.extractedText ?? null, input.tokenCount ?? 0, now]
+    );
+    const row = q.rows[0];
+    row.creator_name = creatorName;
+    row.folder_name = folderName;
+    return documentRow(row);
+  }
+
+  async listDocuments(userId: string, filters?: {
+    folderId?: string | null;
+    scope?: 'all' | 'shared' | 'personal';
+    search?: string;
+    type?: string;
+  }): Promise<KnowledgeDocument[]> {
+    if (!this.pool) {
+      const search = filters?.search?.toLowerCase().trim();
+      const type = filters?.type?.toLowerCase().trim();
+      const docs = [...this.knowledgeDocuments.values()].filter(d => {
+        if (filters?.scope === 'shared' && !d.isShared) return false;
+        if (filters?.scope === 'personal' && (d.isShared || d.userId !== userId)) return false;
+        if (!filters?.scope || filters.scope === 'all') {
+          if (!d.isShared && d.userId !== userId) return false;
+        }
+        if (filters?.folderId !== undefined) {
+          if (filters.folderId === null && d.folderId !== null && d.folderId !== undefined) return false;
+          if (filters.folderId && d.folderId !== filters.folderId) return false;
+        }
+        if (type && type !== 'all') {
+          const ext = d.filename.split('.').pop()?.toLowerCase();
+          if (type === 'pdf' && ext !== 'pdf') return false;
+          if (type === 'word' && !['doc', 'docx'].includes(ext || '')) return false;
+          if (type === 'excel' && !['xls', 'xlsx', 'csv'].includes(ext || '')) return false;
+          if (type === 'text' && !['txt', 'md', 'json'].includes(ext || '')) return false;
+        }
+        if (search) {
+          const inName = d.filename.toLowerCase().includes(search);
+          const inText = (d.extractedText || '').toLowerCase().includes(search);
+          if (!inName && !inText) return false;
+        }
+        return true;
+      });
+      return docs.map(d => {
+        const u = this.users.get(d.userId);
+        const f = d.folderId ? this.knowledgeFolders.get(d.folderId) : undefined;
+        return {
+          ...d,
+          creatorName: u?.displayName || d.creatorName,
+          folderName: f?.name || d.folderName
+        };
+      });
+    }
+
+    const conditions: string[] = [];
+    const params: any[] = [userId];
+
+    if (filters?.scope === 'shared') {
+      conditions.push('d.is_shared = true');
+    } else if (filters?.scope === 'personal') {
+      conditions.push('d.is_shared = false AND d.user_id = $1');
+    } else {
+      conditions.push('(d.is_shared = true OR d.user_id = $1)');
+    }
+
+    if (filters?.folderId !== undefined) {
+      if (filters.folderId === null) {
+        conditions.push('d.folder_id IS NULL');
+      } else {
+        params.push(filters.folderId);
+        conditions.push(`d.folder_id = $${params.length}`);
+      }
+    }
+
+    if (filters?.search) {
+      params.push(`%${filters.search.trim()}%`);
+      const pIdx = params.length;
+      conditions.push(`(d.filename ILIKE $${pIdx} OR d.extracted_text ILIKE $${pIdx})`);
+    }
+
+    if (filters?.type && filters.type !== 'all') {
+      const t = filters.type.toLowerCase();
+      if (t === 'pdf') conditions.push("d.filename ILIKE '%.pdf'");
+      else if (t === 'word') conditions.push("(d.filename ILIKE '%.doc' OR d.filename ILIKE '%.docx')");
+      else if (t === 'excel') conditions.push("(d.filename ILIKE '%.xls' OR d.filename ILIKE '%.xlsx' OR d.filename ILIKE '%.csv')");
+      else if (t === 'text') conditions.push("(d.filename ILIKE '%.txt' OR d.filename ILIKE '%.md' OR d.filename ILIKE '%.json')");
+    }
+
+    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const q = await this.pool.query(
+      `SELECT d.*, u.display_name AS creator_name, f.name AS folder_name
+       FROM knowledge_documents d
+       LEFT JOIN users u ON d.user_id = u.id
+       LEFT JOIN knowledge_folders f ON d.folder_id = f.id
+       ${whereClause}
+       ORDER BY d.created_at DESC`,
+      params
+    );
+    return q.rows.map(documentRow);
+  }
+
+  async getDocumentById(id: string): Promise<KnowledgeDocument | undefined> {
+    if (!this.pool) {
+      const doc = this.knowledgeDocuments.get(id);
+      if (!doc) return undefined;
+      const u = this.users.get(doc.userId);
+      const f = doc.folderId ? this.knowledgeFolders.get(doc.folderId) : undefined;
+      return {
+        ...doc,
+        creatorName: u?.displayName || doc.creatorName,
+        folderName: f?.name || doc.folderName
+      };
+    }
+    const q = await this.pool.query(
+      `SELECT d.*, u.display_name AS creator_name, f.name AS folder_name
+       FROM knowledge_documents d
+       LEFT JOIN users u ON d.user_id = u.id
+       LEFT JOIN knowledge_folders f ON d.folder_id = f.id
+       WHERE d.id = $1`,
+      [id]
+    );
+    return q.rows[0] ? documentRow(q.rows[0]) : undefined;
+  }
+
+  async updateDocument(id: string, userId: string, input: { filename?: string; folderId?: string | null; isShared?: boolean }, isPrivileged = false): Promise<KnowledgeDocument | undefined> {
+    const existing = await this.getDocumentById(id);
+    if (!existing) return undefined;
+    if (existing.userId !== userId && !isPrivileged) throw new Error('Unauthorized to modify this document.');
+
+    const filename = input.filename?.trim() || existing.filename;
+    const folderId = input.folderId !== undefined ? input.folderId : existing.folderId;
+    const isShared = typeof input.isShared === 'boolean' ? input.isShared : existing.isShared;
+    const now = new Date().toISOString();
+
+    if (!this.pool) {
+      existing.filename = filename;
+      existing.folderId = folderId;
+      existing.isShared = isShared;
+      existing.updatedAt = now;
+      this.knowledgeDocuments.set(id, existing);
+      return existing;
+    }
+
+    const q = await this.pool.query(
+      `UPDATE knowledge_documents
+       SET filename = $2, folder_id = $3, is_shared = $4, updated_at = $5
+       WHERE id = $1
+       RETURNING *`,
+      [id, filename, folderId, isShared, now]
+    );
+    return q.rows[0] ? documentRow(q.rows[0]) : undefined;
+  }
+
+  async deleteDocument(id: string, userId: string, isPrivileged = false): Promise<KnowledgeDocument | undefined> {
+    const existing = await this.getDocumentById(id);
+    if (!existing) return undefined;
+    if (existing.userId !== userId && !isPrivileged) throw new Error('Unauthorized to delete this document.');
+
+    if (!this.pool) {
+      this.knowledgeDocuments.delete(id);
+      return existing;
+    }
+    await this.pool.query('DELETE FROM knowledge_documents WHERE id = $1', [id]);
+    return existing;
+  }
+
+  async batchDeleteDocuments(ids: string[], userId: string, isPrivileged = false): Promise<KnowledgeDocument[]> {
+    const deleted: KnowledgeDocument[] = [];
+    for (const id of ids) {
+      const doc = await this.deleteDocument(id, userId, isPrivileged).catch(() => undefined);
+      if (doc) deleted.push(doc);
+    }
+    return deleted;
+  }
+
+  async batchMoveDocuments(ids: string[], targetFolderId: string | null, userId: string, isPrivileged = false): Promise<string[]> {
+    const moved: string[] = [];
+    for (const id of ids) {
+      const updated = await this.updateDocument(id, userId, { folderId: targetFolderId }, isPrivileged).catch(() => undefined);
+      if (updated) moved.push(id);
+    }
+    return moved;
   }
 }
 

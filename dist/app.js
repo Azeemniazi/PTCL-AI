@@ -1,5 +1,5 @@
 const $=s=>document.querySelector(s);
-const icons={cloud:'M7 18a5 5 0 0 1-1-9.9 7 7 0 0 1 13-1A5.5 5.5 0 0 1 18 18Z',home:'m3 10 9-7 9 7M5 9v12h5v-7h4v7h5V9',chat:'M21 11a9 9 0 0 1-9 9 10 10 0 0 1-4-.8L3 21l1.7-5A9 9 0 1 1 21 11ZM8 11h.01M12 11h.01M16 11h.01',file:'M14 2H5v20h14V7Zm0 0v6h5M8 12h8M8 16h8',image:'M4 3h16a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1ZM3 17l6-6 5 5 3-3 4 4M8 7h.01',history:'M3 12a9 9 0 1 0 3-7M3 3v6h6M12 7v6l4 2',plus:'M12 4v16M4 12h16',arrow:'M5 12h14m-6-6 6 6-6 6',chevron:'m9 5 7 7-7 7',search:'M21 21l-5-5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0',bell:'M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4',user:'M20 21v-2a7 7 0 0 0-14 0v2M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0',lock:'M19 11H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2Zm-7 4v3M7 11V7a5 5 0 0 1 10 0v4',grid:'M3 3h6v6H3ZM15 3h6v6h-6ZM3 15h6v6H3ZM15 15h6v6h-6Z',shield:'m12 2 9 4v6c0 6-9 10-9 10S3 18 3 12V6Zm-4 9 3 3 5-6',signal:'M12 20V10M8 16a6 6 0 0 1 0-9M16 16a6 6 0 0 0 0-9M5 19a10 10 0 0 1 0-15M19 19a10 10 0 0 0 0-15',chip:'M6 6h12v12H6ZM9 9h6v6H9ZM9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4',users:'M16 21v-2a5 5 0 0 0-10 0v2M15 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0M18 4a4 4 0 0 1 0 7M20 15a5 5 0 0 1 2 4v2M3 15a5 5 0 0 0-2 4',building:'M5 22V4l14-2v20M9 7h2M14 6h2M9 11h2M14 10h2M9 15h2M14 14h2M10 22v-4h4v4',chart:'M5 21v-6M12 21V9M19 21V3',play:'m8 4 12 8-12 8Z',upload:'M12 16V3m-5 5 5-5 5 5M4 15v6h16v-6',paperclip:'m8 13 7-7a3 3 0 0 1 4 4l-9 9a5 5 0 0 1-7-7L13 2M7 14l9-9',spark:'m12 2 3 7 7 3-7 3-3 7-3-7-7-3 7-3ZM20 2v4M18 4h4',settings:'m9 3-1 3-3 1-2 4 2 2v4l4 3 3-1 3 1 4-3v-4l2-2-2-4-3-1-1-3Zm7 9a4 4 0 1 1-8 0 4 4 0 0 1 8 0',help:'M9 8a3 3 0 1 1 4 3c-1 0-1 2-1 3M12 18h.01M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0',logout:'M10 3H3v18h7M8 12h14m-5-5 5 5-5 5',folder:'M3 6V3h6l3 3h9v14H3Z',check:'m5 12 4 4L19 6',link:'m10 14 4-4M8 16l-2 2a4 4 0 0 1-6-6l5-5a4 4 0 0 1 6 0M16 8l2-2a4 4 0 0 1 6 6l-5 5a4 4 0 0 1-6 0',bulb:'M9 18h6M9 22h6M8 14a7 7 0 1 1 8 0l-1 4H9Z',box:'m12 2 10 5v10l-10 5-10-5V7Zm0 10v10M2 7l10 5 10-5',download:'M12 3v13m-5-5 5 5 5-5M3 17v5h18v-5',trash:'M3 6h18M8 6V3h8v3M5 6l1 16h12l1-16M10 10v8M14 10v8',menu:'M3 6h18M3 12h18M3 18h18',close:'m6 6 12 12M6 18 18 6',sliders:'M6 3v18M12 3v18M18 3v18M3 8h6M9 16h6M15 7h6',video:'M15 10l5-3v10l-5-3ZM3 6h12v12H3Z',clock:'M12 7v5l3 2M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0'};
+const icons={cloud:'M7 18a5 5 0 0 1-1-9.9 7 7 0 0 1 13-1A5.5 5.5 0 0 1 18 18Z',home:'m3 10 9-7 9 7M5 9v12h5v-7h4v7h5V9',chat:'M21 11a9 9 0 0 1-9 9 10 10 0 0 1-4-.8L3 21l1.7-5A9 9 0 1 1 21 11ZM8 11h.01M12 11h.01M16 11h.01',file:'M14 2H5v20h14V7Zm0 0v6h5M8 12h8M8 16h8',image:'M4 3h16a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1ZM3 17l6-6 5 5 3-3 4 4M8 7h.01',history:'M3 12a9 9 0 1 0 3-7M3 3v6h6M12 7v6l4 2',plus:'M12 4v16M4 12h16',arrow:'M5 12h14m-6-6 6 6-6 6',chevron:'m9 5 7 7-7 7',search:'M21 21l-5-5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0',bell:'M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4',user:'M20 21v-2a7 7 0 0 0-14 0v2M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0',lock:'M19 11H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2Zm-7 4v3M7 11V7a5 5 0 0 1 10 0v4',grid:'M3 3h6v6H3ZM15 3h6v6h-6ZM3 15h6v6H3ZM15 15h6v6h-6Z',shield:'m12 2 9 4v6c0 6-9 10-9 10S3 18 3 12V6Zm-4 9 3 3 5-6',signal:'M12 20V10M8 16a6 6 0 0 1 0-9M16 16a6 6 0 0 0 0-9M5 19a10 10 0 0 1 0-15M19 19a10 10 0 0 0 0-15',chip:'M6 6h12v12H6ZM9 9h6v6H9ZM9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4',users:'M16 21v-2a5 5 0 0 0-10 0v2M15 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0M18 4a4 4 0 0 1 0 7M20 15a5 5 0 0 1 2 4v2M3 15a5 5 0 0 0-2 4',building:'M5 22V4l14-2v20M9 7h2M14 6h2M9 11h2M14 10h2M9 15h2M14 14h2M10 22v-4h4v4',chart:'M5 21v-6M12 21V9M19 21V3',play:'m8 4 12 8-12 8Z',upload:'M12 16V3m-5 5 5-5 5 5M4 15v6h16v-6',paperclip:'m8 13 7-7a3 3 0 0 1 4 4l-9 9a5 5 0 0 1-7-7L13 2M7 14l9-9',spark:'m12 2 3 7 7 3-7 3-3 7-3-7-7-3 7-3ZM20 2v4M18 4h4',settings:'m9 3-1 3-3 1-2 4 2 2v4l4 3 3-1 3 1 4-3v-4l2-2-2-4-3-1-1-3Zm7 9a4 4 0 1 1-8 0 4 4 0 0 1 8 0',help:'M9 8a3 3 0 1 1 4 3c-1 0-1 2-1 3M12 18h.01M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0',logout:'M10 3H3v18h7M8 12h14m-5-5 5 5-5 5',folder:'M3 6V3h6l3 3h9v14H3Z',check:'m5 12 4 4L19 6',link:'m10 14 4-4M8 16l-2 2a4 4 0 0 1-6-6l5-5a4 4 0 0 1 6 0M16 8l2-2a4 4 0 0 1 6 6l-5 5a4 4 0 0 1-6 0',bulb:'M9 18h6M9 22h6M8 14a7 7 0 1 1 8 0l-1 4H9Z',box:'m12 2 10 5v10l-10 5-10-5V7Zm0 10v10M2 7l10 5 10-5',download:'M12 3v13m-5-5 5 5 5-5M3 17v5h18v-5',trash:'M3 6h18M8 6V3h8v3M5 6l1 16h12l1-16M10 10v8M14 10v8',menu:'M3 6h18M3 12h18M3 18h18',close:'m6 6 12 12M6 18 18 6',sliders:'M6 3v18M12 3v18M18 3v18M3 8h6M9 16h6M15 7h6',video:'M15 10l5-3v10l-5-3ZM3 6h12v12H3Z',clock:'M12 7v5l3 2M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0',globe:'M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm0 0c2.5 3 4 6.5 4 10s-1.5 7-4 10m0-20c-2.5 3-4 6.5-4 10s1.5 7 4 10M2 12h20',eye:'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Zm11 3a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z',more:'M12 12h.01M12 5h.01M12 19h.01'};
 function icon(n,cl=''){return `<svg class="icon ${cl}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${icons[n]||icons.spark}"/></svg>`}
 function mark(cl=''){return `<img class="brand-mark ${cl}" src="assets/cloudcore-mark.png" alt="" aria-hidden="true">`}
 function brand(){return `<a class="brand" href="#landing" aria-label="CloudCore AI landing page">${mark()}<span><strong>CloudCore <b>AI</b></strong><small>A product of PTCL Smart Cloud</small></span></a>`}
@@ -103,6 +103,7 @@ function route({preserveScroll=false}={}){
   }
   $('#app').innerHTML=r==='landing'||r==='about'?landing():publicRoutes.includes(r)?marketingPage(r):workspace(r);
   bind();
+  if((r==='documents'||r==='knowledge')&&!knowledgeLoaded&&typeof loadKnowledge==='function')loadKnowledge();
   if(r==='meetings'&&!selectedMeetingId){
     const input=document.querySelector('input[name="meetingUrl"]'),label=document.querySelector('.bot-identity b');
     if(input){input.type='text';input.inputMode='url';if(meetingUrlVal)input.value=meetingUrlVal}
@@ -260,6 +261,472 @@ function bindSettingsForms(){
     };
   }
 }
+
+// ==========================================
+// KNOWLEDGE HUB CLIENT STATE & METHODS
+// ==========================================
+let knowledgeScope='shared',knowledgeFolders=[],knowledgeDocs=[],activeKnowledgeFolderId=null;
+let knowledgeSearch='',knowledgeTypeFilter='all',selectedKnowledgeDocIds=new Set(),knowledgeLoading=false,knowledgeLoaded=false;
+
+async function loadKnowledge(showToast=false){
+  if(typeof fetch!=='function')return;
+  knowledgeLoading=true;
+  try{
+    const scopeParam=encodeURIComponent(knowledgeScope);
+    const folderParam=activeKnowledgeFolderId?`&folderId=${encodeURIComponent(activeKnowledgeFolderId)}`:'';
+    const searchParam=knowledgeSearch?`&search=${encodeURIComponent(knowledgeSearch)}`:'';
+    const typeParam=knowledgeTypeFilter&&knowledgeTypeFilter!=='all'?`&type=${encodeURIComponent(knowledgeTypeFilter)}`:'';
+
+    const [foldersRes, docsRes]=await Promise.all([
+      fetch(`/api/knowledge/folders?scope=${scopeParam}`,{headers:{'x-requested-with':'CloudCoreAI'}}),
+      fetch(`/api/knowledge/documents?scope=${scopeParam}${folderParam}${searchParam}${typeParam}`,{headers:{'x-requested-with':'CloudCoreAI'}})
+    ]);
+    if(foldersRes.ok){
+      const data=await foldersRes.json().catch(()=>({}));
+      knowledgeFolders=data.folders||[];
+    }
+    if(docsRes.ok){
+      const data=await docsRes.json().catch(()=>({}));
+      knowledgeDocs=data.documents||[];
+    }
+    knowledgeLoaded=true;
+    if(showToast)toast('Knowledge Hub updated.');
+  }catch(err){
+    console.warn('loadKnowledge error:',err);
+  }finally{
+    knowledgeLoading=false;
+    route({preserveScroll:true});
+  }
+}
+
+function switchKnowledgeScope(scope){
+  knowledgeScope=scope;
+  activeKnowledgeFolderId=null;
+  selectedKnowledgeDocIds.clear();
+  loadKnowledge();
+}
+
+function selectKnowledgeFolder(id){
+  activeKnowledgeFolderId=id||null;
+  selectedKnowledgeDocIds.clear();
+  loadKnowledge();
+}
+
+function toggleSelectDoc(id){
+  if(selectedKnowledgeDocIds.has(id))selectedKnowledgeDocIds.delete(id);
+  else selectedKnowledgeDocIds.add(id);
+  route({preserveScroll:true});
+}
+
+function toggleSelectAllDocs(){
+  if(selectedKnowledgeDocIds.size===knowledgeDocs.length){
+    selectedKnowledgeDocIds.clear();
+  }else{
+    selectedKnowledgeDocIds=new Set(knowledgeDocs.map(d=>d.id));
+  }
+  route({preserveScroll:true});
+}
+
+function openNewFolderModal(){
+  modal(`
+    <div class="ref-modal-box">
+      <div class="panel-heading"><span class="feature-icon">${icon('folder')}</span><div><h2>Create New Folder</h2><p>Organize team manuals, technical specs, and documents.</p></div></div>
+      <form id="new-folder-form">
+        <label class="login-label"><span>Folder Name</span><input name="name" type="text" required maxlength="120" placeholder="e.g. RAN Operations" autofocus></label>
+        <div style="margin:16px 0;">
+          <span style="display:block;font-size:12px;color:#536477;margin-bottom:8px;">Folder Scope & Access</span>
+          <label style="display:flex;align-items:center;gap:10px;font-size:13px;margin-bottom:8px;cursor:pointer;">
+            <input type="radio" name="isShared" value="true" checked>
+            <span><b>Workspace Shared</b> (Visible and accessible to all team members)</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer;">
+            <input type="radio" name="isShared" value="false">
+            <span><b>My Personal Drive</b> (Private to you)</span>
+          </label>
+        </div>
+        <div class="dialog-actions">
+          <button type="button" class="outline" data-action="close-dialog">Cancel</button>
+          <button type="submit" class="primary">${icon('check')} Create Folder</button>
+        </div>
+      </form>
+    </div>
+  `);
+  const form=$('#new-folder-form');
+  if(form){
+    form.onsubmit=async e=>{
+      e.preventDefault();
+      const name=String(new FormData(form).get('name')||'').trim();
+      const isShared=new FormData(form).get('isShared')==='true';
+      if(!name)return toast('Folder name is required.');
+      try{
+        const res=await fetch('/api/knowledge/folders',{
+          method:'POST',
+          headers:{'content-type':'application/json','x-requested-with':'CloudCoreAI'},
+          body:JSON.stringify({name,isShared})
+        });
+        const data=await res.json().catch(()=>({}));
+        if(!res.ok)throw Error(data.error?.message||'Failed to create folder.');
+        $('#dialog')?.close();
+        toast(`Folder "${name}" created.`);
+        loadKnowledge();
+      }catch(err){toast(err.message);}
+    };
+  }
+}
+
+function openRenameFolderModal(id, currentName, currentShared){
+  modal(`
+    <div class="ref-modal-box">
+      <div class="panel-heading"><span class="feature-icon">${icon('sliders')}</span><div><h2>Rename Folder</h2><p>Change folder title or sharing scope.</p></div></div>
+      <form id="rename-folder-form">
+        <label class="login-label"><span>Folder Name</span><input name="name" type="text" required maxlength="120" value="${esc(currentName)}"></label>
+        <div style="margin:16px 0;">
+          <span style="display:block;font-size:12px;color:#536477;margin-bottom:8px;">Folder Scope</span>
+          <label style="display:flex;align-items:center;gap:10px;font-size:13px;margin-bottom:8px;cursor:pointer;">
+            <input type="radio" name="isShared" value="true" ${currentShared?'checked':''}>
+            <span><b>Workspace Shared</b> (Team-wide)</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer;">
+            <input type="radio" name="isShared" value="false" ${!currentShared?'checked':''}>
+            <span><b>My Personal Drive</b> (Private)</span>
+          </label>
+        </div>
+        <div class="dialog-actions">
+          <button type="button" class="outline" data-action="close-dialog">Cancel</button>
+          <button type="submit" class="primary">${icon('check')} Save Changes</button>
+        </div>
+      </form>
+    </div>
+  `);
+  const form=$('#rename-folder-form');
+  if(form){
+    form.onsubmit=async e=>{
+      e.preventDefault();
+      const name=String(new FormData(form).get('name')||'').trim();
+      const isShared=new FormData(form).get('isShared')==='true';
+      if(!name)return toast('Folder name is required.');
+      try{
+        const res=await fetch(`/api/knowledge/folders/${encodeURIComponent(id)}`,{
+          method:'PATCH',
+          headers:{'content-type':'application/json','x-requested-with':'CloudCoreAI'},
+          body:JSON.stringify({name,isShared})
+        });
+        const data=await res.json().catch(()=>({}));
+        if(!res.ok)throw Error(data.error?.message||'Failed to rename folder.');
+        $('#dialog')?.close();
+        toast('Folder updated.');
+        loadKnowledge();
+      }catch(err){toast(err.message);}
+    };
+  }
+}
+
+function openDeleteFolderModal(id, name, fileCount){
+  modal(`
+    <div class="ref-modal-box">
+      <div class="panel-heading"><span class="feature-icon" style="background:#fee2e2;color:#dc2626;">${icon('trash')}</span><div><h2>Delete Folder "${esc(name)}"?</h2><p>This folder currently contains ${fileCount} document${fileCount===1?'':'s'}.</p></div></div>
+      <form id="delete-folder-form">
+        ${fileCount>0?`
+          <div style="margin:16px 0;padding:12px;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;">
+            <span style="display:block;font-size:12px;color:#991b1b;margin-bottom:8px;font-weight:600;">How should files inside be handled?</span>
+            <label style="display:flex;align-items:center;gap:10px;font-size:13px;margin-bottom:8px;cursor:pointer;">
+              <input type="radio" name="cascade" value="false" checked>
+              <span><b>Keep files</b> (Move to unfiled / root)</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer;">
+              <input type="radio" name="cascade" value="true">
+              <span style="color:#b91c1c;"><b>Delete files</b> (Permanently delete all ${fileCount} documents)</span>
+            </label>
+          </div>
+        `:''}
+        <div class="dialog-actions">
+          <button type="button" class="outline" data-action="close-dialog">Cancel</button>
+          <button type="submit" class="primary danger-outline" style="background:#dc2626;color:#fff;border-color:#dc2626;">${icon('trash')} Confirm Delete</button>
+        </div>
+      </form>
+    </div>
+  `);
+  const form=$('#delete-folder-form');
+  if(form){
+    form.onsubmit=async e=>{
+      e.preventDefault();
+      const cascade=new FormData(form).get('cascade')==='true';
+      try{
+        const res=await fetch(`/api/knowledge/folders/${encodeURIComponent(id)}?cascade=${cascade}`,{
+          method:'DELETE',
+          headers:{'x-requested-with':'CloudCoreAI'}
+        });
+        const data=await res.json().catch(()=>({}));
+        if(!res.ok)throw Error(data.error?.message||'Failed to delete folder.');
+        if(activeKnowledgeFolderId===id)activeKnowledgeFolderId=null;
+        $('#dialog')?.close();
+        toast(`Folder "${name}" deleted.`);
+        loadKnowledge();
+      }catch(err){toast(err.message);}
+    };
+  }
+}
+
+function openBatchUploadModal(){
+  const folderOptions=knowledgeFolders.map(f=>`<option value="${esc(f.id)}" ${activeKnowledgeFolderId===f.id?'selected':''}>${esc(f.name)} (${f.isShared?'Shared':'Private'})</option>`).join('');
+  modal(`
+    <div class="ref-modal-box">
+      <div class="panel-heading"><span class="feature-icon">${icon('upload')}</span><div><h2>Upload Documents</h2><p>Batch upload PDF, Word, Excel, PowerPoint, or text files into Knowledge Hub.</p></div></div>
+      <form id="batch-upload-form">
+        <div class="ref-upload-dropzone" id="batch-dropzone">
+          <span class="mini-icon">${icon('upload')}</span>
+          <b style="display:block;margin:6px 0 2px;">Choose files or drag & drop here</b>
+          <small style="color:#64748b;display:block;margin-bottom:12px;">PDF, DOCX, PPTX, XLSX, CSV, TXT, MD (Max 100MB per batch)</small>
+          <input type="file" id="batch-file-input" name="files" multiple accept=".pdf,.docx,.pptx,.xlsx,.txt,.md,.csv,.json" style="display:none;">
+          <button type="button" class="outline small" onclick="$('#batch-file-input').click()">${icon('plus')} Select Files</button>
+        </div>
+        <div id="batch-file-list" style="max-height:160px;overflow-y:auto;margin:12px 0;display:none;"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0;">
+          <label class="login-label">
+            <span>Target Folder</span>
+            <select name="folderId" class="ref-select" style="margin-top:4px;">
+              <option value="">(None / Root Directory)</option>
+              ${folderOptions}
+            </select>
+          </label>
+          <label class="login-label">
+            <span>Visibility Scope</span>
+            <select name="isShared" class="ref-select" style="margin-top:4px;">
+              <option value="true" ${knowledgeScope!=='personal'?'selected':''}>Workspace Shared</option>
+              <option value="false" ${knowledgeScope==='personal'?'selected':''}>My Personal Drive</option>
+            </select>
+          </label>
+        </div>
+        <div class="dialog-actions">
+          <button type="button" class="outline" data-action="close-dialog">Cancel</button>
+          <button type="submit" class="primary" id="batch-upload-submit-btn" disabled>${icon('upload')} Upload Documents</button>
+        </div>
+      </form>
+    </div>
+  `);
+
+  const fileInput=$('#batch-file-input');
+  const dropzone=$('#batch-dropzone');
+  const listEl=$('#batch-file-list');
+  const submitBtn=$('#batch-upload-submit-btn');
+  let selectedFiles=[];
+
+  function renderSelectedFiles(){
+    if(!selectedFiles.length){
+      if(listEl)listEl.style.display='none';
+      if(submitBtn)submitBtn.disabled=true;
+      return;
+    }
+    if(listEl){
+      listEl.style.display='block';
+      listEl.innerHTML=selectedFiles.map((f,idx)=>`
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:#f8faf9;border:1px solid #e2ede6;border-radius:8px;margin-bottom:6px;font-size:12px;">
+          <span><b>${esc(f.name)}</b> <small style="color:#64748b;">(${formatBytes(f.size)})</small></span>
+          <button type="button" class="icon-button" style="width:22px;height:22px;" onclick="window.removeUploadFile(${idx})">×</button>
+        </div>
+      `).join('');
+    }
+    if(submitBtn){
+      submitBtn.disabled=false;
+      submitBtn.innerHTML=`${icon('upload')} Upload ${selectedFiles.length} File${selectedFiles.length===1?'':'s'}`;
+    }
+  }
+
+  window.removeUploadFile=(idx)=>{
+    selectedFiles.splice(idx,1);
+    renderSelectedFiles();
+  };
+
+  if(fileInput){
+    fileInput.onchange=()=>{
+      if(fileInput.files)selectedFiles=[...selectedFiles,...Array.from(fileInput.files)];
+      renderSelectedFiles();
+    };
+  }
+
+  if(dropzone){
+    dropzone.ondragover=e=>{e.preventDefault();dropzone.classList.add('dragging')};
+    dropzone.ondragleave=()=>dropzone.classList.remove('dragging');
+    dropzone.ondrop=e=>{
+      e.preventDefault();
+      dropzone.classList.remove('dragging');
+      if(e.dataTransfer.files)selectedFiles=[...selectedFiles,...Array.from(e.dataTransfer.files)];
+      renderSelectedFiles();
+    };
+  }
+
+  const form=$('#batch-upload-form');
+  if(form){
+    form.onsubmit=async e=>{
+      e.preventDefault();
+      if(!selectedFiles.length)return toast('Please select at least one file.');
+      const fd=new FormData();
+      selectedFiles.forEach(f=>fd.append('files',f));
+      const targetFolder=form.folderId?.value;
+      if(targetFolder)fd.append('folderId',targetFolder);
+      fd.append('isShared',form.isShared?.value);
+
+      if(submitBtn){submitBtn.disabled=true;submitBtn.textContent='Uploading and parsing…';}
+      try{
+        const res=await fetch('/api/knowledge/upload',{
+          method:'POST',
+          headers:{'x-requested-with':'CloudCoreAI'},
+          body:fd
+        });
+        const data=await res.json().catch(()=>({}));
+        if(!res.ok)throw Error(data.error?.message||'Upload failed.');
+        $('#dialog')?.close();
+        toast(`${data.uploaded?.length||selectedFiles.length} file(s) uploaded successfully.`);
+        loadKnowledge();
+      }catch(err){
+        toast(err.message);
+        if(submitBtn){submitBtn.disabled=false;renderSelectedFiles();}
+      }
+    };
+  }
+}
+
+async function openPreviewDocModal(id){
+  try{
+    const res=await fetch(`/api/knowledge/documents/${encodeURIComponent(id)}`,{headers:{'x-requested-with':'CloudCoreAI'}});
+    if(!res.ok)throw Error('Failed to load document details.');
+    const data=await res.json();
+    const doc=data.document;
+    const ext=doc.filename.split('.').pop()?.toUpperCase()||'DOC';
+    modal(`
+      <div class="ref-modal-box" style="max-width:680px;">
+        <div class="panel-heading">
+          <span class="ref-ext-badge ext-${esc(ext.toLowerCase())}" style="font-size:14px;padding:8px 12px;">${esc(ext)}</span>
+          <div>
+            <h2 style="font-size:18px;margin:0;">${esc(doc.filename)}</h2>
+            <p style="margin:4px 0 0;font-size:12px;color:#607386;">Folder: <b>${esc(doc.folderName||'Root')}</b> · Size: <b>${formatBytes(doc.sizeBytes)}</b> · Owner: <b>${esc(doc.creatorName||'User')}</b> · ${doc.isShared?'Workspace Shared':'Private'}</p>
+          </div>
+          <a class="primary small" style="margin-left:auto;" href="/api/knowledge/documents/${encodeURIComponent(doc.id)}/download" download="${esc(doc.filename)}">${icon('download')} Download</a>
+        </div>
+        <div style="margin-top:16px;">
+          <h4 style="margin:0 0 8px;font-size:13px;color:#183224;">Parsed Content Preview (${doc.tokenCount||0} estimated tokens)</h4>
+          <div style="background:#f8faf9;border:1px solid #dbe8e0;border-radius:10px;padding:14px;max-height:300px;overflow-y:auto;font-family:monospace;font-size:12px;line-height:1.6;white-space:pre-wrap;color:#1c2e24;">${esc(doc.extractedText||'No text could be extracted from this document.')}</div>
+        </div>
+        <div class="dialog-actions" style="margin-top:18px;">
+          <button type="button" class="outline" data-action="close-dialog">Close</button>
+        </div>
+      </div>
+    `);
+  }catch(err){toast(err.message);}
+}
+
+function openMoveDocModal(id){
+  const doc=knowledgeDocs.find(d=>d.id===id);
+  const folderOptions=knowledgeFolders.map(f=>`<option value="${esc(f.id)}" ${doc&&doc.folderId===f.id?'selected':''}>${esc(f.name)} (${f.isShared?'Shared':'Private'})</option>`).join('');
+  modal(`
+    <div class="ref-modal-box">
+      <div class="panel-heading"><span class="feature-icon">${icon('folder')}</span><div><h2>Move Document</h2><p>Change folder for "${esc(doc?.filename||'document')}".</p></div></div>
+      <form id="move-doc-form">
+        <label class="login-label">
+          <span>Destination Folder</span>
+          <select name="folderId" class="ref-select" style="margin-top:6px;">
+            <option value="">(None / Root Directory)</option>
+            ${folderOptions}
+          </select>
+        </label>
+        <div class="dialog-actions" style="margin-top:18px;">
+          <button type="button" class="outline" data-action="close-dialog">Cancel</button>
+          <button type="submit" class="primary">${icon('check')} Move Document</button>
+        </div>
+      </form>
+    </div>
+  `);
+  const form=$('#move-doc-form');
+  if(form){
+    form.onsubmit=async e=>{
+      e.preventDefault();
+      const folderId=form.folderId.value||null;
+      try{
+        const res=await fetch(`/api/knowledge/documents/${encodeURIComponent(id)}`,{
+          method:'PATCH',
+          headers:{'content-type':'application/json','x-requested-with':'CloudCoreAI'},
+          body:JSON.stringify({folderId})
+        });
+        const data=await res.json().catch(()=>({}));
+        if(!res.ok)throw Error(data.error?.message||'Failed to move document.');
+        $('#dialog')?.close();
+        toast('Document moved.');
+        loadKnowledge();
+      }catch(err){toast(err.message);}
+    };
+  }
+}
+
+function openDeleteDocModal(id, filename){
+  modal(`
+    <div class="ref-modal-box">
+      <div class="panel-heading"><span class="feature-icon" style="background:#fee2e2;color:#dc2626;">${icon('trash')}</span><div><h2>Delete Document?</h2><p>Permanently remove "${esc(filename)}" from the Knowledge Hub.</p></div></div>
+      <div class="dialog-actions" style="margin-top:18px;">
+        <button type="button" class="outline" data-action="close-dialog">Cancel</button>
+        <button type="button" class="primary danger-outline" style="background:#dc2626;color:#fff;border-color:#dc2626;" data-action="confirm-delete-single-doc" data-id="${esc(id)}" data-filename="${esc(filename)}">${icon('trash')} Delete Document</button>
+      </div>
+    </div>
+  `);
+}
+
+function openBatchMoveDocsModal(){
+  const ids=[...selectedKnowledgeDocIds];
+  if(!ids.length)return toast('No documents selected.');
+  const folderOptions=knowledgeFolders.map(f=>`<option value="${esc(f.id)}">${esc(f.name)} (${f.isShared?'Shared':'Private'})</option>`).join('');
+  modal(`
+    <div class="ref-modal-box">
+      <div class="panel-heading"><span class="feature-icon">${icon('folder')}</span><div><h2>Move ${ids.length} Documents</h2><p>Select target destination folder.</p></div></div>
+      <form id="batch-move-form">
+        <label class="login-label">
+          <span>Destination Folder</span>
+          <select name="targetFolderId" class="ref-select" style="margin-top:6px;">
+            <option value="">(None / Root Directory)</option>
+            ${folderOptions}
+          </select>
+        </label>
+        <div class="dialog-actions" style="margin-top:18px;">
+          <button type="button" class="outline" data-action="close-dialog">Cancel</button>
+          <button type="submit" class="primary">${icon('check')} Move ${ids.length} Documents</button>
+        </div>
+      </form>
+    </div>
+  `);
+  const form=$('#batch-move-form');
+  if(form){
+    form.onsubmit=async e=>{
+      e.preventDefault();
+      const targetFolderId=form.targetFolderId.value||null;
+      try{
+        const res=await fetch('/api/knowledge/batch-move',{
+          method:'POST',
+          headers:{'content-type':'application/json','x-requested-with':'CloudCoreAI'},
+          body:JSON.stringify({documentIds:ids,targetFolderId})
+        });
+        const data=await res.json().catch(()=>({}));
+        if(!res.ok)throw Error(data.error?.message||'Failed to batch move documents.');
+        selectedKnowledgeDocIds.clear();
+        $('#dialog')?.close();
+        toast(`${data.movedIds?.length||ids.length} documents moved.`);
+        loadKnowledge();
+      }catch(err){toast(err.message);}
+    };
+  }
+}
+
+function confirmBatchDeleteDocs(){
+  const ids=[...selectedKnowledgeDocIds];
+  if(!ids.length)return toast('No documents selected.');
+  modal(`
+    <div class="ref-modal-box">
+      <div class="panel-heading"><span class="feature-icon" style="background:#fee2e2;color:#dc2626;">${icon('trash')}</span><div><h2>Delete ${ids.length} Documents?</h2><p>Permanently remove the ${ids.length} selected documents from Knowledge Hub.</p></div></div>
+      <div class="dialog-actions" style="margin-top:18px;">
+        <button type="button" class="outline" data-action="close-dialog">Cancel</button>
+        <button type="button" class="primary danger-outline" style="background:#dc2626;color:#fff;border-color:#dc2626;" data-action="confirm-delete-batch-docs">${icon('trash')} Delete ${ids.length} Documents</button>
+      </div>
+    </div>
+  `);
+}
+
 let appNotifications=[{id:'welcome',title:'CloudCore AI Ready',text:'Connected to Qwen3.5-27B & Whisper intelligence.',time:Date.now(),unread:true}];
 function hasUnreadNotifications(){return appNotifications.some(n=>n.unread)}
 function pushNotification(titleText,bodyText){appNotifications=[{id:String(Date.now()+Math.random()),title:titleText,text:bodyText,time:Date.now(),unread:true},...appNotifications].slice(0,25)}
@@ -278,7 +745,7 @@ function openNotificationsModal(){
 }
 let appUser=null,meetingsState={meetings:[],capacity:{active:0,maximum:2},detail:null,lastLoaded:0};
 let chats=[];try{chats=JSON.parse(localStorage.getItem('cloudcore-chats')||'[]')}catch{}
-const navs=[['home','home','Home'],['assistant','chat','AI Assistant'],['meetings','video','Meetings AI'],['documents','file','Document Insight'],['images','image','Image Analysis'],['history','history','Chat History']];
+const navs=[['home','home','Home'],['assistant','chat','AI Assistant'],['meetings','video','Meetings AI'],['documents','folder','Knowledge Hub'],['images','image','Image Analysis'],['history','history','Chat History']];
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function sidebar(r){return refSidebar(r)}
 function workspace(r){return refWorkspace(r)}
@@ -1262,7 +1729,7 @@ function selectImage(file){
     toast(`"${file.name}" loaded. Click Analyze Image to inspect.`);
   }
 }
-function actions(a,el){if(refHandleAction(a,el)){bindDialog();return;}if(a==='new-chat'){messages=[];currentChat=null;location.hash='assistant';route()}else if(a==='set-pref'){const k=el.dataset.key,v=el.dataset.val;if(k&&v){userPrefs[k]=v;saveUserPrefs();if(typeof refSyncMotion==='function')refSyncMotion();route({preserveScroll:true});toast('Preference saved.')}}else if(a==='export-chats'){if(!chats.length)return toast('No conversations to export yet.');const blob=new Blob([JSON.stringify(chats,null,2)],{type:'application/json'}),link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download=`cloudcore-chats-${new Date().toISOString().slice(0,10)}.json`;link.click();URL.revokeObjectURL(link.href);toast('Chat history exported.')}else if(a==='clear-all-chats'){if(!chats.length)return toast('Your chat history is already empty.');modal(`<h2>Clear all local conversations?</h2><p>This will permanently remove ${chats.length} saved conversation${chats.length===1?'':'s'} from this browser.</p><div class="dialog-actions"><button type="button" class="outline" data-action="close-dialog">Cancel</button><button type="button" class="primary" data-action="confirm-clear-all-chats">Clear all history</button></div>`)}else if(a==='confirm-clear-all-chats'){chats=[];messages=[];currentChat=null;saveChats();if($('#dialog')?.open)$('#dialog').close();route({preserveScroll:true});toast('All local conversations cleared.')}else if(a==='refresh-settings-users'){loadSettingsUsers(true)}else if(a==='refresh-integrations'){loadAiHealth(true)}else if(a==='settings-reset-pw'){const targetUser=el.dataset.user,targetId=el.dataset.id;modal(`<h2>Reset Password for '${esc(targetUser)}'</h2><p>Enter a new temporary or permanent password (minimum 6 characters).</p><form id="modal-reset-user-pw-form" style="margin-top:12px;"><label style="display:block;font-size:12px;color:#5a7366;margin-bottom:6px;">New Password</label><input name="newPassword" type="text" minlength="6" required placeholder="At least 6 characters" style="width:100%;padding:10px 12px;border:1px solid #d4e2d9;border-radius:10px;margin-bottom:14px;"><div class="dialog-actions"><button type="button" class="outline" data-action="close-dialog">Cancel</button><button type="submit" class="primary">${icon('check')} Update Password</button></div></form>`);const rf=document.querySelector('#modal-reset-user-pw-form');if(rf)rf.onsubmit=async e=>{e.preventDefault();const newPassword=String(new FormData(rf).get('newPassword')||'');if(newPassword.length<6)return toast('Password must be at least 6 characters.');try{const res=await fetch(`/api/admin/users/${encodeURIComponent(targetId)}/reset-password`,{method:'POST',headers:{'content-type':'application/json','x-requested-with':'CloudCoreAI'},body:JSON.stringify({newPassword})});const data=await res.json().catch(()=>({}));if(!res.ok)throw Error(data.error?.message||'Failed to reset password.');if($('#dialog')?.open)$('#dialog').close();toast(`Password for '${targetUser}' reset successfully.`);loadSettingsUsers();}catch(err){toast(err.message)}}}else if(a==='settings-delete-user'){const targetUser=el.dataset.user,targetId=el.dataset.id;modal(`<h2>Delete user '${esc(targetUser)}'?</h2><p>This permanently removes the account '${esc(targetUser)}' and reassigns any meeting records.</p><div class="dialog-actions"><button type="button" class="outline" data-action="close-dialog">Cancel</button><button type="button" class="primary" data-action="confirm-delete-user" data-id="${esc(targetId)}" data-user="${esc(targetUser)}">Delete User</button></div>`)}else if(a==='confirm-delete-user'){const targetId=el.dataset.id,targetUser=el.dataset.user;(async()=>{try{const res=await fetch(`/api/admin/users/${encodeURIComponent(targetId)}`,{method:'DELETE',headers:{'x-requested-with':'CloudCoreAI'}});const data=await res.json().catch(()=>({}));if(!res.ok)throw Error(data.error?.message||'Failed to delete user.');if($('#dialog')?.open)$('#dialog').close();toast(`User '${targetUser}' deleted.`);loadSettingsUsers();}catch(err){toast(err.message)}})()}else if(a==='suggestion'){const t=el.dataset.prompt;if(t==='Summarize this document'){if(docFile)sendMessage(`Please summarize "${docFile.name}" and highlight key takeaways.`);else{attachContext='assistant';pendingDocAutoPrompt='Please summarize this document and highlight key takeaways and action items.';$('#document-input')?.click()}}else if(t==='What is in this image?'){if(imageFile){chatImageAttached=true;sendMessage(`What is in "${imageFile.name}"?`)}else{attachContext='assistant';pendingImageAutoPrompt='Please analyze this image and describe what is in it.';$('#image-input')?.click()}}else sendMessage(t)}else if(a==='assistant-doc-card'){if(docFile)sendMessage(`Please summarize "${docFile.name}" with key points and action items.`);else{attachContext='assistant';pendingDocAutoPrompt='Please summarize this document with key points and action items.';$('#document-input')?.click()}}else if(a==='assistant-image-card'){if(imageFile){chatImageAttached=true;sendMessage(`Please analyze "${imageFile.name}" and extract key observations.`)}else{attachContext='assistant';pendingImageAutoPrompt='Please analyze this image thoroughly and highlight key observations.';$('#image-input')?.click()}}else if(a==='attach-document'){attachContext='assistant';$('#document-input')?.click()}else if(a==='choose-document'){attachContext='documents';$('#document-input')?.click()}else if(a==='attach-image'){attachContext='assistant';$('#image-input')?.click()}else if(a==='choose-image'){attachContext='images';$('#image-input')?.click()}else if(a==='remove-attached-doc'){docFile=null;docIngested=false;docIngesting=false;docJobStatus='';route({preserveScroll:true});toast('Document attachment removed.')}else if(a==='remove-attached-image'){chatImageAttached=false;imageFile=null;route({preserveScroll:true});toast('Image attachment removed.')}else if(a==='clear-notifications'){appNotifications=[];openNotificationsModal()}else if(a==='ask-doc-ai'){if($('#dialog')?.open)$('#dialog').close();if(docFile)sendMessage(`Please summarize "${docFile.name}" and highlight its key takeaways and action items.`);else{location.hash='assistant';route()}}else if(a==='doc-tab'){docTab=el.dataset.tab;route({preserveScroll:true})}else if(a==='image-mode'){imageMode=el.dataset.mode;route({preserveScroll:true})}else if(a==='example-image'){visionResult='';if(imageURL.startsWith('blob:'))URL.revokeObjectURL(imageURL);imageFile=null;imageURL=({tower:'assets/example-tower.png',map:'assets/example-map.png',datacenter:'assets/example-datacenter.png',diagram:'assets/diagram.svg',screenshot:'assets/reference-home.png'})[el.dataset.example]||'assets/hero.png';imageMode='upload';route({preserveScroll:true});toast('Example image selected. Click Analyze Image to run Vision AI.')}else if(a==='cloud-source')modal(`<h2>Connect ${el.dataset.source}</h2><p>Cloud storage connections will be available when the account integration is configured. For now, download your document and choose it from your device.</p><button class="primary" data-action="choose-document">Choose a local file</button>`);else if(a==='full-analysis'||a==='document-action'){const actTitle=el.dataset.title||'Document Analysis';if(docFile){const promptMap={'Summarize document':`Please provide an executive summary of "${docFile.name}" with key takeaways.`,'Compare document':`Please analyze "${docFile.name}" and compare its key options, trade-offs, and recommendations.`,'Extract document':`Please extract all key facts, figures, dates, entities, and deliverables from "${docFile.name}".`,'Analyze document':`Please analyze "${docFile.name}" to identify key trends, risks, decisions, and action items.`};sendMessage(promptMap[actTitle]||`Please analyze "${docFile.name}" and provide key insights.`)}else{modal(`<span class="feature-icon">${icon('file')}</span><h2>${esc(actTitle)}</h2><p>Upload a PDF, Word, Excel, PowerPoint, or text file to run live AI analysis on your own document, or explore the example below.</p><p>${sampleSummary}</p><h3>Key points</h3><ul><li>Enterprise connectivity and cloud services</li><li>Flexible deployment options</li><li>Managed support and service-level agreements</li></ul><div class="dialog-actions"><button class="outline" data-action="close-dialog">Close</button><button class="primary" data-action="choose-document">${icon('upload')} Upload a document</button></div>`)}}else if(a==='view-documents')modal(`<h2>Recent Documents</h2><p>${docFile?esc(docFile.name)+' — indexed in workspace.':'No documents uploaded yet. The proposal displayed is an example.'}</p>`);else if(a==='menu')$('.sidebar').classList.toggle('mobile-open');else if(a==='close-dialog')$('#dialog').close();else if(a==='open-chat'){const c=chats.find(c=>c.id===el.dataset.id);messages=[...c.messages];currentChat=c.id;location.hash='assistant'}else if(a==='delete-chat')modal(`<h2>Delete this conversation?</h2><p>This removes the conversation from this device.</p><div class="dialog-actions"><button class="outline" data-action="close-dialog">Cancel</button><button class="primary" data-action="confirm-delete" data-id="${el.dataset.id}">Delete conversation</button></div>`);else if(a==='confirm-delete'){chats=chats.filter(c=>c.id!==el.dataset.id);saveChats();route();toast('Conversation deleted.')}else if(a==='settings'){location.hash='settings';route()}else if(a==='profile')openProfileModal();else if(a==='signout')handleSignOut();else if(a==='help')modal('<h2>How can we help?</h2><p><b>AI Assistant:</b> Start a conversation, or attach a PDF/Word file or image directly using the paperclip and image icons in the chat bar.</p><p><b>Document Insight:</b> Upload a document and use Summarize, Compare, Extract, or Analyze.</p><p><b>Image Analysis:</b> Upload an image or select an example and click Analyze Image.</p><p><b>Chat History:</b> Reopen or delete conversations saved on this device.</p>');else if(a==='solutions')modal(`<h2>PTCL Business Solutions</h2><p>Explore connectivity, cloud, security and intelligent support.</p><div class="solution-list">${[['signal','Reliable Connectivity','Keep your business connected.'],['cloud','Cloud & Data Solutions','Infrastructure that grows with you.'],['shield','Cyber Security','Protect your business and its data.'],['chip','AI-Powered Support','Find the right support for your business.']].map(([i,t,d])=>`<div>${icon(i)}<span><b>${t}</b><p>${d}</p></span></div>`).join('')}</div>`);else if(a==='ingest-document-ai'){if(!docFile)return toast('Please choose a document first.');if(typeof fetch!=='function')return toast('AI service connection required.');ingestDocumentNow(docFile)}else if(a==='analyze-image-ai'){if(!imageFile&&!imageURL)return toast('Please choose or upload an image first.');if(typeof fetch!=='function')return toast('AI service connection required.');visionLoading=true;visionResult='';route({preserveScroll:true});(async()=>{try{const form=new FormData();form.append('question','Please analyze this image thoroughly: identify all objects, extract visible text via OCR, describe layout and context, and highlight key actionable observations.');if(imageFile){form.append('image',imageFile)}else{const blob=await fetch(imageURL).then(r=>r.blob());form.append('image',blob,'image.png')}const r=await fetch('/api/vision',{method:'POST',headers:{'x-requested-with':'CloudCoreAI'},body:form});if(!r.ok){const err=await r.json().catch(()=>({}));throw Error(err.error?.message||err.detail||`Vision request failed (${r.status})`)}const data=await r.json();visionResult=data.answer||'No analysis returned.';pushNotification('Image Analyzed','Vision AI completed analysis of your selected image.');toast('Vision analysis complete.')}catch(err){toast(`Vision analysis failed: ${err.message}`);visionResult=`Analysis failed: ${err.message}`}finally{visionLoading=false;route({preserveScroll:true})}})()}else if(a==='clear-vision'){visionResult='';route({preserveScroll:true})}bindDialog()}
+function actions(a,el){if(refHandleAction(a,el)){bindDialog();return;}if(a==='knowledge-scope'){switchKnowledgeScope(el.dataset.scope||'shared')}else if(a==='select-folder'){selectKnowledgeFolder(el.dataset.id||null)}else if(a==='clear-folder-filter'){selectKnowledgeFolder(null)}else if(a==='new-folder'){openNewFolderModal()}else if(a==='rename-folder'){openRenameFolderModal(el.dataset.id,el.dataset.name,el.dataset.shared==='true')}else if(a==='delete-folder'){openDeleteFolderModal(el.dataset.id,el.dataset.name,parseInt(el.dataset.count||'0',10))}else if(a==='batch-upload'){openBatchUploadModal()}else if(a==='filter-type'){knowledgeTypeFilter=el.dataset.type||'all';loadKnowledge()}else if(a==='toggle-select-all'){toggleSelectAllDocs()}else if(a==='toggle-doc-select'){toggleSelectDoc(el.dataset.id)}else if(a==='preview-doc'){openPreviewDocModal(el.dataset.id)}else if(a==='move-doc'){openMoveDocModal(el.dataset.id)}else if(a==='delete-doc'){openDeleteDocModal(el.dataset.id,el.dataset.filename)}else if(a==='confirm-delete-single-doc'){(async()=>{try{const res=await fetch(`/api/knowledge/documents/${encodeURIComponent(el.dataset.id)}`,{method:'DELETE',headers:{'x-requested-with':'CloudCoreAI'}});const data=await res.json().catch(()=>({}));if(!res.ok)throw Error(data.error?.message||'Failed to delete document.');selectedKnowledgeDocIds.delete(el.dataset.id);$('#dialog')?.close();toast(`Document "${el.dataset.filename||'document'}" deleted.`);loadKnowledge();}catch(err){toast(err.message)}})()}else if(a==='batch-move-docs'){openBatchMoveDocsModal()}else if(a==='batch-delete-docs'){confirmBatchDeleteDocs()}else if(a==='confirm-delete-batch-docs'){const ids=[...selectedKnowledgeDocIds];(async()=>{try{const res=await fetch('/api/knowledge/batch-delete',{method:'POST',headers:{'content-type':'application/json','x-requested-with':'CloudCoreAI'},body:JSON.stringify({documentIds:ids})});const data=await res.json().catch(()=>({}));if(!res.ok)throw Error(data.error?.message||'Failed to batch delete documents.');selectedKnowledgeDocIds.clear();$('#dialog')?.close();toast(`${data.deletedIds?.length||ids.length} documents deleted.`);loadKnowledge();}catch(err){toast(err.message)}})()}else if(a==='clear-doc-selection'){selectedKnowledgeDocIds.clear();route({preserveScroll:true})}else if(a==='new-chat'){messages=[];currentChat=null;location.hash='assistant';route()}else if(a==='set-pref'){const k=el.dataset.key,v=el.dataset.val;if(k&&v){userPrefs[k]=v;saveUserPrefs();if(typeof refSyncMotion==='function')refSyncMotion();route({preserveScroll:true});toast('Preference saved.')}}else if(a==='export-chats'){if(!chats.length)return toast('No conversations to export yet.');const blob=new Blob([JSON.stringify(chats,null,2)],{type:'application/json'}),link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download=`cloudcore-chats-${new Date().toISOString().slice(0,10)}.json`;link.click();URL.revokeObjectURL(link.href);toast('Chat history exported.')}else if(a==='clear-all-chats'){if(!chats.length)return toast('Your chat history is already empty.');modal(`<h2>Clear all local conversations?</h2><p>This will permanently remove ${chats.length} saved conversation${chats.length===1?'':'s'} from this browser.</p><div class="dialog-actions"><button type="button" class="outline" data-action="close-dialog">Cancel</button><button type="button" class="primary" data-action="confirm-clear-all-chats">Clear all history</button></div>`)}else if(a==='confirm-clear-all-chats'){chats=[];messages=[];currentChat=null;saveChats();if($('#dialog')?.open)$('#dialog').close();route({preserveScroll:true});toast('All local conversations cleared.')}else if(a==='refresh-settings-users'){loadSettingsUsers(true)}else if(a==='refresh-integrations'){loadAiHealth(true)}else if(a==='settings-reset-pw'){const targetUser=el.dataset.user,targetId=el.dataset.id;modal(`<h2>Reset Password for '${esc(targetUser)}'</h2><p>Enter a new temporary or permanent password (minimum 6 characters).</p><form id="modal-reset-user-pw-form" style="margin-top:12px;"><label style="display:block;font-size:12px;color:#5a7366;margin-bottom:6px;">New Password</label><input name="newPassword" type="text" minlength="6" required placeholder="At least 6 characters" style="width:100%;padding:10px 12px;border:1px solid #d4e2d9;border-radius:10px;margin-bottom:14px;"><div class="dialog-actions"><button type="button" class="outline" data-action="close-dialog">Cancel</button><button type="submit" class="primary">${icon('check')} Update Password</button></div></form>`);const rf=document.querySelector('#modal-reset-user-pw-form');if(rf)rf.onsubmit=async e=>{e.preventDefault();const newPassword=String(new FormData(rf).get('newPassword')||'');if(newPassword.length<6)return toast('Password must be at least 6 characters.');try{const res=await fetch(`/api/admin/users/${encodeURIComponent(targetId)}/reset-password`,{method:'POST',headers:{'content-type':'application/json','x-requested-with':'CloudCoreAI'},body:JSON.stringify({newPassword})});const data=await res.json().catch(()=>({}));if(!res.ok)throw Error(data.error?.message||'Failed to reset password.');if($('#dialog')?.open)$('#dialog').close();toast(`Password for '${targetUser}' reset successfully.`);loadSettingsUsers();}catch(err){toast(err.message)}}}else if(a==='settings-delete-user'){const targetUser=el.dataset.user,targetId=el.dataset.id;modal(`<h2>Delete user '${esc(targetUser)}'?</h2><p>This permanently removes the account '${esc(targetUser)}' and reassigns any meeting records.</p><div class="dialog-actions"><button type="button" class="outline" data-action="close-dialog">Cancel</button><button type="button" class="primary" data-action="confirm-delete-user" data-id="${esc(targetId)}" data-user="${esc(targetUser)}">Delete User</button></div>`)}else if(a==='confirm-delete-user'){const targetId=el.dataset.id,targetUser=el.dataset.user;(async()=>{try{const res=await fetch(`/api/admin/users/${encodeURIComponent(targetId)}`,{method:'DELETE',headers:{'x-requested-with':'CloudCoreAI'}});const data=await res.json().catch(()=>({}));if(!res.ok)throw Error(data.error?.message||'Failed to delete user.');if($('#dialog')?.open)$('#dialog').close();toast(`User '${targetUser}' deleted.`);loadSettingsUsers();}catch(err){toast(err.message)}})()}else if(a==='suggestion'){const t=el.dataset.prompt;if(t==='Summarize this document'){if(docFile)sendMessage(`Please summarize "${docFile.name}" and highlight key takeaways.`);else{attachContext='assistant';pendingDocAutoPrompt='Please summarize this document and highlight key takeaways and action items.';$('#document-input')?.click()}}else if(t==='What is in this image?'){if(imageFile){chatImageAttached=true;sendMessage(`What is in "${imageFile.name}"?`)}else{attachContext='assistant';pendingImageAutoPrompt='Please analyze this image and describe what is in it.';$('#image-input')?.click()}}else sendMessage(t)}else if(a==='assistant-doc-card'){if(docFile)sendMessage(`Please summarize "${docFile.name}" with key points and action items.`);else{attachContext='assistant';pendingDocAutoPrompt='Please summarize this document with key points and action items.';$('#document-input')?.click()}}else if(a==='assistant-image-card'){if(imageFile){chatImageAttached=true;sendMessage(`Please analyze "${imageFile.name}" and extract key observations.`)}else{attachContext='assistant';pendingImageAutoPrompt='Please analyze this image thoroughly and highlight key observations.';$('#image-input')?.click()}}else if(a==='attach-document'){attachContext='assistant';$('#document-input')?.click()}else if(a==='choose-document'){attachContext='documents';$('#document-input')?.click()}else if(a==='attach-image'){attachContext='assistant';$('#image-input')?.click()}else if(a==='choose-image'){attachContext='images';$('#image-input')?.click()}else if(a==='remove-attached-doc'){docFile=null;docIngested=false;docIngesting=false;docJobStatus='';route({preserveScroll:true});toast('Document attachment removed.')}else if(a==='remove-attached-image'){chatImageAttached=false;imageFile=null;route({preserveScroll:true});toast('Image attachment removed.')}else if(a==='clear-notifications'){appNotifications=[];openNotificationsModal()}else if(a==='ask-doc-ai'){if($('#dialog')?.open)$('#dialog').close();if(docFile)sendMessage(`Please summarize "${docFile.name}" and highlight its key takeaways and action items.`);else{location.hash='assistant';route()}}else if(a==='doc-tab'){docTab=el.dataset.tab;route({preserveScroll:true})}else if(a==='image-mode'){imageMode=el.dataset.mode;route({preserveScroll:true})}else if(a==='example-image'){visionResult='';if(imageURL.startsWith('blob:'))URL.revokeObjectURL(imageURL);imageFile=null;imageURL=({tower:'assets/example-tower.png',map:'assets/example-map.png',datacenter:'assets/example-datacenter.png',diagram:'assets/diagram.svg',screenshot:'assets/reference-home.png'})[el.dataset.example]||'assets/hero.png';imageMode='upload';route({preserveScroll:true});toast('Example image selected. Click Analyze Image to run Vision AI.')}else if(a==='cloud-source')modal(`<h2>Connect ${el.dataset.source}</h2><p>Cloud storage connections will be available when the account integration is configured. For now, download your document and choose it from your device.</p><button class="primary" data-action="choose-document">Choose a local file</button>`);else if(a==='full-analysis'||a==='document-action'){const actTitle=el.dataset.title||'Document Analysis';if(docFile){const promptMap={'Summarize document':`Please provide an executive summary of "${docFile.name}" with key takeaways.`,'Compare document':`Please analyze "${docFile.name}" and compare its key options, trade-offs, and recommendations.`,'Extract document':`Please extract all key facts, figures, dates, entities, and deliverables from "${docFile.name}".`,'Analyze document':`Please analyze "${docFile.name}" to identify key trends, risks, decisions, and action items.`};sendMessage(promptMap[actTitle]||`Please analyze "${docFile.name}" and provide key insights.`)}else{modal(`<span class="feature-icon">${icon('file')}</span><h2>${esc(actTitle)}</h2><p>Upload a PDF, Word, Excel, PowerPoint, or text file to run live AI analysis on your own document, or explore the example below.</p><p>${sampleSummary}</p><h3>Key points</h3><ul><li>Enterprise connectivity and cloud services</li><li>Flexible deployment options</li><li>Managed support and service-level agreements</li></ul><div class="dialog-actions"><button class="outline" data-action="close-dialog">Close</button><button class="primary" data-action="choose-document">${icon('upload')} Upload a document</button></div>`)}}else if(a==='view-documents')modal(`<h2>Recent Documents</h2><p>${docFile?esc(docFile.name)+' — indexed in workspace.':'No documents uploaded yet. The proposal displayed is an example.'}</p>`);else if(a==='menu')$('.sidebar').classList.toggle('mobile-open');else if(a==='close-dialog')$('#dialog').close();else if(a==='open-chat'){const c=chats.find(c=>c.id===el.dataset.id);messages=[...c.messages];currentChat=c.id;location.hash='assistant'}else if(a==='delete-chat')modal(`<h2>Delete this conversation?</h2><p>This removes the conversation from this device.</p><div class="dialog-actions"><button class="outline" data-action="close-dialog">Cancel</button><button class="primary" data-action="confirm-delete" data-id="${el.dataset.id}">Delete conversation</button></div>`);else if(a==='confirm-delete'){chats=chats.filter(c=>c.id!==el.dataset.id);saveChats();route();toast('Conversation deleted.')}else if(a==='settings'){location.hash='settings';route()}else if(a==='profile')openProfileModal();else if(a==='signout')handleSignOut();else if(a==='help')modal('<h2>How can we help?</h2><p><b>AI Assistant:</b> Start a conversation, or attach a PDF/Word file or image directly using the paperclip and image icons in the chat bar.</p><p><b>Document Insight:</b> Upload a document and use Summarize, Compare, Extract, or Analyze.</p><p><b>Image Analysis:</b> Upload an image or select an example and click Analyze Image.</p><p><b>Chat History:</b> Reopen or delete conversations saved on this device.</p>');else if(a==='solutions')modal(`<h2>PTCL Business Solutions</h2><p>Explore connectivity, cloud, security and intelligent support.</p><div class="solution-list">${[['signal','Reliable Connectivity','Keep your business connected.'],['cloud','Cloud & Data Solutions','Infrastructure that grows with you.'],['shield','Cyber Security','Protect your business and its data.'],['chip','AI-Powered Support','Find the right support for your business.']].map(([i,t,d])=>`<div>${icon(i)}<span><b>${t}</b><p>${d}</p></span></div>`).join('')}</div>`);else if(a==='ingest-document-ai'){if(!docFile)return toast('Please choose a document first.');if(typeof fetch!=='function')return toast('AI service connection required.');ingestDocumentNow(docFile)}else if(a==='analyze-image-ai'){if(!imageFile&&!imageURL)return toast('Please choose or upload an image first.');if(typeof fetch!=='function')return toast('AI service connection required.');visionLoading=true;visionResult='';route({preserveScroll:true});(async()=>{try{const form=new FormData();form.append('question','Please analyze this image thoroughly: identify all objects, extract visible text via OCR, describe layout and context, and highlight key actionable observations.');if(imageFile){form.append('image',imageFile)}else{const blob=await fetch(imageURL).then(r=>r.blob());form.append('image',blob,'image.png')}const r=await fetch('/api/vision',{method:'POST',headers:{'x-requested-with':'CloudCoreAI'},body:form});if(!r.ok){const err=await r.json().catch(()=>({}));throw Error(err.error?.message||err.detail||`Vision request failed (${r.status})`)}const data=await r.json();visionResult=data.answer||'No analysis returned.';pushNotification('Image Analyzed','Vision AI completed analysis of your selected image.');toast('Vision analysis complete.')}catch(err){toast(`Vision analysis failed: ${err.message}`);visionResult=`Analysis failed: ${err.message}`}finally{visionLoading=false;route({preserveScroll:true})}})()}else if(a==='clear-vision'){visionResult='';route({preserveScroll:true})}bindDialog()}
 function bindDialog(){document.querySelectorAll('#dialog [data-action]').forEach(el=>el.onclick=()=>actions(el.dataset.action,el))}
 const baseBind=bind;bind=function(){baseBind();document.querySelectorAll('.composer').forEach(f=>f.onsubmit=e=>{e.preventDefault();sendMessage(new FormData(f).get('prompt'))});if($('#search-form'))$('#search-form').onsubmit=e=>{e.preventDefault();const q=($('#search-form input').value||'').trim();if(!q)return;const exactMatch=navs.find(n=>n[2].toLowerCase()===q.toLowerCase()||n[0].toLowerCase()===q.toLowerCase());if(exactMatch)location.hash=exactMatch[0];else sendMessage(q)};if($('#document-input'))$('#document-input').onchange=e=>{const f=e.target.files[0];try{e.target.value=''}catch{}selectDocument(f)};if($('#image-input'))$('#image-input').onchange=e=>{const f=e.target.files[0];try{e.target.value=''}catch{}selectImage(f)};document.querySelectorAll('[data-drop]').forEach(d=>{d.ondragover=e=>{e.preventDefault();d.classList.add('dragging')};d.ondragleave=()=>d.classList.remove('dragging');d.ondrop=e=>{e.preventDefault();d.classList.remove('dragging');(d.dataset.drop==='image'?selectImage:selectDocument)(e.dataTransfer.files[0])}});if($('#url-form'))$('#url-form').onsubmit=e=>{e.preventDefault();const url=new FormData(e.target).get('url');try{if(new URL(url).protocol!=='https:')throw Error();}catch{return toast('Please enter a valid HTTPS image URL.')}const image=new Image();image.onload=()=>{visionResult='';if(imageURL.startsWith('blob:'))URL.revokeObjectURL(imageURL);imageFile=null;imageURL=url;imageMode='upload';route()};image.onerror=()=>toast('The image could not be loaded. Check the link or upload a file.');image.src=url};if($('#history-search'))$('#history-search').oninput=e=>{historySearch=e.target.value;const start=e.target.selectionStart;route();$('#history-search').focus();$('#history-search').setSelectionRange(start,start)};if($('#dialog'))$('#dialog').onclick=e=>{if(e.target===$('#dialog'))$('#dialog').close()};};
 const productBind=bind;bind=function(){productBind();clearTimeout(meetingsTimer);meetingsTimer=null;const on=(selector,handler)=>document.querySelectorAll(selector).forEach(el=>el.onclick=()=>handler(el));on('[data-action="open-meeting"]',el=>{meetingTab='overview';meetingsState.detail=null;location.hash=`meetings/${el.dataset.id}`;refreshMeetings(true)});on('[data-action="refresh-meetings"]',()=>refreshMeetings(true));on('[data-action="meeting-tab"]',el=>{meetingTab=el.dataset.tab;route();if(meetingTab==='chat'){requestAnimationFrame(()=>{const box=document.querySelector('.meeting-chat-messages');if(box)box.scrollTop=box.scrollHeight})}});on('[data-action="stop-meeting"]',el=>meetingCommand(el.dataset.id,'/stop'));on('[data-action="regenerate-mom"]',el=>meetingCommand(el.dataset.id,'/regenerate-mom'));on('[data-action="delete-meeting"]',el=>{if(window.confirm('Permanently delete this meeting and all of its audio, transcript, snapshots and MOM?'))meetingCommand(el.dataset.id,'','DELETE')});on('[data-action="copy-mom"]',()=>{navigator.clipboard?.writeText(momMarkdown(meetingsState.detail));toast('MOM copied to clipboard.')});on('[data-action="download-mom"]',()=>{const blob=new Blob([momMarkdown(meetingsState.detail)],{type:'text/markdown'}),link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download='meeting-mom.md';link.click();URL.revokeObjectURL(link.href)});on('[data-action="preview-mom"]',()=>previewMomPdf(meetingsState.detail));on('[data-action="print-mom"]',()=>printMomPdf(meetingsState.detail));on('[data-action="profile"]',()=>openProfileModal());on('[data-action="settings"]',()=>{location.hash='settings';route()});on('[data-action="signout"]',()=>handleSignOut());on('[data-prompt="Start a Teams meeting bot"]',()=>location.hash='meetings');on('[data-action="quick-meeting-ask"]',el=>{if(selectedMeetingId)sendMeetingChat(selectedMeetingId,el.dataset.query)});on('[data-action="refresh-live-screenshot"]',()=>{const img=$('#live-bot-screen-img');if(img&&selectedMeetingId)img.src=`/api/meetings/${encodeURIComponent(selectedMeetingId)}/live-screenshot?t=${Date.now()}`});const transcriptInput=$('#transcript-filter');if(transcriptInput){transcriptInput.oninput=e=>{transcriptSearch=e.target.value;const term=transcriptSearch.trim().toLowerCase();const articles=document.querySelectorAll('.transcript-list article');let visible=0;articles.forEach(art=>{const match=!term||art.textContent.toLowerCase().includes(term);art.style.display=match?'':'none';if(match)visible++});const metaSpan=document.querySelector('.transcript-meta-strip span:last-child');if(metaSpan)metaSpan.textContent=`${visible} of ${articles.length} segments`}};const meetingChatForm=$('#meeting-chat-form');if(meetingChatForm){meetingChatForm.onsubmit=e=>{e.preventDefault();const p=new FormData(meetingChatForm).get('chatPrompt');if(selectedMeetingId)sendMeetingChat(selectedMeetingId,p)}};if($('#meeting-form'))$('#meeting-form').onsubmit=e=>{e.preventDefault();startMeeting(e.target)};if($('#mom-form'))$('#mom-form').onsubmit=async e=>{e.preventDefault();try{const mom=momFromForm(e.target,meetingsState.detail.mom);await api(`/api/meetings/${encodeURIComponent(meetingsState.detail.id)}/mom`,{method:'PUT',body:JSON.stringify(mom)});toast('MOM changes saved.');await refreshMeetings(true)}catch(error){toast(error.message)}};if(location.hash.startsWith('#meetings')){if(selectedMeetingId&&(!meetingsState.detail||meetingsState.detail.id!==selectedMeetingId)){refreshMeetings(true)}else if(!meetingsState.lastLoaded&&!meetingsLoading){refreshMeetings()}else{scheduleMeetingsPoll()}}};

@@ -35,3 +35,35 @@ export interface Meeting {
   consentedAt:string; startedAt?:string; endedAt?:string; expiresAt:string; createdAt:string; updatedAt:string;
   participants?:Participant[]; transcript?:TranscriptSegment[]; snapshots?:Snapshot[]; mom?:Mom;
 }
+
+export interface KnowledgeFolder {
+  id: string;
+  userId: string;
+  parentId?: string | null;
+  name: string;
+  isShared: boolean;
+  color?: string;
+  createdAt: string;
+  updatedAt: string;
+  creatorName?: string;
+  fileCount?: number;
+  totalSizeBytes?: number;
+}
+
+export interface KnowledgeDocument {
+  id: string;
+  userId: string;
+  folderId?: string | null;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  storagePath: string;
+  isShared: boolean;
+  status: 'ready' | 'indexing' | 'failed';
+  extractedText?: string;
+  tokenCount?: number;
+  createdAt: string;
+  updatedAt: string;
+  creatorName?: string;
+  folderName?: string;
+}
