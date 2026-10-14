@@ -65,10 +65,17 @@ async function verify() {
     space: meta.space
   });
 
-  if (meta.width === 1920 && meta.height === 1080) {
-    console.log('★ VERIFIED: True 1080p Full HD Resolution (1920x1080) confirmed on physical disk!');
+  const expectedDims = {
+    '16:9': { width: 1920, height: 1080 },
+    '1:1': { width: 1080, height: 1080 },
+    '9:16': { width: 1080, height: 1920 },
+    '4:3': { width: 1440, height: 1080 }
+  }[latestAsset.aspectRatio] || { width: 1080, height: 1080 };
+
+  if (meta.width === expectedDims.width && meta.height === expectedDims.height) {
+    console.log(`★ VERIFIED: True 1080p Resolution (${meta.width}x${meta.height}) for ratio ${latestAsset.aspectRatio} confirmed on physical disk!`);
   } else {
-    throw new Error(`Resolution check failed: Expected 1920x1080, got ${meta.width}x${meta.height}`);
+    throw new Error(`Resolution check failed: Expected ${expectedDims.width}x${expectedDims.height}, got ${meta.width}x${meta.height}`);
   }
 
   // 4. Test Prompt History
