@@ -954,7 +954,7 @@ app.post('/api/images/generate', requireUser, async (req, res) => {
     if (config.ai.imageEngineUrl) {
       try {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 240000); // 4 minutes timeout for CPU diffusion
+        const timeout = setTimeout(() => controller.abort(), 360000); // 6 minutes timeout for CPU diffusion
         const fluxRes = await fetch(`${config.ai.imageEngineUrl}/generate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

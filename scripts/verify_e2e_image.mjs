@@ -50,7 +50,8 @@ async function run() {
   assert.equal(histRes.status, 200);
   const histData = await histRes.json();
   assert.ok(Array.isArray(histData.assets) && histData.assets.length > 0, 'Expected at least 1 generated asset');
-  const asset = histData.assets[0];
+  const asset = histData.assets.find(a => a.filename.endsWith('.png'));
+  assert.ok(asset, 'Expected to find a generated PNG asset in history');
   console.log(`   Found generated asset: ID=${asset.id}`);
   console.log(`   Filename: ${asset.filename}`);
   console.log(`   URL: ${asset.url}`);
