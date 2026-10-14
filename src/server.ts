@@ -1,6 +1,6 @@
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createReadStream, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname, isAbsolute, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
@@ -477,7 +477,7 @@ app.get('/api/knowledge/documents/:id/view', requireUser, async (req, res) => {
     if (!doc.isShared && doc.userId !== req.session.user!.id && !['dev', 'admin'].includes(req.session.user!.role)) {
       return res.status(403).json({ error: { code: 'forbidden', message: 'Access denied.' } });
     }
-    const fullPath = resolve(knowledgeStorageDir, doc.storagePath);
+    const fullPath = isAbsolute(doc.storagePath) ? doc.storagePath : resolve(knowledgeStorageDir, doc.storagePath);
     if (!existsSync(fullPath)) {
       return res.status(404).json({ error: { code: 'file_missing', message: 'Stored file binary was not found.' } });
     }
@@ -515,7 +515,7 @@ app.get('/api/knowledge/documents/:id/sheet-data', requireUser, async (req, res)
     if (!doc.isShared && doc.userId !== req.session.user!.id && !['dev', 'admin'].includes(req.session.user!.role)) {
       return res.status(403).json({ error: { code: 'forbidden', message: 'Access denied.' } });
     }
-    const fullPath = resolve(knowledgeStorageDir, doc.storagePath);
+    const fullPath = isAbsolute(doc.storagePath) ? doc.storagePath : resolve(knowledgeStorageDir, doc.storagePath);
     if (!existsSync(fullPath)) {
       return res.status(404).json({ error: { code: 'file_missing', message: 'Stored file binary was not found.' } });
     }
@@ -586,7 +586,7 @@ app.delete('/api/knowledge/documents/:id', requireUser, async (req, res) => {
     const doc = await repository.deleteDocument(id, req.session.user!.id, isPrivileged);
     if (!doc) return res.status(404).json({ error: { code: 'not_found', message: 'Document not found.' } });
     try {
-      const fullPath = resolve(knowledgeStorageDir, doc.storagePath);
+      const fullPath = isAbsolute(doc.storagePath) ? doc.storagePath : resolve(knowledgeStorageDir, doc.storagePath);
       if (existsSync(fullPath)) unlinkSync(fullPath);
     } catch {}
     return res.json({ success: true, id });
@@ -604,7 +604,7 @@ app.post('/api/knowledge/batch-delete', requireUser, async (req, res) => {
     const deletedDocs = await repository.batchDeleteDocuments(ids, req.session.user!.id, isPrivileged);
     for (const doc of deletedDocs) {
       try {
-        const fullPath = resolve(knowledgeStorageDir, doc.storagePath);
+        const fullPath = isAbsolute(doc.storagePath) ? doc.storagePath : resolve(knowledgeStorageDir, doc.storagePath);
         if (existsSync(fullPath)) unlinkSync(fullPath);
       } catch {}
     }
@@ -1106,7 +1106,7 @@ app.post('/api/images/:id/save-to-knowledge', requireUser, async (req, res) => {
       filename: finalFilename,
       mimeType: asset.filename.endsWith('.png') ? 'image/png' : 'image/svg+xml',
       sizeBytes: fileBytes.length,
-      storagePath: destPath,
+      storagePath: destName,
       isShared,
       status: 'ready',
       extractedText: `AI Generated Image Visual Asset.\nPrompt: ${asset.prompt}\nStyle: ${asset.style}\nAspect Ratio: ${asset.aspectRatio}\nSeed: ${asset.seed}`
