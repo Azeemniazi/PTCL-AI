@@ -1,6 +1,6 @@
-import sharp from 'sharp';
-import fs from 'node:fs';
-import path from 'node:path';
+const sharp = require('sharp');
+const fs = require('fs');
+const path = require('path');
 
 async function run() {
   console.log('=== STARTING END-TO-END IMAGE STUDIO VERIFICATION ===\n');
