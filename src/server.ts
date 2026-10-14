@@ -947,15 +947,58 @@ app.post('/api/images/generate', requireUser, async (req, res) => {
 
     const start = Date.now();
     const id = randomUUID();
-    const filename = `asset_${Date.now()}_${id.slice(0, 8)}.svg`;
-    const filePath = resolve(imageStorageDir, filename);
+    let generatedPngBuffer: Buffer | null = null;
+    let actualDurationMs = 0;
 
-    const svgContent = generateStudioSvg({
-      id, prompt, style, aspectRatio, width, height, seed, steps, cfgScale
-    });
-    writeFileSync(filePath, svgContent, 'utf8');
+    // Call local FLUX.2-klein-4B engine on the VM if active
+    if (config.ai.imageEngineUrl) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 240000); // 4 minutes timeout for CPU diffusion
+        const fluxRes = await fetch(`${config.ai.imageEngineUrl}/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: style && style !== 'corporate' ? `${prompt}, in ${style} aesthetic` : prompt,
+            negative_prompt: negativePrompt || undefined,
+            width,
+            height,
+            steps: Math.min(steps, 6),
+            guidance_scale: 1.0,
+            seed
+          }),
+          signal: controller.signal
+        });
+        clearTimeout(timeout);
+        if (fluxRes.ok) {
+          const fluxData: any = await fluxRes.json();
+          if (fluxData.b64_json) {
+            generatedPngBuffer = Buffer.from(fluxData.b64_json, 'base64');
+            actualDurationMs = Number(fluxData.duration_ms) || (Date.now() - start);
+          }
+        }
+      } catch (fluxErr) {
+        logger.info({ err: fluxErr instanceof Error ? fluxErr.message : String(fluxErr) }, 'FLUX engine call skipped or offline, using vector fallback');
+      }
+    }
 
-    const durationMs = Math.max(Date.now() - start, Math.floor(1200 + Math.random() * 900));
+    let filename: string;
+    let durationMs: number;
+
+    if (generatedPngBuffer) {
+      filename = `asset_${Date.now()}_${id.slice(0, 8)}.png`;
+      const filePath = resolve(imageStorageDir, filename);
+      writeFileSync(filePath, generatedPngBuffer);
+      durationMs = actualDurationMs || (Date.now() - start);
+    } else {
+      filename = `asset_${Date.now()}_${id.slice(0, 8)}.svg`;
+      const filePath = resolve(imageStorageDir, filename);
+      const svgContent = generateStudioSvg({
+        id, prompt, style, aspectRatio, width, height, seed, steps, cfgScale
+      });
+      writeFileSync(filePath, svgContent, 'utf8');
+      durationMs = Math.max(Date.now() - start, Math.floor(1200 + Math.random() * 900));
+    }
 
     const asset: GeneratedAsset = {
       id,
@@ -1044,7 +1087,10 @@ app.post('/api/images/:id/save-to-knowledge', requireUser, async (req, res) => {
     const folderId = typeof rawFolder === 'string' && rawFolder.trim() && rawFolder !== 'null' ? rawFolder.trim() : null;
     const isShared = req.body?.isShared === true || req.body?.isShared === 'true';
     const customFilename = sanitizePrompt(String(req.body?.filename || '')).trim();
-    const finalFilename = customFilename ? (customFilename.endsWith('.svg') || customFilename.endsWith('.png') ? customFilename : `${customFilename}.svg`) : `AI_Visual_${asset.seed}.svg`;
+    const ext = asset.filename.endsWith('.png') ? '.png' : '.svg';
+    const finalFilename = customFilename
+      ? (customFilename.endsWith('.svg') || customFilename.endsWith('.png') ? customFilename : `${customFilename}${ext}`)
+      : `AI_Visual_${asset.seed}${ext}`;
 
     const sourcePath = resolve(imageStorageDir, asset.filename);
     if (!existsSync(sourcePath)) return res.status(404).json({ error: { code: 'missing_binary', message: 'Asset file is missing.' } });
@@ -1058,7 +1104,7 @@ app.post('/api/images/:id/save-to-knowledge', requireUser, async (req, res) => {
       userId: req.session.user!.id,
       folderId,
       filename: finalFilename,
-      mimeType: 'image/svg+xml',
+      mimeType: asset.filename.endsWith('.png') ? 'image/png' : 'image/svg+xml',
       sizeBytes: fileBytes.length,
       storagePath: destPath,
       isShared,

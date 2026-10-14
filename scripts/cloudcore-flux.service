@@ -1,0 +1,17 @@
+[Unit]
+Description=CloudCore FLUX.2 Klein 4B Image Generation Service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/ai-stack/models/Image
+ExecStart=/opt/ai-stack/models/Image/venv/bin/uvicorn app:app --host 127.0.0.1 --port 8005 --workers 1
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+Environment=FLUX_THREADS=16
+Environment=OMP_NUM_THREADS=16
+Environment=MKL_NUM_THREADS=16
+
+[Install]
+WantedBy=default.target
