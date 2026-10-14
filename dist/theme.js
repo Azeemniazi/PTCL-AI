@@ -418,6 +418,21 @@ function refImageStudio() {
             <button type="button" class="ref-prompt-tool-btn" data-action="studio-clear-prompt">${icon('close')} Clear</button>
           </div>
         </div>
+
+        <div class="ref-recent-prompts-bar">
+          <div class="ref-recent-prompts-header">
+            <span>${icon('history')} Recent Prompts</span>
+            <button type="button" class="ref-recent-prompt-more-btn" data-action="studio-open-prompt-history">View All (${(typeof studioRecentPrompts!=='undefined'&&studioRecentPrompts.length)||studioHistory.length})</button>
+          </div>
+          <div class="ref-recent-prompts-list">
+            ${((typeof studioRecentPrompts!=='undefined'&&studioRecentPrompts.length>0)?studioRecentPrompts.slice(0,3):studioHistory.slice(0,3)).map(p=>`
+              <button type="button" class="ref-recent-prompt-chip" data-action="studio-use-prompt-text" data-prompt="${esc(p.prompt)}" data-style="${esc(p.style||'corporate')}" data-ratio="${esc(p.aspectRatio||'1:1')}" data-seed="${esc(String(p.seed||''))}" title="${esc(p.prompt)}">
+                <span class="ref-recent-chip-style">${esc((p.style||'corporate').slice(0,4).toUpperCase())}</span>
+                <span class="ref-recent-chip-text">${esc(p.prompt)}</span>
+              </button>
+            `).join('')}
+          </div>
+        </div>
       </div>
 
       <div class="ref-studio-section">
@@ -486,9 +501,20 @@ function refImageStudio() {
         ${studioGenerating ? `
           <div class="ref-stage-loading-overlay">
             <div class="ref-pulse-ring"></div>
-            <b>Generating Visual on 32-Core Intel Xeon…</b>
-            <small style="color:#9be680;font-family:monospace;">Elapsed: ${studioGenTimer.toFixed(1)}s • AVX-512 DL Boost</small>
-            <span style="font-size:11px;color:#8fa798;max-width:280px;text-align:center;">Synthesizing latent diffusion tensors and rendering vector layers</span>
+            <b style="color:#ffffff;font-size:14px;margin-bottom:4px;">Synthesizing on 32-Core Intel Xeon…</b>
+            <div class="ref-stage-active-prompt" title="${esc(studioPrompt)}">"${esc(studioPrompt.slice(0, 95))}${studioPrompt.length > 95 ? '…' : ''}"</div>
+            <div class="ref-stage-progress-bar">
+              <div class="ref-stage-progress-fill" style="width:${Math.min(96, Math.max(5, Math.round((studioGenTimer / 140) * 100)))}%;"></div>
+            </div>
+            <small style="color:#9be680;font-family:monospace;margin-top:6px;">
+              Elapsed: ${studioGenTimer.toFixed(1)}s / ~140s • ${Math.min(96, Math.max(5, Math.round((studioGenTimer / 140) * 100)))}% Synthesized
+            </small>
+            <span style="font-size:11px;color:#8fa798;max-width:320px;text-align:center;margin-top:4px;">
+              Diffusion runs in background. You can navigate away or sign out anytime.
+            </span>
+            ${typeof studioActiveJob!=='undefined'&&studioActiveJob?`
+              <button type="button" class="ref-cancel-job-btn" data-action="studio-cancel-job" data-id="${esc(studioActiveJob.id)}">Cancel Generation</button>
+            `:''}
           </div>
         ` : ''}
 
@@ -514,12 +540,20 @@ function refImageStudio() {
       </div>
 
       ${activeAsset ? `
-        <div class="ref-meta-strip">
-          <div style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-            <b>Prompt:</b> "${esc(activeAsset.prompt)}"
+        <div class="ref-meta-strip" style="align-items:flex-start;">
+          <div style="flex:1;min-width:0;padding-right:12px;">
+            <div style="font-size:11px;font-weight:600;color:#182820;margin-bottom:3px;display:flex;align-items:center;justify-content:space-between;">
+              <span>Prompt:</span>
+              <button type="button" class="soft-button small" data-action="studio-use-prompt-text" data-prompt="${esc(activeAsset.prompt)}" data-style="${esc(activeAsset.style)}" data-ratio="${esc(activeAsset.aspectRatio)}" data-seed="${esc(String(activeAsset.seed))}">
+                ${icon('spark')} Use This Prompt
+              </button>
+            </div>
+            <div style="font-size:12px;color:#2f4638;line-height:1.4;">"${esc(activeAsset.prompt)}"</div>
           </div>
-          <div style="font-family:monospace;font-size:10px;white-space:nowrap;color:#2f593b;">
-            SEED: #${activeAsset.seed} • ${(activeAsset.durationMs / 1000).toFixed(1)}s • ${activeAsset.width}x${activeAsset.height} px
+          <div style="font-family:monospace;font-size:10px;white-space:nowrap;color:#2f593b;padding-left:12px;border-left:1px solid #d4ded7;display:flex;flex-direction:column;gap:3px;flex-shrink:0;">
+            <span>SEED: #${activeAsset.seed}</span>
+            <span>${(activeAsset.durationMs / 1000).toFixed(1)}s • ${activeAsset.width}x${activeAsset.height} px</span>
+            <span>${esc((activeAsset.style||'corporate').toUpperCase())}</span>
           </div>
         </div>
       ` : ''}
@@ -686,6 +720,7 @@ function refStudioGallery() {
                 <div class="ref-gallery-foot">
                   <span class="role-badge" style="font-size:9px;padding:2px 6px;">${esc(a.style.toUpperCase())}</span>
                   <div style="display:flex;gap:4px;">
+                    <button type="button" class="icon-button" data-action="studio-use-prompt-text" data-prompt="${esc(a.prompt)}" data-style="${esc(a.style)}" data-ratio="${esc(a.aspectRatio)}" data-seed="${esc(String(a.seed))}" title="Load prompt into studio">${icon('spark')}</button>
                     <button type="button" class="icon-button" data-action="studio-card-hub" data-id="${esc(a.id)}" title="Save to Knowledge Hub">${icon('folder')}</button>
                     <button type="button" class="icon-button danger" data-action="studio-delete-asset" data-id="${esc(a.id)}" title="Delete Asset">${icon('trash')}</button>
                   </div>

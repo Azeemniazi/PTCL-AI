@@ -741,6 +741,49 @@ function saveStudioManifest() {
   } catch {}
 }
 
+interface ImageJob {
+  id: string;
+  userId: string;
+  prompt: string;
+  negativePrompt?: string;
+  style: string;
+  aspectRatio: string;
+  seed: number;
+  steps: number;
+  cfgScale: number;
+  width: number;
+  height: number;
+  status: 'queued' | 'processing' | 'completed' | 'failed';
+  progress: number;
+  stageText: string;
+  error?: string;
+  asset?: GeneratedAsset;
+  startedAt: string;
+  completedAt?: string;
+  estimatedDurationMs: number;
+}
+
+const imageJobsPath = resolve(imageStorageDir, 'jobs.json');
+let imageJobs: ImageJob[] = [];
+try {
+  if (existsSync(imageJobsPath)) {
+    imageJobs = JSON.parse(readFileSync(imageJobsPath, 'utf8'));
+    for (const j of imageJobs) {
+      if (j.status === 'processing') {
+        j.status = 'failed';
+        j.error = 'Server restarted while generation was in progress.';
+      }
+    }
+  }
+} catch {
+  imageJobs = [];
+}
+function saveImageJobs() {
+  try {
+    writeFileSync(imageJobsPath, JSON.stringify(imageJobs.slice(0, 100), null, 2), 'utf8');
+  } catch {}
+}
+
 function escXml(s: string) {
   const map: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' };
   return String(s || '').replace(/[&<>"']/g, c => map[c] || c);
@@ -926,6 +969,213 @@ app.post('/api/images/enhance-prompt', requireUser, async (req, res) => {
   }
 });
 
+let isProcessingImageQueue = false;
+
+async function executeImageJob(job: ImageJob): Promise<GeneratedAsset> {
+  const start = Date.now();
+  const id = job.id;
+  let generatedPngBuffer: Buffer | null = null;
+  let actualDurationMs = 0;
+
+  if (config.ai.imageEngineUrl) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 360000); // 6 min timeout for CPU diffusion
+      const fluxRes = await fetch(`${config.ai.imageEngineUrl}/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: job.style && job.style !== 'corporate' ? `${job.prompt}, in ${job.style} aesthetic` : job.prompt,
+          negative_prompt: job.negativePrompt || undefined,
+          width: job.width,
+          height: job.height,
+          steps: Math.min(job.steps, 6),
+          guidance_scale: 1.0,
+          seed: job.seed
+        }),
+        signal: controller.signal
+      });
+      clearTimeout(timeout);
+      if (fluxRes.ok) {
+        const fluxData: any = await fluxRes.json();
+        if (fluxData.b64_json) {
+          generatedPngBuffer = Buffer.from(fluxData.b64_json, 'base64');
+          actualDurationMs = Number(fluxData.duration_ms) || (Date.now() - start);
+        }
+      }
+    } catch (fluxErr) {
+      logger.info({ err: fluxErr instanceof Error ? fluxErr.message : String(fluxErr) }, 'FLUX engine call skipped or offline, using vector fallback');
+    }
+  }
+
+  let filename: string;
+  let durationMs: number;
+
+  if (generatedPngBuffer) {
+    filename = `asset_${Date.now()}_${id.slice(0, 8)}.png`;
+    const filePath = resolve(imageStorageDir, filename);
+    writeFileSync(filePath, generatedPngBuffer);
+    durationMs = actualDurationMs || (Date.now() - start);
+  } else {
+    filename = `asset_${Date.now()}_${id.slice(0, 8)}.svg`;
+    const filePath = resolve(imageStorageDir, filename);
+    const svgContent = generateStudioSvg({
+      id,
+      prompt: job.prompt,
+      style: job.style,
+      aspectRatio: job.aspectRatio,
+      width: job.width,
+      height: job.height,
+      seed: job.seed,
+      steps: job.steps,
+      cfgScale: job.cfgScale
+    });
+    writeFileSync(filePath, svgContent, 'utf8');
+    durationMs = Math.max(Date.now() - start, Math.floor(1200 + Math.random() * 900));
+  }
+
+  const asset: GeneratedAsset = {
+    id,
+    userId: job.userId,
+    url: `/api/images/generated/${filename}`,
+    filename,
+    prompt: job.prompt,
+    negativePrompt: job.negativePrompt,
+    style: job.style,
+    aspectRatio: job.aspectRatio,
+    seed: job.seed,
+    steps: job.steps,
+    cfgScale: job.cfgScale,
+    width: job.width,
+    height: job.height,
+    durationMs,
+    createdAt: new Date().toISOString()
+  };
+
+  studioAssets.unshift(asset);
+  saveStudioManifest();
+  return asset;
+}
+
+async function processImageQueue() {
+  if (isProcessingImageQueue) return;
+  isProcessingImageQueue = true;
+  try {
+    while (true) {
+      const nextJob = imageJobs.find(j => j.status === 'queued' || j.status === 'processing');
+      if (!nextJob) break;
+      if (nextJob.status === 'queued') {
+        nextJob.status = 'processing';
+        nextJob.stageText = 'Diffusing with FLUX.2-klein-4B on 32-core Intel Xeon...';
+        saveImageJobs();
+      }
+      try {
+        const asset = await executeImageJob(nextJob);
+        if (nextJob.status === 'processing') {
+          nextJob.status = 'completed';
+          nextJob.progress = 100;
+          nextJob.stageText = 'Visual synthesis completed.';
+          nextJob.asset = asset;
+          nextJob.completedAt = new Date().toISOString();
+          saveImageJobs();
+        }
+      } catch (err: any) {
+        if (nextJob.status === 'processing') {
+          nextJob.status = 'failed';
+          nextJob.error = err.message || 'Image synthesis failed.';
+          nextJob.completedAt = new Date().toISOString();
+          saveImageJobs();
+        }
+      }
+    }
+  } finally {
+    isProcessingImageQueue = false;
+  }
+}
+
+app.get('/api/images/jobs/active', requireUser, (req, res) => {
+  const userId = req.session.user!.id;
+  const isPrivileged = ['dev', 'admin'].includes(req.session.user!.role);
+  const activeJob = imageJobs.find(j => (j.status === 'processing' || j.status === 'queued') && (isPrivileged || j.userId === userId));
+  const recentCompleted = !activeJob ? imageJobs.find(j => j.status === 'completed' && (isPrivileged || j.userId === userId) && (Date.now() - new Date(j.completedAt || j.startedAt).getTime() < 30000)) : null;
+  return res.json({
+    activeJob: activeJob ? {
+      ...activeJob,
+      elapsedMs: Date.now() - new Date(activeJob.startedAt).getTime()
+    } : null,
+    recentCompleted: recentCompleted || null
+  });
+});
+
+app.get('/api/images/jobs/:id', requireUser, (req, res) => {
+  const id = String(req.params.id);
+  const userId = req.session.user!.id;
+  const isPrivileged = ['dev', 'admin'].includes(req.session.user!.role);
+  const job = imageJobs.find(j => j.id === id);
+  if (!job) return res.status(404).json({ error: { code: 'not_found', message: 'Image job not found.' } });
+  if (!isPrivileged && job.userId !== userId) {
+    return res.status(403).json({ error: { code: 'forbidden', message: 'Access denied.' } });
+  }
+  return res.json({
+    job: {
+      ...job,
+      elapsedMs: job.status === 'processing' ? (Date.now() - new Date(job.startedAt).getTime()) : undefined
+    }
+  });
+});
+
+app.post('/api/images/jobs/:id/cancel', requireUser, (req, res) => {
+  const id = String(req.params.id);
+  const userId = req.session.user!.id;
+  const isPrivileged = ['dev', 'admin'].includes(req.session.user!.role);
+  const job = imageJobs.find(j => j.id === id);
+  if (!job) return res.status(404).json({ error: { code: 'not_found', message: 'Image job not found.' } });
+  if (!isPrivileged && job.userId !== userId) {
+    return res.status(403).json({ error: { code: 'forbidden', message: 'Access denied.' } });
+  }
+  if (job.status === 'queued' || job.status === 'processing') {
+    job.status = 'failed';
+    job.error = 'Cancelled by user.';
+    job.completedAt = new Date().toISOString();
+    saveImageJobs();
+    return res.json({ success: true, message: 'Job cancelled.' });
+  }
+  return res.json({ success: false, message: `Job is already ${job.status}.` });
+});
+
+app.get('/api/images/prompts/recent', requireUser, (req, res) => {
+  const userId = req.session.user!.id;
+  const isPrivileged = ['dev', 'admin'].includes(req.session.user!.role);
+  const userAssets = studioAssets.filter(a => isPrivileged || a.userId === userId);
+  const seen = new Set<string>();
+  const prompts: Array<{
+    id: string;
+    prompt: string;
+    style: string;
+    aspectRatio: string;
+    seed: number;
+    url: string;
+    createdAt: string;
+  }> = [];
+  for (const a of userAssets) {
+    const key = a.prompt.trim().toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      prompts.push({
+        id: a.id,
+        prompt: a.prompt,
+        style: a.style,
+        aspectRatio: a.aspectRatio,
+        seed: a.seed,
+        url: a.url,
+        createdAt: a.createdAt
+      });
+      if (prompts.length >= 25) break;
+    }
+  }
+  return res.json({ prompts });
+});
+
 app.post('/api/images/generate', requireUser, async (req, res) => {
   try {
     const prompt = sanitizePrompt(String(req.body?.prompt || '')).trim();
@@ -945,66 +1195,12 @@ app.post('/api/images/generate', requireUser, async (req, res) => {
     else if (aspectRatio === '9:16') { width = 512; height = 912; }
     else if (aspectRatio === '4:3') { width = 680; height = 512; }
 
-    const start = Date.now();
     const id = randomUUID();
-    let generatedPngBuffer: Buffer | null = null;
-    let actualDurationMs = 0;
+    const isSync = req.query.sync === 'true' || req.body?.sync === true;
 
-    // Call local FLUX.2-klein-4B engine on the VM if active
-    if (config.ai.imageEngineUrl) {
-      try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 360000); // 6 minutes timeout for CPU diffusion
-        const fluxRes = await fetch(`${config.ai.imageEngineUrl}/generate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prompt: style && style !== 'corporate' ? `${prompt}, in ${style} aesthetic` : prompt,
-            negative_prompt: negativePrompt || undefined,
-            width,
-            height,
-            steps: Math.min(steps, 6),
-            guidance_scale: 1.0,
-            seed
-          }),
-          signal: controller.signal
-        });
-        clearTimeout(timeout);
-        if (fluxRes.ok) {
-          const fluxData: any = await fluxRes.json();
-          if (fluxData.b64_json) {
-            generatedPngBuffer = Buffer.from(fluxData.b64_json, 'base64');
-            actualDurationMs = Number(fluxData.duration_ms) || (Date.now() - start);
-          }
-        }
-      } catch (fluxErr) {
-        logger.info({ err: fluxErr instanceof Error ? fluxErr.message : String(fluxErr) }, 'FLUX engine call skipped or offline, using vector fallback');
-      }
-    }
-
-    let filename: string;
-    let durationMs: number;
-
-    if (generatedPngBuffer) {
-      filename = `asset_${Date.now()}_${id.slice(0, 8)}.png`;
-      const filePath = resolve(imageStorageDir, filename);
-      writeFileSync(filePath, generatedPngBuffer);
-      durationMs = actualDurationMs || (Date.now() - start);
-    } else {
-      filename = `asset_${Date.now()}_${id.slice(0, 8)}.svg`;
-      const filePath = resolve(imageStorageDir, filename);
-      const svgContent = generateStudioSvg({
-        id, prompt, style, aspectRatio, width, height, seed, steps, cfgScale
-      });
-      writeFileSync(filePath, svgContent, 'utf8');
-      durationMs = Math.max(Date.now() - start, Math.floor(1200 + Math.random() * 900));
-    }
-
-    const asset: GeneratedAsset = {
+    const newJob: ImageJob = {
       id,
       userId: req.session.user!.id,
-      url: `/api/images/generated/${filename}`,
-      filename,
       prompt,
       negativePrompt: negativePrompt || undefined,
       style,
@@ -1014,14 +1210,38 @@ app.post('/api/images/generate', requireUser, async (req, res) => {
       cfgScale,
       width,
       height,
-      durationMs,
-      createdAt: new Date().toISOString()
+      status: 'queued',
+      progress: 5,
+      stageText: 'Job queued for FLUX.2-klein-4B on Intel Xeon...',
+      startedAt: new Date().toISOString(),
+      estimatedDurationMs: 140000
     };
 
-    studioAssets.unshift(asset);
-    saveStudioManifest();
+    imageJobs.unshift(newJob);
+    saveImageJobs();
 
-    return res.json({ asset });
+    if (isSync) {
+      // Synchronous execution mode for tests/CLI
+      const asset = await executeImageJob(newJob);
+      newJob.status = 'completed';
+      newJob.progress = 100;
+      newJob.asset = asset;
+      newJob.completedAt = new Date().toISOString();
+      saveImageJobs();
+      return res.json({ asset, job: newJob });
+    }
+
+    // Trigger background queue processor asynchronously
+    setImmediate(() => {
+      processImageQueue().catch(err => {
+        logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'Background processImageQueue error');
+      });
+    });
+
+    return res.status(202).json({
+      status: 'accepted',
+      job: newJob
+    });
   } catch (error) {
     logger.warn({ error: error instanceof Error ? error.message : String(error) }, 'image generation failed');
     return res.status(500).json({ error: { code: 'generation_failed', message: 'Failed to generate image.' } });

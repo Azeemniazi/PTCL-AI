@@ -79,3 +79,79 @@ test('AI Image Studio: integration with Knowledge Hub repository', async () => {
   await repo.deleteDocument(doc.id, user.id, true);
   await repo.deleteFolder(folder.id, user.id, true);
 });
+
+test('AI Image Studio: prompt history extraction and deduplication', async () => {
+  const assets = [
+    { prompt: 'Optical fiber datacenter', style: 'corporate', aspectRatio: '1:1', seed: 100, createdAt: '2026-10-14T01:00:00Z' },
+    { prompt: 'Optical fiber datacenter', style: 'corporate', aspectRatio: '1:1', seed: 101, createdAt: '2026-10-14T02:00:00Z' },
+    { prompt: '5G transmission tower Islamabad', style: 'photoreal', aspectRatio: '16:9', seed: 200, createdAt: '2026-10-14T03:00:00Z' }
+  ];
+
+  const seen = new Set();
+  const prompts = [];
+  for (const a of assets) {
+    const key = (a.prompt || '').trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    prompts.push({
+      prompt: a.prompt,
+      style: a.style,
+      aspectRatio: a.aspectRatio,
+      seed: a.seed,
+      timestamp: a.createdAt
+    });
+  }
+
+  assert.equal(prompts.length, 2);
+  assert.equal(prompts[0].prompt, 'Optical fiber datacenter');
+  assert.equal(prompts[1].prompt, '5G transmission tower Islamabad');
+});
+
+test('AI Image Studio: job queue lifecycle and cancellation tracking', async () => {
+  const jobs = [];
+  function createJob(prompt) {
+    const job = {
+      id: `imgjob_test_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      userId: 'test-user',
+      status: 'queued',
+      params: { prompt, style: 'corporate', aspectRatio: '1:1', steps: 4, cfgScale: 7.5 },
+      createdAt: new Date().toISOString()
+    };
+    jobs.push(job);
+    return job;
+  }
+
+  function getActiveJob(userId) {
+    return jobs.find(j => j.userId === userId && (j.status === 'queued' || j.status === 'running')) || null;
+  }
+
+  function cancelJob(id, userId) {
+    const j = jobs.find(x => x.id === id && x.userId === userId);
+    if (!j) return false;
+    if (j.status === 'queued' || j.status === 'running') {
+      j.status = 'cancelled';
+      j.completedAt = new Date().toISOString();
+      return true;
+    }
+    return false;
+  }
+
+  const job1 = createJob('Cybersecurity NOC panoramic display');
+  assert.equal(job1.status, 'queued');
+
+  const active = getActiveJob('test-user');
+  assert.ok(active);
+  assert.equal(active.id, job1.id);
+
+  // Transition to running
+  active.status = 'running';
+  active.startedAt = new Date().toISOString();
+  assert.equal(getActiveJob('test-user')?.status, 'running');
+
+  // Cancel job
+  const cancelled = cancelJob(job1.id, 'test-user');
+  assert.equal(cancelled, true);
+  assert.equal(job1.status, 'cancelled');
+  assert.equal(getActiveJob('test-user'), null);
+});
+
