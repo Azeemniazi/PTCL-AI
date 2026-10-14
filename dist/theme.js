@@ -152,7 +152,6 @@ function refKnowledge() {
           <h2>Folders (${folders.length})</h2>
           <p>Organize team knowledge by department, project, or category.</p>
         </div>
-        <button type="button" class="soft-button" data-action="new-folder">${icon('plus')} New Folder</button>
       </div>
       <div class="ref-folder-grid">
         ${folders.length ? folders.map(f => `
