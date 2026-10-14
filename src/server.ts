@@ -469,7 +469,7 @@ app.get('/api/knowledge/documents/:id/download', requireUser, async (req, res) =
   }
 });
 
-app.get('/api/knowledge/documents/:id/view', requireUser, async (req, res) => {
+app.get(['/api/knowledge/documents/:id/view', '/api/knowledge/documents/:id/preview'], requireUser, async (req, res) => {
   try {
     const id = String(req.params.id);
     const doc = await repository.getDocumentById(id);
