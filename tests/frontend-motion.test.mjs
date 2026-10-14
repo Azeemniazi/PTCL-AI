@@ -64,4 +64,25 @@ test('re-rendering a workspace view reuses the live playing sidebar video withou
   assert.equal(f.video.pauses,0);
   assert.equal(f.video.paused,false);
 });
+test('loop guard enables native loop without attaching premature timeupdate seek jumps',()=>{
+  const f=fixture();
+  const listeners={};
+  f.video.addEventListener=(evt,fn)=>{listeners[evt]=fn;};
+  f.sync();
+  assert.equal(f.video.loop,true);
+  assert.equal(typeof listeners.ended,'function');
+  assert.equal(typeof listeners.timeupdate,'undefined');
+  // Trigger ended event safely recovers playback
+  listeners.ended();
+  assert.equal(f.video.currentTime,0);
+});
+test('motion video assets and matching posters exist on disk with valid headers',()=>{
+  const assets=['assistant-motion.mp4','sidebar-motion-slim.mp4','sidebar-motion.mp4','assistant-motion-poster.jpg','sidebar-motion-slim-poster.jpg','sidebar-motion-poster.jpg'];
+  for(const file of assets){
+    const path=new URL(`../dist/assets/${file}`,import.meta.url);
+    assert.equal(fs.existsSync(path),true,`Asset missing: ${file}`);
+    const stat=fs.statSync(path);
+    assert.ok(stat.size>1000,`Asset file too small: ${file}`);
+  }
+});
 

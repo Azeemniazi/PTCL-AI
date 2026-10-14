@@ -9,16 +9,8 @@ function refAttachLoopGuard(video){
   if(video.dataset.motionLoopBound||typeof video.addEventListener!=='function')return;
   video.dataset.motionLoopBound='true';
   video.loop=true;
-  video.addEventListener('timeupdate',()=>{
-    if(video.duration>0.5&&video.currentTime>=video.duration-0.05){
-      video.currentTime=0.001;
-      if(video.paused&&!refMotionQuery?.matches&&!document.hidden&&video.dataset.motionVisible!=='false'){
-        const p=video.play();if(p?.catch)p.catch(()=>{});
-      }
-    }
-  });
   video.addEventListener('ended',()=>{
-    video.currentTime=0.001;
+    video.currentTime=0;
     if(!refMotionQuery?.matches&&!document.hidden&&video.dataset.motionVisible!=='false'){
       const p=video.play();if(p?.catch)p.catch(()=>{});
     }
