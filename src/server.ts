@@ -54,7 +54,14 @@ app.use('/api',(req,res,next)=>{
 });
 await configureAuth(app);
 
-const apiLimit=rateLimit({windowMs:60_000,limit:120,standardHeaders:true,legacyHeaders:false});app.use('/api',apiLimit);
+const apiLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 1200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: { code: 'rate_limited', message: 'Too many requests. Please wait a moment and try again.' } }
+});
+app.use('/api', apiLimit);
 app.get('/healthz',(_req,res)=>res.json({status:'ok'}));
 app.get('/readyz',async(_req,res)=>{try{await repository.healthy();if(redisConnection)await redisConnection.ping();res.json({status:'ready'})}catch{res.status(503).json({status:'not_ready'})}});
 app.get('/api/me',async(req,res)=>{if(!req.session.user)return res.json({authenticated:false,user:null,authMode:config.authMode});return res.json({authenticated:true,user:req.session.user,authMode:config.authMode,capacity:{active:await repository.activeCount(),maximum:config.maxActiveMeetings}})});

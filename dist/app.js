@@ -105,9 +105,16 @@ function route({preserveScroll=false}={}){
   bind();
   if((r==='documents'||r==='knowledge')&&!knowledgeLoaded&&typeof loadKnowledge==='function')loadKnowledge();
   if(r==='images'){
+    const now=Date.now();
     if(!studioHistoryLoaded&&typeof loadStudioHistory==='function')loadStudioHistory();
-    if(typeof checkActiveStudioJob==='function')checkActiveStudioJob();
-    if(typeof loadStudioRecentPrompts==='function')loadStudioRecentPrompts();
+    if(typeof checkActiveStudioJob==='function'&&now-lastActiveJobCheckTime>8000){
+      lastActiveJobCheckTime=now;
+      checkActiveStudioJob();
+    }
+    if(typeof loadStudioRecentPrompts==='function'&&now-lastPromptsLoadedTime>25000){
+      lastPromptsLoadedTime=now;
+      loadStudioRecentPrompts();
+    }
   }
   if(r==='meetings'&&!selectedMeetingId){
     const input=document.querySelector('input[name="meetingUrl"]'),label=document.querySelector('.bot-identity b');
@@ -956,6 +963,8 @@ let studioPollTimer=null;
 let studioRecentPrompts=[];
 let studioHistory=[];
 let studioHistoryLoaded=false;
+let lastPromptsLoadedTime=0;
+let lastActiveJobCheckTime=0;
 let studioGallerySearch='';
 let studioGalleryFilter='all';
 let studioGallerySelected=new Set();
@@ -1015,10 +1024,11 @@ async function checkActiveStudioJob(){
       if(data.activeJob){
         studioActiveJob=data.activeJob;
         studioGenerating=true;
-        if(data.activeJob.params?.prompt){
-          studioPrompt=data.activeJob.params.prompt;
-          if(data.activeJob.params.style)studioStyle=data.activeJob.params.style;
-          if(data.activeJob.params.aspectRatio)studioRatio=data.activeJob.params.aspectRatio;
+        const activePrompt=data.activeJob.prompt||data.activeJob.params?.prompt;
+        if(activePrompt){
+          studioPrompt=activePrompt;
+          if(data.activeJob.style||data.activeJob.params?.style)studioStyle=data.activeJob.style||data.activeJob.params.style;
+          if(data.activeJob.aspectRatio||data.activeJob.params?.aspectRatio)studioRatio=data.activeJob.aspectRatio||data.activeJob.params.aspectRatio;
         }
         studioGenTimer=(data.activeJob.elapsedMs||0)/1000;
         startStudioJobPolling(data.activeJob.id);
@@ -1038,9 +1048,9 @@ function startStudioJobPolling(jobId){
     studioGenTimer+=0.1;
     const progressFill=document.querySelector('.ref-stage-progress-fill');
     const elapsedEl=document.querySelector('.ref-stage-loading-overlay small');
-    const pct=Math.min(96, Math.max(5, Math.round((studioGenTimer/250)*100)));
+    const pct=Math.min(96, Math.max(5, Math.round((studioGenTimer/220)*100)));
     if(progressFill)progressFill.style.width=`${pct}%`;
-    if(elapsedEl)elapsedEl.textContent=`Elapsed: ${studioGenTimer.toFixed(1)}s / ~250s • ${pct}% Synthesized`;
+    if(elapsedEl)elapsedEl.textContent=`Elapsed: ${studioGenTimer.toFixed(1)}s / ~220s • ${pct}% Synthesized`;
   },100);
 
   studioPollTimer=setInterval(async ()=>{
@@ -1048,12 +1058,15 @@ function startStudioJobPolling(jobId){
       const res=await fetch(`/api/images/jobs/${encodeURIComponent(jobId)}`,{
         headers:{'x-requested-with':'CloudCoreAI'}
       });
-      if(!res.ok){
+      if(res.status===404){
         clearInterval(studioPollTimer);
         clearInterval(studioGenInterval);
         studioGenerating=false;
         studioActiveJob=null;
         route({preserveScroll:true});
+        return;
+      }
+      if(!res.ok){
         return;
       }
       const data=await res.json();
@@ -1070,13 +1083,14 @@ function startStudioJobPolling(jobId){
         clearInterval(studioGenInterval);
         studioGenerating=false;
         studioActiveJob=null;
-        if(job.resultAsset){
-          studioActiveAsset=job.resultAsset;
-          studioHistory.unshift(job.resultAsset);
+        const renderedAsset=job.asset||job.resultAsset;
+        if(renderedAsset){
+          studioActiveAsset=renderedAsset;
+          studioHistory.unshift(renderedAsset);
         }
         loadStudioHistory();
         loadStudioRecentPrompts();
-        pushNotification('Visual Generated',`New asset rendered: "${(job.params?.prompt||'').slice(0,40)}…" in ${((job.durationMs||job.elapsedMs||0)/1000).toFixed(1)}s`);
+        pushNotification('Visual Generated',`New asset rendered: "${(job.prompt||job.params?.prompt||'').slice(0,40)}…" in ${((renderedAsset?.durationMs||job.durationMs||job.elapsedMs||0)/1000).toFixed(1)}s`);
         toast('Image generated successfully!');
         route({preserveScroll:true});
       }else if(job.status==='failed'||job.status==='cancelled'){
@@ -1089,7 +1103,7 @@ function startStudioJobPolling(jobId){
         route({preserveScroll:true});
       }
     }catch(err){}
-  },2000);
+  },3000);
 }
 
 async function triggerStudioGenerate(){
@@ -1115,7 +1129,10 @@ async function triggerStudioGenerate(){
       })
     });
     const data=await res.json().catch(()=>({}));
-    if(!res.ok)throw Error(data.error?.message||'Generation failed.');
+    if(!res.ok){
+      const msg=data.error?.message||(res.status===429?'Server is busy. Please wait a few seconds and try again.':'Generation failed.');
+      throw Error(msg);
+    }
     if(data.job){
       studioActiveJob=data.job;
       startStudioJobPolling(data.job.id);
