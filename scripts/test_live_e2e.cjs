@@ -134,7 +134,7 @@ async function run() {
 
   // 8. Test Gallery Retrieval
   console.log('\n8. Testing Gallery & Prompt History Retrieval...');
-  const galleryRes = await fetch('http://127.0.0.1:4173/api/images/generated', { headers });
+  const galleryRes = await fetch('http://127.0.0.1:4173/api/images/history', { headers });
   const galleryData = await galleryRes.json();
   console.log(`✓ Gallery returned ${galleryData.assets?.length || 0} assets.`);
 
