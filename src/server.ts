@@ -3,6 +3,7 @@ import { createReadStream, existsSync, mkdirSync, readFileSync, unlinkSync, writ
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
+import sharp from 'sharp';
 import express from 'express';
 import session from 'express-session';
 import helmet from 'helmet';
@@ -784,6 +785,47 @@ function saveImageJobs() {
   } catch {}
 }
 
+export const TARGET_1080P_DIMENSIONS: Record<string, { width: number; height: number }> = {
+  '16:9': { width: 1920, height: 1080 },
+  '1:1': { width: 1080, height: 1080 },
+  '9:16': { width: 1080, height: 1920 },
+  '4:3': { width: 1440, height: 1080 }
+};
+
+export const BASE_DIFFUSION_DIMENSIONS: Record<string, { width: number; height: number }> = {
+  '16:9': { width: 640, height: 384 },
+  '1:1': { width: 512, height: 512 },
+  '9:16': { width: 384, height: 640 },
+  '4:3': { width: 576, height: 448 }
+};
+
+export const STYLE_PROMPT_MODIFIERS: Record<string, { positive: string; negative: string }> = {
+  corporate: {
+    positive: 'corporate enterprise aesthetic, PTCL Smart Cloud green and teal accents, modern technology infrastructure, clean balanced lighting, high quality professional graphic',
+    negative: 'distorted, messy, low contrast, oversaturated, amateurish, blurry'
+  },
+  photoreal: {
+    positive: 'photorealistic 8k, shot on 35mm lens, f/1.8 aperture, cinematic natural lighting, authentic textures, razor-sharp focus, highly detailed photography',
+    negative: 'cgi, cartoon, drawing, painting, illustration, blurry, distorted, grainy, plastic skin, lowres'
+  },
+  diagram: {
+    positive: 'technical architecture schematic, system blueprint, clean vector diagram, dark navy technical grid background, cyan and azure line art, crisp typography, node connectors, isometric engineering diagram',
+    negative: 'messy, organic clutter, photorealistic blur, low-contrast, smudge, chaotic'
+  },
+  isometric: {
+    positive: '3D isometric render, smooth glossy materials, ambient occlusion, miniature architectural model, vibrant volumetric studio lighting, clean geometric render, Unreal Engine 5 aesthetic, octane render',
+    negative: 'flat 2D, warped perspective, lowres, grainy, sketch, dark, dull'
+  },
+  minimalist: {
+    positive: 'minimalist modern vector emblem, clean negative space, bold geometric shapes, elegant corporate branding, sharp edges, harmonious contemporary color palette, flat graphic design',
+    negative: 'busy, cluttered, photo, noisy, gradient blur, complex background, text artifacts'
+  },
+  cyber: {
+    positive: 'cyberpunk tech aesthetic, neon cyan and magenta glow, dark futuristic backdrop, illuminated fiber optic circuitry, volumetric light beams, high-tech interface, raytraced reflections',
+    negative: 'vintage, sepia, dull colors, naturalistic sunlight, washed out, low contrast'
+  }
+};
+
 function escXml(s: string) {
   const map: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' };
   return String(s || '').replace(/[&<>"']/g, c => map[c] || c);
@@ -977,11 +1019,17 @@ async function executeImageJob(job: ImageJob): Promise<GeneratedAsset> {
   let generatedPngBuffer: Buffer | null = null;
   let actualDurationMs = 0;
 
+  const targetDims = TARGET_1080P_DIMENSIONS[job.aspectRatio] || { width: 1080, height: 1080 };
+  const diffDims = BASE_DIFFUSION_DIMENSIONS[job.aspectRatio] || { width: 512, height: 512 };
+  const defaultStyleMod = STYLE_PROMPT_MODIFIERS.corporate || { positive: 'corporate enterprise aesthetic', negative: 'distorted' };
+  const styleMod = STYLE_PROMPT_MODIFIERS[job.style] || defaultStyleMod;
+  const promptText = `${job.prompt}. ${styleMod.positive}`;
+  const negativePromptText = [job.negativePrompt, styleMod.negative].filter(Boolean).join(', ');
+
   if (config.ai.imageEngineUrl) {
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 600000); // 10 min timeout for CPU diffusion
-      const promptText = job.style && job.style !== 'corporate' ? `${job.prompt}, in ${job.style} aesthetic` : job.prompt;
 
       // 1. Try Qwen-Image / sd-server standard endpoint: POST /sdapi/v1/txt2img
       let engineRes: any = await fetch(`${config.ai.imageEngineUrl}/sdapi/v1/txt2img`, {
@@ -989,10 +1037,10 @@ async function executeImageJob(job: ImageJob): Promise<GeneratedAsset> {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: promptText,
-          negative_prompt: job.negativePrompt || undefined,
-          width: job.width,
-          height: job.height,
-          steps: Math.min(job.steps, 8),
+          negative_prompt: negativePromptText || undefined,
+          width: diffDims.width,
+          height: diffDims.height,
+          steps: Math.min(job.steps || 8, 8),
           cfg_scale: 1.0,
           seed: job.seed
         }),
@@ -1006,10 +1054,10 @@ async function executeImageJob(job: ImageJob): Promise<GeneratedAsset> {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             prompt: promptText,
-            negative_prompt: job.negativePrompt || undefined,
-            width: job.width,
-            height: job.height,
-            steps: Math.min(job.steps, 8),
+            negative_prompt: negativePromptText || undefined,
+            width: diffDims.width,
+            height: diffDims.height,
+            steps: Math.min(job.steps || 8, 8),
             guidance_scale: 1.0,
             seed: job.seed
           }),
@@ -1042,7 +1090,22 @@ async function executeImageJob(job: ImageJob): Promise<GeneratedAsset> {
   if (generatedPngBuffer) {
     filename = `asset_${Date.now()}_${id.slice(0, 8)}.png`;
     const filePath = resolve(imageStorageDir, filename);
-    writeFileSync(filePath, generatedPngBuffer);
+
+    // High-Fidelity 1080p Lanczos3 Upscaling with unsharp masking for crystal clear photographic sharpness
+    try {
+      const upscaledBuffer = await sharp(generatedPngBuffer)
+        .resize(targetDims.width, targetDims.height, {
+          kernel: sharp.kernel.lanczos3,
+          fit: 'cover'
+        })
+        .sharpen({ sigma: 0.8, m1: 0.8, m2: 0.4 })
+        .png({ compressionLevel: 8 })
+        .toBuffer();
+      writeFileSync(filePath, upscaledBuffer);
+    } catch (upscaleErr) {
+      // Fallback if sharp fails for any reason
+      writeFileSync(filePath, generatedPngBuffer);
+    }
     durationMs = actualDurationMs || (Date.now() - start);
   } else {
     filename = `asset_${Date.now()}_${id.slice(0, 8)}.svg`;
@@ -1052,8 +1115,8 @@ async function executeImageJob(job: ImageJob): Promise<GeneratedAsset> {
       prompt: job.prompt,
       style: job.style,
       aspectRatio: job.aspectRatio,
-      width: job.width,
-      height: job.height,
+      width: targetDims.width,
+      height: targetDims.height,
       seed: job.seed,
       steps: job.steps,
       cfgScale: job.cfgScale
@@ -1074,8 +1137,8 @@ async function executeImageJob(job: ImageJob): Promise<GeneratedAsset> {
     seed: job.seed,
     steps: job.steps,
     cfgScale: job.cfgScale,
-    width: job.width,
-    height: job.height,
+    width: targetDims.width,
+    height: targetDims.height,
     durationMs,
     createdAt: new Date().toISOString()
   };
@@ -1218,10 +1281,9 @@ app.post('/api/images/generate', requireUser, async (req, res) => {
     const rawSeed = Number(req.body?.seed);
     const seed = Number.isInteger(rawSeed) && rawSeed > 0 ? rawSeed : Math.floor(Math.random() * 9000000) + 1000000;
 
-    let width = 512, height = 512;
-    if (aspectRatio === '16:9') { width = 912; height = 512; }
-    else if (aspectRatio === '9:16') { width = 512; height = 912; }
-    else if (aspectRatio === '4:3') { width = 680; height = 512; }
+    const targetDims = TARGET_1080P_DIMENSIONS[aspectRatio] || { width: 1080, height: 1080 };
+    const width = targetDims.width;
+    const height = targetDims.height;
 
     const id = randomUUID();
     const isSync = req.query.sync === 'true' || req.body?.sync === true;
@@ -1240,9 +1302,9 @@ app.post('/api/images/generate', requireUser, async (req, res) => {
       height,
       status: 'queued',
       progress: 5,
-      stageText: 'Job queued for Qwen-Image-2.1-Turbo on Intel Xeon...',
+      stageText: 'Job queued for Qwen-Image-2.1-Turbo (1080p Full HD)...',
       startedAt: new Date().toISOString(),
-      estimatedDurationMs: 250000
+      estimatedDurationMs: 220000
     };
 
     imageJobs.unshift(newJob);
