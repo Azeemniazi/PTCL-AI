@@ -808,23 +808,23 @@ export const BASE_DIFFUSION_DIMENSIONS: Record<string, { width: number; height: 
 
 export const STYLE_PROMPT_MODIFIERS: Record<string, { positive: string; negative: string }> = {
   corporate: {
-    positive: 'corporate enterprise aesthetic, PTCL Smart Cloud green and teal accents, modern technology infrastructure, clean balanced lighting, high quality professional graphic',
+    positive: 'corporate enterprise aesthetic, clean professional composition, natural lighting, sharp clarity, high detail',
     negative: 'distorted, messy, low contrast, oversaturated, amateurish, blurry'
   },
   photoreal: {
-    positive: 'photorealistic 8k, shot on 35mm lens, f/1.8 aperture, cinematic natural lighting, authentic textures, razor-sharp focus, highly detailed photography',
+    positive: 'photorealistic 8k uhd, sharp focus, dslr photo, 35mm lens, cinematic natural lighting, authentic textures, highly detailed photography',
     negative: 'cgi, cartoon, drawing, painting, illustration, blurry, distorted, grainy, plastic skin, lowres'
   },
   diagram: {
-    positive: 'technical architecture schematic, system blueprint, clean vector diagram, dark navy technical grid background, cyan and azure line art, crisp typography, node connectors, isometric engineering diagram',
+    positive: 'technical architecture schematic, system blueprint, clean vector diagram, structured engineering diagram, crisp typography, node connectors',
     negative: 'messy, organic clutter, photorealistic blur, low-contrast, smudge, chaotic'
   },
   isometric: {
-    positive: '3D isometric render, smooth glossy materials, ambient occlusion, miniature architectural model, vibrant volumetric studio lighting, clean geometric render, Unreal Engine 5 aesthetic, octane render',
+    positive: '3D isometric render, smooth materials, ambient occlusion, clean geometric structures, vibrant studio lighting, Unreal Engine 5 aesthetic, octane render',
     negative: 'flat 2D, warped perspective, lowres, grainy, sketch, dark, dull'
   },
   minimalist: {
-    positive: 'minimalist modern vector emblem, clean negative space, bold geometric shapes, elegant corporate branding, sharp edges, harmonious contemporary color palette, flat graphic design',
+    positive: 'minimalist modern vector emblem, clean negative space, bold geometric shapes, elegant corporate branding, sharp edges, flat graphic design',
     negative: 'busy, cluttered, photo, noisy, gradient blur, complex background, text artifacts'
   },
   cyber: {
@@ -1047,7 +1047,7 @@ async function executeImageJob(job: ImageJob): Promise<GeneratedAsset> {
           negative_prompt: negativePromptText || undefined,
           width: diffDims.width,
           height: diffDims.height,
-          steps: Math.min(job.steps || 8, 8),
+          steps: 8,
           cfg_scale: 1.0,
           seed: job.seed
         }),
@@ -1064,7 +1064,7 @@ async function executeImageJob(job: ImageJob): Promise<GeneratedAsset> {
             negative_prompt: negativePromptText || undefined,
             width: diffDims.width,
             height: diffDims.height,
-            steps: Math.min(job.steps || 8, 8),
+            steps: 8,
             guidance_scale: 1.0,
             seed: job.seed
           }),
@@ -1106,7 +1106,7 @@ async function executeImageJob(job: ImageJob): Promise<GeneratedAsset> {
           fit: 'cover'
         })
         .sharpen({ sigma: 0.8, m1: 0.8, m2: 0.4 })
-        .png({ compressionLevel: 8 })
+        .png({ compressionLevel: 6 })
         .toBuffer();
       writeFileSync(filePath, upscaledBuffer);
     } catch (upscaleErr) {
