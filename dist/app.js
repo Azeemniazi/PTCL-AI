@@ -1038,9 +1038,9 @@ function startStudioJobPolling(jobId){
     studioGenTimer+=0.1;
     const progressFill=document.querySelector('.ref-stage-progress-fill');
     const elapsedEl=document.querySelector('.ref-stage-loading-overlay small');
-    const pct=Math.min(96, Math.max(5, Math.round((studioGenTimer/140)*100)));
+    const pct=Math.min(96, Math.max(5, Math.round((studioGenTimer/250)*100)));
     if(progressFill)progressFill.style.width=`${pct}%`;
-    if(elapsedEl)elapsedEl.textContent=`Elapsed: ${studioGenTimer.toFixed(1)}s / ~140s • ${pct}% Synthesized`;
+    if(elapsedEl)elapsedEl.textContent=`Elapsed: ${studioGenTimer.toFixed(1)}s / ~250s • ${pct}% Synthesized`;
   },100);
 
   studioPollTimer=setInterval(async ()=>{

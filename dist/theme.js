@@ -501,13 +501,13 @@ function refImageStudio() {
         ${studioGenerating ? `
           <div class="ref-stage-loading-overlay">
             <div class="ref-pulse-ring"></div>
-            <b style="color:#ffffff;font-size:14px;margin-bottom:4px;">Synthesizing on 32-Core Intel Xeon…</b>
+            <b style="color:#ffffff;font-size:14px;margin-bottom:4px;">Synthesizing with Qwen-Image-2.1-Turbo…</b>
             <div class="ref-stage-active-prompt" title="${esc(studioPrompt)}">"${esc(studioPrompt.slice(0, 95))}${studioPrompt.length > 95 ? '…' : ''}"</div>
             <div class="ref-stage-progress-bar">
-              <div class="ref-stage-progress-fill" style="width:${Math.min(96, Math.max(5, Math.round((studioGenTimer / 140) * 100)))}%;"></div>
+              <div class="ref-stage-progress-fill" style="width:${Math.min(96, Math.max(5, Math.round((studioGenTimer / 250) * 100)))}%;"></div>
             </div>
             <small style="color:#9be680;font-family:monospace;margin-top:6px;">
-              Elapsed: ${studioGenTimer.toFixed(1)}s / ~140s • ${Math.min(96, Math.max(5, Math.round((studioGenTimer / 140) * 100)))}% Synthesized
+              Elapsed: ${studioGenTimer.toFixed(1)}s / ~250s • ${Math.min(96, Math.max(5, Math.round((studioGenTimer / 250) * 100)))}% Synthesized
             </small>
             <span style="font-size:11px;color:#8fa798;max-width:320px;text-align:center;margin-top:4px;">
               Diffusion runs in background. You can navigate away or sign out anytime.

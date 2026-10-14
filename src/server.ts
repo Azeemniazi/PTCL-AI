@@ -980,31 +980,59 @@ async function executeImageJob(job: ImageJob): Promise<GeneratedAsset> {
   if (config.ai.imageEngineUrl) {
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 360000); // 6 min timeout for CPU diffusion
-      const fluxRes = await fetch(`${config.ai.imageEngineUrl}/generate`, {
+      const timeout = setTimeout(() => controller.abort(), 600000); // 10 min timeout for CPU diffusion
+      const promptText = job.style && job.style !== 'corporate' ? `${job.prompt}, in ${job.style} aesthetic` : job.prompt;
+
+      // 1. Try Qwen-Image / sd-server standard endpoint: POST /sdapi/v1/txt2img
+      let engineRes: any = await fetch(`${config.ai.imageEngineUrl}/sdapi/v1/txt2img`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          prompt: job.style && job.style !== 'corporate' ? `${job.prompt}, in ${job.style} aesthetic` : job.prompt,
+          prompt: promptText,
           negative_prompt: job.negativePrompt || undefined,
           width: job.width,
           height: job.height,
-          steps: Math.min(job.steps, 6),
-          guidance_scale: 1.0,
+          steps: Math.min(job.steps, 8),
+          cfg_scale: 1.0,
           seed: job.seed
         }),
         signal: controller.signal
-      });
+      }).catch(() => null);
+
+      // 2. If 404 or failed, try legacy /generate endpoint
+      if (!engineRes || engineRes.status === 404) {
+        engineRes = await fetch(`${config.ai.imageEngineUrl}/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: promptText,
+            negative_prompt: job.negativePrompt || undefined,
+            width: job.width,
+            height: job.height,
+            steps: Math.min(job.steps, 8),
+            guidance_scale: 1.0,
+            seed: job.seed
+          }),
+          signal: controller.signal
+        }).catch(() => null);
+      }
+
       clearTimeout(timeout);
-      if (fluxRes.ok) {
-        const fluxData: any = await fluxRes.json();
-        if (fluxData.b64_json) {
-          generatedPngBuffer = Buffer.from(fluxData.b64_json, 'base64');
-          actualDurationMs = Number(fluxData.duration_ms) || (Date.now() - start);
+      if (engineRes && engineRes.ok) {
+        const data: any = await engineRes.json();
+        if (Array.isArray(data.images) && data.images.length > 0) {
+          generatedPngBuffer = Buffer.from(data.images[0], 'base64');
+          actualDurationMs = Date.now() - start;
+        } else if (data.b64_json) {
+          generatedPngBuffer = Buffer.from(data.b64_json, 'base64');
+          actualDurationMs = Number(data.duration_ms) || (Date.now() - start);
+        } else if (Array.isArray(data.data) && data.data[0]?.b64_json) {
+          generatedPngBuffer = Buffer.from(data.data[0].b64_json, 'base64');
+          actualDurationMs = Date.now() - start;
         }
       }
-    } catch (fluxErr) {
-      logger.info({ err: fluxErr instanceof Error ? fluxErr.message : String(fluxErr) }, 'FLUX engine call skipped or offline, using vector fallback');
+    } catch (engineErr) {
+      logger.info({ err: engineErr instanceof Error ? engineErr.message : String(engineErr) }, 'Image engine call skipped or offline, using vector fallback');
     }
   }
 
@@ -1066,7 +1094,7 @@ async function processImageQueue() {
       if (!nextJob) break;
       if (nextJob.status === 'queued') {
         nextJob.status = 'processing';
-        nextJob.stageText = 'Diffusing with FLUX.2-klein-4B on 32-core Intel Xeon...';
+        nextJob.stageText = 'Diffusing with Qwen-Image-2.1-Turbo on 32-core Intel Xeon...';
         saveImageJobs();
       }
       try {
@@ -1212,9 +1240,9 @@ app.post('/api/images/generate', requireUser, async (req, res) => {
       height,
       status: 'queued',
       progress: 5,
-      stageText: 'Job queued for FLUX.2-klein-4B on Intel Xeon...',
+      stageText: 'Job queued for Qwen-Image-2.1-Turbo on Intel Xeon...',
       startedAt: new Date().toISOString(),
-      estimatedDurationMs: 140000
+      estimatedDurationMs: 250000
     };
 
     imageJobs.unshift(newJob);

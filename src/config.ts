@@ -34,7 +34,7 @@ export const config = {
   ai: {
     baseUrl: (process.env.AI_BASE_URL ?? '').replace(/\/$/, ''), apiKey: process.env.AI_API_KEY ?? '',
     transcribeModel: process.env.AI_TRANSCRIBE_MODEL ?? '', momModel: process.env.AI_MOM_MODEL ?? '',
-    imageEngineUrl: (process.env.FLUX_ENGINE_URL ?? 'http://127.0.0.1:8005').replace(/\/$/, '')
+    imageEngineUrl: (process.env.IMAGE_ENGINE_URL ?? process.env.FLUX_ENGINE_URL ?? 'http://127.0.0.1:8006').replace(/\/$/, '')
   }
 };
 
