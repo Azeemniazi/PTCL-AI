@@ -87,7 +87,7 @@ export async function remixImage(base: string, input: {
   prompt: string; negativePrompt?: string; width: number; height: number; seed: number; strength: number; reference: Buffer;
 }, signal?: AbortSignal): Promise<Buffer> {
   const response = await fetch(`${base}/sdapi/v1/img2img`, {
-    method:'POST', headers:{'content-type':'application/json'}, signal: signal ? AbortSignal.any([signal,AbortSignal.timeout(600000)]) : AbortSignal.timeout(600000),
+    method:'POST', headers:{'content-type':'application/json'}, signal: signal ? AbortSignal.any([signal,AbortSignal.timeout(1800000)]) : AbortSignal.timeout(1800000),
     body:JSON.stringify({prompt:input.prompt,negative_prompt:input.negativePrompt || undefined,
       init_images:[input.reference.toString('base64')],denoising_strength:input.strength,
       width:input.width,height:input.height,seed:input.seed,steps:8,cfg_scale:1})

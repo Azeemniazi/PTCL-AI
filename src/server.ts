@@ -817,13 +817,6 @@ export const TARGET_1080P_DIMENSIONS: Record<string, { width: number; height: nu
   '4:3': { width: 1440, height: 1080 }
 };
 
-export const BASE_DIFFUSION_DIMENSIONS: Record<string, { width: number; height: number }> = {
-  '16:9': { width: 640, height: 384 },
-  '1:1': { width: 512, height: 512 },
-  '9:16': { width: 384, height: 640 },
-  '4:3': { width: 576, height: 448 }
-};
-
 export const STYLE_PROMPT_MODIFIERS: Record<string, { positive: string; negative: string }> = {
   natural: {
     positive: '',
@@ -1053,7 +1046,6 @@ async function executeImageJob(job: ImageJob): Promise<GeneratedAsset> {
   let actualDurationMs = 0;
 
   const targetDims = TARGET_1080P_DIMENSIONS[job.aspectRatio] || { width: 1080, height: 1080 };
-  const diffDims = BASE_DIFFUSION_DIMENSIONS[job.aspectRatio] || { width: 512, height: 512 };
   const defaultStyleMod = STYLE_PROMPT_MODIFIERS.natural || { positive: '', negative: '' };
   const styleMod = STYLE_PROMPT_MODIFIERS[job.style] || defaultStyleMod;
   const promptText = styleMod.positive ? `${job.prompt}. ${styleMod.positive}` : job.prompt;
@@ -1063,24 +1055,24 @@ async function executeImageJob(job: ImageJob): Promise<GeneratedAsset> {
     if (!job.referenceFilename) throw new Error('The reference image is missing. Choose it again.');
     const reference = readFileSync(resolve(imageReferenceDir, job.referenceFilename));
     generatedPngBuffer = await remixImage(config.ai.imageEngineUrl, {
-      prompt:promptText, negativePrompt:negativePromptText, width:diffDims.width, height:diffDims.height,
+      prompt:promptText, negativePrompt:negativePromptText, width:targetDims.width, height:targetDims.height,
       seed:job.seed, strength:job.strength ?? 0.65, reference
     });
     actualDurationMs = Date.now()-start;
   } else if (config.ai.imageEngineUrl) {
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 600000); // 10 min timeout for CPU diffusion
+      const timeout = setTimeout(() => controller.abort(), 1800000); // 30 min timeout for native 1080p CPU diffusion
 
-      // 1. Try Qwen-Image / sd-server standard endpoint: POST /sdapi/v1/txt2img
+      // Native 1080p standard txt2img endpoint
       let engineRes: any = await fetch(`${config.ai.imageEngineUrl}/sdapi/v1/txt2img`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: promptText,
           negative_prompt: negativePromptText || undefined,
-          width: diffDims.width,
-          height: diffDims.height,
+          width: targetDims.width,
+          height: targetDims.height,
           steps: 8,
           cfg_scale: 1.0,
           seed: job.seed
@@ -1096,8 +1088,8 @@ async function executeImageJob(job: ImageJob): Promise<GeneratedAsset> {
           body: JSON.stringify({
             prompt: promptText,
             negative_prompt: negativePromptText || undefined,
-            width: diffDims.width,
-            height: diffDims.height,
+            width: targetDims.width,
+            height: targetDims.height,
             steps: 8,
             guidance_scale: 1.0,
             seed: job.seed
@@ -1134,21 +1126,28 @@ async function executeImageJob(job: ImageJob): Promise<GeneratedAsset> {
     filename = `asset_${Date.now()}_${id.slice(0, 8)}.png`;
     const filePath = resolve(imageStorageDir, filename);
 
-    // High-Fidelity 1080p Lanczos3 Upscaling with unsharp masking for crystal clear photographic sharpness
+    // Native 1080p generation without upscaling
     try {
-      const upscaledBuffer = await sharp(generatedPngBuffer)
-        .resize(targetDims.width, targetDims.height, {
-          kernel: sharp.kernel.lanczos3,
-          fit: 'cover'
-        })
-        .sharpen({ sigma: 0.8, m1: 0.8, m2: 0.4 })
-        .png({ compressionLevel: 6 })
-        .toBuffer();
+      const meta = await sharp(generatedPngBuffer).metadata();
+      let finalBuffer = generatedPngBuffer;
+      // If spatial multiple alignment slightly exceeded requested target (e.g. 1088 vs 1080), crop margins losslessly at 1:1 pixel exactness without scaling
+      if (meta.width && meta.height && (meta.width > targetDims.width || meta.height > targetDims.height)) {
+        const left = Math.max(0, Math.floor((meta.width - targetDims.width) / 2));
+        const top = Math.max(0, Math.floor((meta.height - targetDims.height) / 2));
+        finalBuffer = await sharp(generatedPngBuffer)
+          .extract({
+            left,
+            top,
+            width: Math.min(meta.width - left, targetDims.width),
+            height: Math.min(meta.height - top, targetDims.height)
+          })
+          .png({ compressionLevel: 6 })
+          .toBuffer();
+      }
       assertImageJobActive(job);
-      writeFileSync(filePath, upscaledBuffer);
-    } catch (upscaleErr) {
-      // Invalid output must not be stored with misleading format/dimension metadata.
-      throw upscaleErr;
+      writeFileSync(filePath, finalBuffer);
+    } catch (writeErr) {
+      throw writeErr;
     }
     durationMs = actualDurationMs || (Date.now() - start);
   } else {
@@ -1374,7 +1373,7 @@ app.post('/api/images/remix', requireUser, async (req,res) => {
       negativePrompt:sanitizePrompt(fields.negativePrompt),style:fields.style,aspectRatio:fields.aspectRatio,
       sourceAssetId:fields.sourceAssetId || undefined,sourceName,referenceFilename,strength:fields.strength,
       seed:fields.seed,steps:8,cfgScale:1,width:dims.width,height:dims.height,status:'queued',progress:0,
-      stageText:'Your remix is queued.',startedAt:new Date().toISOString(),estimatedDurationMs:220000};
+      stageText:'Your remix is queued.',startedAt:new Date().toISOString(),estimatedDurationMs:1250000};
     imageJobs.unshift(job); saveImageJobs();
     referencePath = undefined; // The queue owns reference cleanup from this point.
     setImmediate(()=>processImageQueue().catch(error=>logger.warn({error:String(error)},'remix queue failed')));
@@ -1428,7 +1427,7 @@ app.post('/api/images/generate', requireUser, async (req, res) => {
       progress: 5,
       stageText: 'Your image is queued.',
       startedAt: new Date().toISOString(),
-      estimatedDurationMs: 220000
+      estimatedDurationMs: 1250000
     };
 
     imageJobs.unshift(newJob);
