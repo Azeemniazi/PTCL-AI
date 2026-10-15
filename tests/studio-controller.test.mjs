@@ -4,11 +4,12 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 
 const source=['studio-model.js','studio-view.js','studio.js'].map(f=>readFileSync(new URL('../dist/'+f,import.meta.url),'utf8')).join('\n');
+const themeSource=readFileSync(new URL('../dist/theme.js',import.meta.url),'utf8');
 const turn=()=>new Promise(setImmediate);
 const reply=data=>new Response(JSON.stringify(data),{headers:{'content-type':'application/json'}});
 const assets=['one','two'].map((id,n)=>({id,prompt:`Saved prompt ${n}`,style:'natural',aspectRatio:'1:1',filename:id+'.png',url:'/'+id+'.png',width:1080,height:1080,createdAt:'2026-10-15',seed:n+1}));
 
-async function fixture(override=()=>undefined) {
+async function fixture(override=()=>undefined,loadTheme=false) {
   const listeners=new Map(),nodes=new Map(),timers=new Set(),requests=[];
   const node=id=>{if(!nodes.has(id))nodes.set(id,{id,innerHTML:'',textContent:'',dataset:{},style:{},open:false,isConnected:true,
     classList:{add(){},remove(){},toggle(){},contains(){return true;}},focus(){},scrollIntoView(){},setSelectionRange(){},setAttribute(){},removeAttribute(){},close(){this.open=false;},insertAdjacentHTML(_p,s){this.innerHTML+=s;}});return nodes.get(id);};
@@ -26,6 +27,15 @@ async function fixture(override=()=>undefined) {
       if(path.endsWith('/cancel'))return reply({success:true,message:'Cancelled; computing may finish, but the result will be discarded.'});
       if(path.includes('/jobs/'))return reply({job:{id:'job',status:'processing',startedAt:new Date().toISOString()}});
       return reply({success:true});}});
+  if(loadTheme) {
+    // Classic browser scripts share the window/global object. A separate window
+    // stub hides collisions such as a top-level function named "history".
+    const browserWindow=context.window;
+    Object.assign(context,browserWindow);
+    context.window=context;
+    vm.runInContext(themeSource,context);
+    assert.equal(context.history,browserWindow.history,'Theme must preserve the browser History API');
+  }
   vm.runInContext(source,context);
   context.ImageStudio.render();context.ImageStudio.mount();await turn();await turn();
   function emit(type,target,extra={}){const event={target,key:'',preventDefault(){},...extra};for(const handler of listeners.get(type)||[])handler(event);}
@@ -35,6 +45,15 @@ async function fixture(override=()=>undefined) {
   const html=()=>context.ImageStudio.render();
   return {context,click,input,html,emit,element,node,timers,requests};
 }
+test('theme and studio share browser globals without breaking tab navigation',async()=>{
+  const f=await fixture(()=>undefined,true);
+  assert.equal(typeof f.context.history.replaceState,'function');
+  for(const tab of ['remix','gallery','analyze','create']) {
+    f.click('tab',{tab});await turn();
+    assert.equal(f.context.location.hash,`#images/${tab}`);
+    assert.ok(f.html().includes(`aria-labelledby="is-tab-${tab}"`));
+  }
+});
 test('preview keeps an edited draft; explicit reuse restores saved settings',async()=>{
   const f=await fixture();f.input('prompt','Keep my new idea');f.click('preview',{id:'two'});
   assert.ok(f.html().includes('Keep my new idea'));
