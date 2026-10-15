@@ -149,9 +149,9 @@ export const TARGET_1080P_DIMENSIONS: Record<string, { width: number; height: nu
 };
 
 export function estimateJobDurationMs(aspectRatio: string): number {
-  if (aspectRatio === '16:9' || aspectRatio === '9:16') return 2400000;
-  if (aspectRatio === '4:3') return 1700000;
-  return 1250000;
+  if (aspectRatio === '16:9' || aspectRatio === '9:16') return 950000;
+  if (aspectRatio === '4:3') return 700000;
+  return 480000;
 }
 export function parseRemixFields(form: FormData) {
   const prompt = String(form.get('prompt') || '').trim();
@@ -184,7 +184,7 @@ export async function normalizeReference(bytes: Buffer, mime: string, trustedAss
 }
 
 export async function remixImage(base: string, input: {
-  prompt: string; negativePrompt?: string; width: number; height: number; seed: number; strength: number; reference: Buffer;
+  prompt: string; negativePrompt?: string; width: number; height: number; seed: number; strength: number; steps?: number; reference: Buffer;
 }, signal?: AbortSignal): Promise<Buffer> {
   const response = await requestEngineJson(`${base}/sdapi/v1/img2img`, {
     method: 'POST',
@@ -196,7 +196,7 @@ export async function remixImage(base: string, input: {
       width: input.width,
       height: input.height,
       seed: input.seed,
-      steps: 8,
+      steps: input.steps || 4,
       cfg_scale: 1.0
     },
     timeoutMs: 3600000,

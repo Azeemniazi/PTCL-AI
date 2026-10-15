@@ -1,3 +1,4 @@
+import { exec } from 'node:child_process';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createReadStream, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
@@ -813,6 +814,21 @@ function saveImageJobs() {
 
 const activeImageJobControllers = new Map<string, AbortController>();
 
+async function abortActiveImageEngine(): Promise<void> {
+  const containerName = process.env.IMAGE_CONTAINER_NAME || 'cloudcore-ai-image-zimage';
+  if (process.env.IMAGE_CONTAINER_RESTART_ON_CANCEL === 'false') return;
+  return new Promise((resolve) => {
+    exec(`docker restart -t 1 ${containerName}`, (err) => {
+      if (err) {
+        logger.warn({ err: err.message }, 'Notice: docker restart on cancel did not execute');
+      } else {
+        logger.info({ containerName }, 'Successfully restarted image engine container to cancel in-flight compute.');
+      }
+      resolve();
+    });
+  });
+}
+
 export const STYLE_PROMPT_MODIFIERS: Record<string, { positive: string; negative: string }> = {
   natural: {
     positive: '',
@@ -1068,7 +1084,7 @@ async function executeImageJob(job: ImageJob, signal?: AbortSignal): Promise<Gen
         negative_prompt: negativePromptText || undefined,
         width: targetDims.width,
         height: targetDims.height,
-        steps: 8,
+        steps: job.steps || 4,
         cfg_scale: 1.0,
         seed: job.seed
       },
@@ -1263,14 +1279,20 @@ app.post('/api/images/jobs/:id/cancel', requireUser, (req, res) => {
   if (job.status === 'queued' || job.status === 'processing') {
     const wasQueued = job.status === 'queued';
     job.status = 'cancelled';
-    job.error = wasQueued ? 'Cancelled before generation started.' : 'Cancelled. The engine may finish computing, but its result will be discarded.';
+    job.error = wasQueued ? 'Cancelled before generation started.' : 'Cancelled. Generation stopped and engine reset.';
     job.completedAt = new Date().toISOString();
     const controller = activeImageJobControllers.get(id);
     if (controller) {
       try { controller.abort(); } catch {}
       activeImageJobControllers.delete(id);
     }
-    if (wasQueued && job.referenceFilename) { try { unlinkSync(resolve(imageReferenceDir,job.referenceFilename)); } catch {} }
+    if (wasQueued && job.referenceFilename) {
+      try { unlinkSync(resolve(imageReferenceDir, job.referenceFilename)); } catch {}
+    } else if (!wasQueued) {
+      void abortActiveImageEngine().catch(err => {
+        logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'Engine abort restart notice');
+      });
+    }
     saveImageJobs();
     return res.json({ success: true, message: job.error });
   }
@@ -1360,7 +1382,7 @@ app.post('/api/images/remix', requireUser, async (req,res) => {
     const job: ImageJob = {id,userId:actor.id,operation:'remix',prompt:sanitizePrompt(fields.prompt),
       negativePrompt:sanitizePrompt(fields.negativePrompt),style:fields.style,aspectRatio:fields.aspectRatio,
       sourceAssetId:fields.sourceAssetId || undefined,sourceName,referenceFilename,strength:fields.strength,
-      seed:fields.seed,steps:8,cfgScale:1,width:dims.width,height:dims.height,status:'queued',progress:0,
+      seed:fields.seed,steps:4,cfgScale:1,width:dims.width,height:dims.height,status:'queued',progress:0,
       stageText:'Your remix is queued.',startedAt:new Date().toISOString(),estimatedDurationMs:estimateJobDurationMs(fields.aspectRatio)};
     imageJobs.unshift(job); saveImageJobs();
     referencePath = undefined; // The queue owns reference cleanup from this point.
@@ -1386,7 +1408,8 @@ app.post('/api/images/generate', requireUser, async (req, res) => {
     const style = String(req.body?.style || 'corporate').slice(0, 30);
     const aspectRatio = String(req.body?.aspectRatio || '1:1');
     if (!STUDIO_STYLES.includes(style) || !STUDIO_RATIOS.includes(aspectRatio)) return res.status(400).json({error:{code:'invalid_settings',message:'Choose a supported style and format.'}});
-    const steps = 8;
+    const rawSteps = Number(req.body?.steps);
+    const steps = Number.isInteger(rawSteps) && rawSteps >= 1 && rawSteps <= 20 ? rawSteps : 4;
     const cfgScale = 1;
     const rawSeed = Number(req.body?.seed);
     const seed = Number.isInteger(rawSeed) && rawSeed > 0 ? rawSeed : Math.floor(Math.random() * 9000000) + 1000000;
