@@ -322,7 +322,7 @@ function refDocuments() {
   return refKnowledge();
 }
 function refImages() {
-  return refImageStudio();
+  return typeof ImageStudio !== 'undefined' ? ImageStudio.render() : refImageStudio();
 }
 
 function refImageStudio() {

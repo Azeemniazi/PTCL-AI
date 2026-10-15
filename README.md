@@ -27,7 +27,7 @@ The public site includes Landing (`#landing`), Solutions (`#site-solutions`), AI
 - Feature-detected WebMCP screen navigation.
 - Teams-link validation, guest-bot launch, meeting status, transcript, snapshots, private audio, editable MOM, Markdown export and print/PDF.
 
-Meetings AI has real backend interfaces for Entra authentication, PostgreSQL, Redis, MinIO, the CloudCore Vexa fork and an OpenAI-compatible internal AI service. Document Insight and Image Analysis remain frontend previews.
+Meetings AI has backend interfaces for Entra authentication, PostgreSQL, Redis, MinIO, the CloudCore Vexa fork and an OpenAI-compatible internal AI service. Image Studio includes Create, Remix, Gallery, and Analyze, with capability-aware image generation, saved assets, Knowledge Hub export, and explicitly labelled metadata inspection. Genuine image remix is disabled until the configured model passes its reference-image canary. See [Image Studio implementation and verification](docs/image-studio.md).
 
 ## Meetings AI deployment
 

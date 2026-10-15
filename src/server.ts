@@ -4,6 +4,8 @@ import { dirname, isAbsolute, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
+import { ImageInputError, normalizeReference, parseRemixFields, probeImageEngine, remixImage, STUDIO_RATIOS, STUDIO_STYLES } from './image-engine.js';
+import { downloadImageUrl } from './image-url.js';
 import express from 'express';
 import session from 'express-session';
 import helmet from 'helmet';
@@ -666,7 +668,7 @@ app.post('/api/vision',requireUser,async(req,res)=>{
       });
       if(upstream.ok){
         const payload:any=await upstream.json().catch(()=>({}));
-        if(payload?.answer)return res.status(upstream.status).json(payload);
+        if(payload?.answer)return res.status(upstream.status).json({...payload,analysisKind:'visual'});
       }
     }catch{
       // Fallback to local Qwen LLM analysis when upstream /api/vision is not mounted
@@ -709,7 +711,7 @@ Provide a concise, well-structured Markdown inspection report covering:
     }
     const data:any=await llmRes.json().catch(()=>({}));
     const answer=data.choices?.[0]?.message?.content||'Image inspection completed.';
-    return res.json({answer,model:config.ai.momModel,metadata:meta});
+    return res.json({answer,model:config.ai.momModel,metadata:meta,analysisKind:'metadata'});
   }catch(error){
     logger.warn({error:error instanceof Error?error.message:String(error)},'AI vision analysis failed');
     return res.status(502).json({error:{code:'ai_unavailable',message:error instanceof Error?error.message:'AI service unavailable.'}});
@@ -732,6 +734,11 @@ interface GeneratedAsset {
   height: number;
   durationMs: number;
   createdAt: string;
+  operation?: 'generate' | 'remix';
+  sourceAssetId?: string;
+  sourceName?: string;
+  strength?: number;
+  renderKind?: 'generated' | 'vector-preview';
 }
 
 const imageManifestPath = resolve(imageStorageDir, 'manifest.json');
@@ -761,7 +768,12 @@ interface ImageJob {
   cfgScale: number;
   width: number;
   height: number;
-  status: 'queued' | 'processing' | 'completed' | 'failed';
+  status: 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled';
+  operation?: 'generate' | 'remix';
+  sourceAssetId?: string;
+  sourceName?: string;
+  referenceFilename?: string;
+  strength?: number;
   progress: number;
   stageText: string;
   error?: string;
@@ -772,6 +784,8 @@ interface ImageJob {
 }
 
 const imageJobsPath = resolve(imageStorageDir, 'jobs.json');
+const imageReferenceDir = resolve(imageStorageDir, '../references');
+mkdirSync(imageReferenceDir, {recursive:true});
 let imageJobs: ImageJob[] = [];
 try {
   if (existsSync(imageJobsPath)) {
@@ -780,6 +794,10 @@ try {
       if (j.status === 'processing') {
         j.status = 'failed';
         j.error = 'Server restarted while generation was in progress.';
+      }
+      if (['failed','completed','cancelled'].includes(j.status) && j.referenceFilename) {
+        const referencePath = resolve(imageReferenceDir,j.referenceFilename);
+        if (dirname(referencePath) === imageReferenceDir) { try { unlinkSync(referencePath); } catch {} }
       }
     }
   }
@@ -1024,6 +1042,10 @@ app.post('/api/images/enhance-prompt', requireUser, async (req, res) => {
 
 let isProcessingImageQueue = false;
 
+function assertImageJobActive(job: ImageJob) {
+  if (job.status === 'cancelled') throw new Error('Cancelled by user. Result discarded.');
+}
+
 async function executeImageJob(job: ImageJob): Promise<GeneratedAsset> {
   const start = Date.now();
   const id = job.id;
@@ -1037,7 +1059,15 @@ async function executeImageJob(job: ImageJob): Promise<GeneratedAsset> {
   const promptText = styleMod.positive ? `${job.prompt}. ${styleMod.positive}` : job.prompt;
   const negativePromptText = [job.negativePrompt, styleMod.negative].filter(Boolean).join(', ');
 
-  if (config.ai.imageEngineUrl) {
+  if (job.operation === 'remix') {
+    if (!job.referenceFilename) throw new Error('The reference image is missing. Choose it again.');
+    const reference = readFileSync(resolve(imageReferenceDir, job.referenceFilename));
+    generatedPngBuffer = await remixImage(config.ai.imageEngineUrl, {
+      prompt:promptText, negativePrompt:negativePromptText, width:diffDims.width, height:diffDims.height,
+      seed:job.seed, strength:job.strength ?? 0.65, reference
+    });
+    actualDurationMs = Date.now()-start;
+  } else if (config.ai.imageEngineUrl) {
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 600000); // 10 min timeout for CPU diffusion
@@ -1098,6 +1128,8 @@ async function executeImageJob(job: ImageJob): Promise<GeneratedAsset> {
   let filename: string;
   let durationMs: number;
 
+  assertImageJobActive(job);
+
   if (generatedPngBuffer) {
     filename = `asset_${Date.now()}_${id.slice(0, 8)}.png`;
     const filePath = resolve(imageStorageDir, filename);
@@ -1112,10 +1144,11 @@ async function executeImageJob(job: ImageJob): Promise<GeneratedAsset> {
         .sharpen({ sigma: 0.8, m1: 0.8, m2: 0.4 })
         .png({ compressionLevel: 6 })
         .toBuffer();
+      assertImageJobActive(job);
       writeFileSync(filePath, upscaledBuffer);
     } catch (upscaleErr) {
-      // Fallback if sharp fails for any reason
-      writeFileSync(filePath, generatedPngBuffer);
+      // Invalid output must not be stored with misleading format/dimension metadata.
+      throw upscaleErr;
     }
     durationMs = actualDurationMs || (Date.now() - start);
   } else {
@@ -1151,7 +1184,12 @@ async function executeImageJob(job: ImageJob): Promise<GeneratedAsset> {
     width: targetDims.width,
     height: targetDims.height,
     durationMs,
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    operation: job.operation || 'generate',
+    sourceAssetId: job.sourceAssetId,
+    sourceName: job.sourceName,
+    strength: job.strength,
+    renderKind: generatedPngBuffer ? 'generated' : 'vector-preview'
   };
 
   studioAssets.unshift(asset);
@@ -1168,7 +1206,8 @@ async function processImageQueue() {
       if (!nextJob) break;
       if (nextJob.status === 'queued') {
         nextJob.status = 'processing';
-        nextJob.stageText = 'Diffusing with Qwen-Image-2.1-Turbo on 32-core Intel Xeon...';
+        nextJob.startedAt = new Date().toISOString();
+        nextJob.stageText = nextJob.operation === 'remix' ? 'Remixing the reference image…' : 'Creating your image…';
         saveImageJobs();
       }
       try {
@@ -1187,6 +1226,10 @@ async function processImageQueue() {
           nextJob.error = err.message || 'Image synthesis failed.';
           nextJob.completedAt = new Date().toISOString();
           saveImageJobs();
+        }
+      } finally {
+        if (nextJob.referenceFilename) {
+          try { unlinkSync(resolve(imageReferenceDir, nextJob.referenceFilename)); } catch {}
         }
       }
     }
@@ -1236,11 +1279,13 @@ app.post('/api/images/jobs/:id/cancel', requireUser, (req, res) => {
     return res.status(403).json({ error: { code: 'forbidden', message: 'Access denied.' } });
   }
   if (job.status === 'queued' || job.status === 'processing') {
-    job.status = 'failed';
-    job.error = 'Cancelled by user.';
+    const wasQueued = job.status === 'queued';
+    job.status = 'cancelled';
+    job.error = wasQueued ? 'Cancelled before generation started.' : 'Cancelled. The engine may finish computing, but its result will be discarded.';
     job.completedAt = new Date().toISOString();
+    if (wasQueued && job.referenceFilename) { try { unlinkSync(resolve(imageReferenceDir,job.referenceFilename)); } catch {} }
     saveImageJobs();
-    return res.json({ success: true, message: 'Job cancelled.' });
+    return res.json({ success: true, message: job.error });
   }
   return res.json({ success: false, message: `Job is already ${job.status}.` });
 });
@@ -1278,17 +1323,84 @@ app.get('/api/images/prompts/recent', requireUser, (req, res) => {
   return res.json({ prompts });
 });
 
+app.get('/api/images/capabilities', requireUser, async (_req,res) => {
+  res.setHeader('Cache-Control','no-store');
+  return res.json(await probeImageEngine(config.ai.imageEngineUrl,config.ai.imageRemixVerified));
+});
+
+app.post('/api/images/import-url', requireUser, rateLimit({windowMs:60000,limit:20,standardHeaders:true,legacyHeaders:false}), async(req,res)=>{
+  try {
+    const image=await downloadImageUrl(String(req.body?.url||''));
+    res.setHeader('Cache-Control','private, no-store');
+    return res.type('image/png').send(image);
+  } catch(error) {
+    return res.status(error instanceof ImageInputError?error.status:400).json({error:{code:'image_url_unavailable',message:error instanceof ImageInputError?error.message:'The image URL could not be reached. Try another link or upload the image.'}});
+  }
+});
+
+app.post('/api/images/remix', requireUser, async (req,res) => {
+  let referencePath: string | undefined;
+  try {
+    const actor = req.session.user!;
+    if (imageJobs.some(j=>j.userId===actor.id && (j.status==='queued'||j.status==='processing'))) {
+      return res.status(409).json({error:{code:'active_job',message:'An image is already generating. Wait for it or cancel it first.'}});
+    }
+    const contentType = req.header('content-type') || '';
+    if (!contentType.includes('multipart/form-data')) throw new ImageInputError('Upload your reference using multipart form data.');
+    const bytes = await readRequestBuffer(req,21*1048576);
+    const form = await new Response(new Uint8Array(bytes),{headers:{'content-type':contentType}}).formData();
+    const fields = parseRemixFields(form);
+    let sourceBytes: Buffer, sourceMime: string, sourceName: string;
+    if (fields.sourceAssetId) {
+      const source = studioAssets.find(a=>a.id===fields.sourceAssetId);
+      if (!source) throw new ImageInputError('The reference image no longer exists.',404,'reference_missing');
+      if (source.userId !== actor.id && !['admin','dev'].includes(actor.role)) throw new ImageInputError('You do not have access to this reference image.',403,'forbidden');
+      const sourcePath = resolve(imageStorageDir,source.filename);
+      if (dirname(sourcePath) !== imageStorageDir || !existsSync(sourcePath)) throw new ImageInputError('The reference file is unavailable. Choose another image.',404,'reference_missing');
+      sourceBytes = readFileSync(sourcePath); sourceMime = source.filename.endsWith('.svg') ? 'image/svg+xml' : 'image/png'; sourceName = source.filename;
+    } else {
+      sourceBytes = Buffer.from(await fields.image!.arrayBuffer()); sourceMime = fields.image!.type;
+      sourceName = sanitizePrompt(fields.image!.name).slice(0,180);
+    }
+    const reference = await normalizeReference(sourceBytes,sourceMime,!!fields.sourceAssetId);
+    const capabilities = await probeImageEngine(config.ai.imageEngineUrl,config.ai.imageRemixVerified);
+    if (!capabilities.remix) throw new ImageInputError(capabilities.remixMessage,503,'remix_unavailable');
+    // Recheck after asynchronous validation to prevent concurrent submissions racing the queue.
+    if (imageJobs.some(j=>j.userId===actor.id && (j.status==='queued'||j.status==='processing'))) throw new ImageInputError('An image is already generating.',409,'active_job');
+    const id = randomUUID(), referenceFilename = `${id}.png`;
+    referencePath = resolve(imageReferenceDir,referenceFilename); writeFileSync(referencePath,reference);
+    const dims = TARGET_1080P_DIMENSIONS[fields.aspectRatio]!;
+    const job: ImageJob = {id,userId:actor.id,operation:'remix',prompt:sanitizePrompt(fields.prompt),
+      negativePrompt:sanitizePrompt(fields.negativePrompt),style:fields.style,aspectRatio:fields.aspectRatio,
+      sourceAssetId:fields.sourceAssetId || undefined,sourceName,referenceFilename,strength:fields.strength,
+      seed:fields.seed,steps:8,cfgScale:1,width:dims.width,height:dims.height,status:'queued',progress:0,
+      stageText:'Your remix is queued.',startedAt:new Date().toISOString(),estimatedDurationMs:220000};
+    imageJobs.unshift(job); saveImageJobs();
+    referencePath = undefined; // The queue owns reference cleanup from this point.
+    setImmediate(()=>processImageQueue().catch(error=>logger.warn({error:String(error)},'remix queue failed')));
+    const {referenceFilename:_privateReference,...publicJob} = job;
+    return res.status(202).json({status:'accepted',job:publicJob});
+  } catch (error) {
+    if (referencePath) { try { unlinkSync(referencePath); } catch {} }
+    const status = error instanceof ImageInputError ? error.status : String(error).includes('exceeds maximum') ? 413 : 400;
+    return res.status(status).json({error:{code:error instanceof ImageInputError ? error.code : 'remix_request_failed',message:error instanceof Error ? error.message : 'The reference could not be loaded.'}});
+  }
+});
+
 app.post('/api/images/generate', requireUser, async (req, res) => {
   try {
     const prompt = sanitizePrompt(String(req.body?.prompt || '')).trim();
+    if (imageJobs.some(j=>j.userId===req.session.user!.id && (j.status==='queued'||j.status==='processing'))) return res.status(409).json({error:{code:'active_job',message:'An image is already generating. Wait for it or cancel it first.'}});
+    if (prompt.length > 500) return res.status(400).json({error:{code:'invalid_prompt',message:'Keep the prompt within 500 characters.'}});
     if (!prompt) {
       return res.status(400).json({ error: { code: 'missing_prompt', message: 'Prompt is required.' } });
     }
     const negativePrompt = sanitizePrompt(String(req.body?.negativePrompt || '')).trim();
     const style = String(req.body?.style || 'corporate').slice(0, 30);
     const aspectRatio = String(req.body?.aspectRatio || '1:1');
-    const steps = Math.min(Math.max(Number(req.body?.steps) || 4, 1), 20);
-    const cfgScale = Math.min(Math.max(Number(req.body?.cfgScale) || 7.5, 1), 20);
+    if (!STUDIO_STYLES.includes(style) || !STUDIO_RATIOS.includes(aspectRatio)) return res.status(400).json({error:{code:'invalid_settings',message:'Choose a supported style and format.'}});
+    const steps = 8;
+    const cfgScale = 1;
     const rawSeed = Number(req.body?.seed);
     const seed = Number.isInteger(rawSeed) && rawSeed > 0 ? rawSeed : Math.floor(Math.random() * 9000000) + 1000000;
 
@@ -1302,6 +1414,7 @@ app.post('/api/images/generate', requireUser, async (req, res) => {
     const newJob: ImageJob = {
       id,
       userId: req.session.user!.id,
+      operation: 'generate',
       prompt,
       negativePrompt: negativePrompt || undefined,
       style,
@@ -1313,7 +1426,7 @@ app.post('/api/images/generate', requireUser, async (req, res) => {
       height,
       status: 'queued',
       progress: 5,
-      stageText: 'Job queued for Qwen-Image-2.1-Turbo (1080p Full HD)...',
+      stageText: 'Your image is queued.',
       startedAt: new Date().toISOString(),
       estimatedDurationMs: 220000
     };
@@ -1404,13 +1517,20 @@ app.post('/api/images/:id/save-to-knowledge', requireUser, async (req, res) => {
     const id = String(req.params.id);
     const asset = studioAssets.find(a => a.id === id);
     if (!asset) return res.status(404).json({ error: { code: 'not_found', message: 'Asset not found.' } });
+    const actor = req.session.user!;
+    if (asset.userId !== actor.id && !['admin','dev'].includes(actor.role)) return res.status(403).json({error:{code:'forbidden',message:'You do not have access to this image.'}});
     const rawFolder = req.body?.folderId;
     const folderId = typeof rawFolder === 'string' && rawFolder.trim() && rawFolder !== 'null' ? rawFolder.trim() : null;
     const isShared = req.body?.isShared === true || req.body?.isShared === 'true';
+    if (folderId) {
+      const folder = (await repository.listFolders(actor.id,'all')).find(f=>f.id===folderId);
+      if (!folder) return res.status(403).json({error:{code:'forbidden_folder',message:'Choose a folder you can access.'}});
+      if (folder.isShared !== isShared) return res.status(400).json({error:{code:'folder_scope_mismatch',message:'Match sharing to the selected folder, or choose an unfiled destination.'}});
+    }
     const customFilename = sanitizePrompt(String(req.body?.filename || '')).trim();
     const ext = asset.filename.endsWith('.png') ? '.png' : '.svg';
     const finalFilename = customFilename
-      ? (customFilename.endsWith('.svg') || customFilename.endsWith('.png') ? customFilename : `${customFilename}${ext}`)
+      ? `${customFilename.replace(/\.(svg|png|jpe?g|webp)$/i,'')}${ext}`
       : `AI_Visual_${asset.seed}${ext}`;
 
     const sourcePath = resolve(imageStorageDir, asset.filename);
@@ -1444,12 +1564,16 @@ app.get('/api/images/generated/:filename', requireUser, (req, res) => {
   const rawParam = req.params.filename;
   const rawName = Array.isArray(rawParam) ? rawParam[0] : rawParam;
   const filename = sanitizePrompt(String(rawName || '')).replace(/[^a-zA-Z0-9._-]/g, '');
+  const actor = req.session.user!;
+  const asset = studioAssets.find(a=>a.filename===filename);
+  if (!asset) return res.status(404).json({error:{code:'not_found',message:'Generated image not found.'}});
+  if (asset.userId !== actor.id && !['dev','admin'].includes(actor.role)) return res.status(403).json({error:{code:'forbidden',message:'You do not have access to this image.'}});
   const filePath = resolve(imageStorageDir, filename);
   if (!existsSync(filePath)) {
     return res.status(404).json({ error: { code: 'not_found', message: 'Generated image not found.' } });
   }
   res.type(filename.endsWith('.svg') ? 'image/svg+xml' : 'image/png');
-  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.setHeader('Cache-Control', 'private, no-store');
   createReadStream(filePath).pipe(res);
 });
 
@@ -1670,5 +1794,6 @@ app.use(express.static(root,{
 }));
 app.use((error:any,_req:express.Request,res:express.Response,_next:express.NextFunction)=>{logger.error({error:error?.message,stack:error?.stack},'request failed');if(error?.name==='ZodError')return res.status(400).json({error:{code:'invalid_request',message:'Check the submitted meeting details.'}});res.status(error?.message?.includes('Teams')?400:500).json({error:{code:'request_failed',message:error instanceof Error?error.message:'Unexpected server error.'}})});
 const server=app.listen(config.port,'0.0.0.0',()=>logger.info({port:config.port,authMode:config.authMode},'CloudCore AI started'));
+setImmediate(()=>processImageQueue().catch(error=>logger.warn({error:String(error)},'resuming image queue failed')));
 let synchronizing=false;const syncTimer=setInterval(async()=>{if(synchronizing)return;synchronizing=true;try{for(const meeting of await repository.listActiveMeetings())await synchronizeMeeting(meeting).catch(error=>logger.warn({meetingId:meeting.id,error:error instanceof Error?error.message:String(error)},'meeting synchronization failed'))}catch(error){logger.warn({error:error instanceof Error?error.message:String(error)},'active meeting poll failed')}finally{synchronizing=false}},5_000);syncTimer.unref();
 for(const signal of ['SIGTERM','SIGINT'] as const)process.on(signal,()=>{clearInterval(syncTimer);server.close(async()=>{await repository.close();await redisConnection?.quit();process.exit(0)})});
