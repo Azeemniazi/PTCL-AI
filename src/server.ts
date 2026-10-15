@@ -807,13 +807,17 @@ export const BASE_DIFFUSION_DIMENSIONS: Record<string, { width: number; height: 
 };
 
 export const STYLE_PROMPT_MODIFIERS: Record<string, { positive: string; negative: string }> = {
-  corporate: {
-    positive: 'corporate enterprise aesthetic, clean professional composition, natural lighting, sharp clarity, high detail',
-    negative: 'distorted, messy, low contrast, oversaturated, amateurish, blurry'
+  natural: {
+    positive: '',
+    negative: 'blurry, low quality, distorted, oversaturated'
   },
   photoreal: {
     positive: 'photorealistic 8k uhd, sharp focus, dslr photo, 35mm lens, cinematic natural lighting, authentic textures, highly detailed photography',
     negative: 'cgi, cartoon, drawing, painting, illustration, blurry, distorted, grainy, plastic skin, lowres'
+  },
+  corporate: {
+    positive: 'corporate enterprise aesthetic, clean professional composition, natural lighting, sharp clarity, high detail',
+    negative: 'distorted, messy, low contrast, oversaturated, amateurish, blurry'
   },
   diagram: {
     positive: 'technical architecture schematic, system blueprint, clean vector diagram, structured engineering diagram, crisp typography, node connectors',
@@ -1028,9 +1032,9 @@ async function executeImageJob(job: ImageJob): Promise<GeneratedAsset> {
 
   const targetDims = TARGET_1080P_DIMENSIONS[job.aspectRatio] || { width: 1080, height: 1080 };
   const diffDims = BASE_DIFFUSION_DIMENSIONS[job.aspectRatio] || { width: 512, height: 512 };
-  const defaultStyleMod = STYLE_PROMPT_MODIFIERS.corporate || { positive: 'corporate enterprise aesthetic', negative: 'distorted' };
+  const defaultStyleMod = STYLE_PROMPT_MODIFIERS.natural || { positive: '', negative: '' };
   const styleMod = STYLE_PROMPT_MODIFIERS[job.style] || defaultStyleMod;
-  const promptText = `${job.prompt}. ${styleMod.positive}`;
+  const promptText = styleMod.positive ? `${job.prompt}. ${styleMod.positive}` : job.prompt;
   const negativePromptText = [job.negativePrompt, styleMod.negative].filter(Boolean).join(', ');
 
   if (config.ai.imageEngineUrl) {

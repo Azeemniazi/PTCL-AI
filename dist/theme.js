@@ -327,49 +327,36 @@ function refImages() {
 
 function refImageStudio() {
   const styles = [
-    { id: 'corporate', label: 'Corporate Cloud', desc: 'PTCL Green & Teal', icon: 'cloud' },
+    { id: 'natural', label: 'Natural (Raw)', desc: 'Pure unstyled prompt', icon: 'spark' },
     { id: 'photoreal', label: 'Photoreal Studio', desc: 'Cinematic 8K DSLR', icon: 'image' },
+    { id: 'corporate', label: 'Corporate Cloud', desc: 'PTCL Green & Teal', icon: 'cloud' },
     { id: 'diagram', label: 'Tech Diagram', desc: 'Schematic Blueprint', icon: 'grid' },
     { id: 'isometric', label: '3D Isometric', desc: 'Glossy 3D Model', icon: 'box' },
-    { id: 'minimalist', label: 'Minimalist Vector', desc: 'Clean Modern Emblem', icon: 'shield' },
-    { id: 'cyber', label: 'Cyber Tech', desc: 'Neon Fiber & AI', icon: 'signal' }
+    { id: 'cyber', label: 'Cyber Tech', desc: 'Neon Fiber & AI', icon: 'signal' },
+    { id: 'minimalist', label: 'Minimalist Vector', desc: 'Clean Modern Emblem', icon: 'shield' }
   ];
 
   const ratios = [
     { id: '1:1', label: '1:1 Square', boxClass: 'r-1-1' },
     { id: '16:9', label: '16:9 Banner', boxClass: 'r-16-9' },
-    { id: '9:16', label: '9:16 Portrait', boxClass: 'r-9-16' },
+    { id: '9:16', label: '9:16 Story', boxClass: 'r-9-16' },
     { id: '4:3', label: '4:3 Classic', boxClass: 'r-4-3' }
   ];
 
   const header = `
-    <div class="ref-page-heading">
-      <div>
-        <h1>AI Image Studio</h1>
-        <p>Enterprise visual generation, architecture schematics, and optical character analysis.</p>
+    <div class="ref-studio-header">
+      <div class="ref-studio-header-main">
+        <div class="ref-studio-title-row">
+          <h1 class="ref-studio-title">AI Image Studio</h1>
+          <span class="ref-studio-model-badge">
+            <span class="pulse-dot"></span> Qwen-Image-2.1-Turbo • 1080p FHD
+          </span>
+        </div>
+        <p class="ref-studio-desc">Enterprise visual synthesizer for cinematic renders, blueprints, and diagrams.</p>
       </div>
-      <div class="ref-page-heading-tools">
-        <button type="button" class="outline" data-action="studio-tab" data-tab="gallery">${icon('grid')} Library (${studioHistory.length})</button>
-        <button type="button" class="primary" data-action="studio-inspire-prompt">${icon('spark')} Inspire Me</button>
-      </div>
-    </div>
-
-    <div class="ref-knowledge-stats-strip" style="margin-bottom:16px;">
-      <div class="ref-stat-card">
-        <span class="ref-stat-icon">${icon('image')}</span>
-        <div><b>${studioHistory.length}</b><small>Generated Assets</small></div>
-      </div>
-      <div class="ref-stat-card">
-        <span class="ref-stat-icon">${icon('chip')}</span>
-        <div><b>32-Core Xeon</b><small>Intel DL-Boost Active</small></div>
-      </div>
-      <div class="ref-stat-card">
-        <span class="ref-stat-icon">${icon('clock')}</span>
-        <div><b>~2.1s</b><small>Average Latency</small></div>
-      </div>
-      <div class="ref-stat-card">
-        <span class="ref-stat-icon">${icon('shield')}</span>
-        <div><b>On-Premise</b><small>100% Private Cloud</small></div>
+      <div class="ref-studio-header-tools">
+        <button type="button" class="outline small" data-action="studio-open-prompt-history">${icon('history')} History (${(typeof studioRecentPrompts!=='undefined'&&studioRecentPrompts.length)||studioHistory.length})</button>
+        <button type="button" class="primary small" data-action="studio-inspire-prompt">${icon('spark')} Inspire Me</button>
       </div>
     </div>
 
@@ -411,26 +398,11 @@ function refImageStudio() {
           <small id="studio-char-count">${(studioPrompt || '').length}/500</small>
         </div>
         <div class="ref-prompt-container">
-          <textarea class="ref-prompt-input" id="studio-prompt-input" placeholder="Describe the image to generate... e.g. Futuristic optical fiber datacenter with glowing racks and PTCL branding" maxlength="500">${esc(studioPrompt || '')}</textarea>
+          <textarea class="ref-prompt-input" id="studio-prompt-input" placeholder="Describe your visual concept... e.g. Futuristic optical fiber datacenter with glowing green server racks" maxlength="500">${esc(studioPrompt || '')}</textarea>
           <div class="ref-prompt-tools">
             <button type="button" class="ref-prompt-tool-btn" data-action="studio-enhance-prompt">${icon('spark')} AI Enhance</button>
             <button type="button" class="ref-prompt-tool-btn" data-action="studio-inspire-prompt">${icon('bulb')} Inspire Me</button>
             <button type="button" class="ref-prompt-tool-btn" data-action="studio-clear-prompt">${icon('close')} Clear</button>
-          </div>
-        </div>
-
-        <div class="ref-recent-prompts-bar">
-          <div class="ref-recent-prompts-header">
-            <span>${icon('history')} Recent Prompts</span>
-            <button type="button" class="ref-recent-prompt-more-btn" data-action="studio-open-prompt-history">View All (${(typeof studioRecentPrompts!=='undefined'&&studioRecentPrompts.length)||studioHistory.length})</button>
-          </div>
-          <div class="ref-recent-prompts-list">
-            ${((typeof studioRecentPrompts!=='undefined'&&studioRecentPrompts.length>0)?studioRecentPrompts.slice(0,3):studioHistory.slice(0,3)).map(p=>`
-              <button type="button" class="ref-recent-prompt-chip" data-action="studio-use-prompt-text" data-prompt="${esc(p.prompt)}" data-style="${esc(p.style||'corporate')}" data-ratio="${esc(p.aspectRatio||'1:1')}" data-seed="${esc(String(p.seed||''))}" title="${esc(p.prompt)}">
-                <span class="ref-recent-chip-style">${esc((p.style||'corporate').slice(0,4).toUpperCase())}</span>
-                <span class="ref-recent-chip-text">${esc(p.prompt)}</span>
-              </button>
-            `).join('')}
           </div>
         </div>
       </div>
@@ -438,14 +410,13 @@ function refImageStudio() {
       <div class="ref-studio-section">
         <div class="ref-studio-section-title">
           <span>Style Preset</span>
-          <small>${styles.find(s => s.id === studioStyle)?.label || 'Corporate Cloud'}</small>
+          <small>${styles.find(s => s.id === studioStyle)?.label || 'Natural (Raw)'}</small>
         </div>
-        <div class="ref-style-grid">
+        <div class="ref-style-chips">
           ${styles.map(s => `
-            <button type="button" class="ref-style-card ${studioStyle === s.id ? 'active' : ''}" data-action="studio-select-style" data-style="${s.id}">
-              ${icon(s.icon)}
-              <b>${s.label}</b>
-              <small>${s.desc}</small>
+            <button type="button" class="ref-style-chip ${studioStyle === s.id ? 'active' : ''}" data-action="studio-select-style" data-style="${s.id}" title="${s.desc}">
+              <span class="chip-icon">${icon(s.icon)}</span>
+              <span class="chip-label">${s.label}</span>
             </button>
           `).join('')}
         </div>
@@ -468,21 +439,21 @@ function refImageStudio() {
 
       <div class="ref-studio-section">
         <button type="button" class="ref-advanced-toggle" data-action="studio-toggle-advanced">
-          ${icon('sliders')} Advanced Controls ${studioAdvancedOpen ? '▲' : '▼'}
+          ${icon('sliders')} Advanced Controls <span class="ref-toggle-indicator">${studioAdvancedOpen ? '▲' : '▼'}</span>
         </button>
         <div class="ref-advanced-body ${studioAdvancedOpen ? 'open' : ''}">
           <div class="ref-advanced-row">
-            <label for="studio-neg-input"><span>Negative Prompt</span><small>Elements to avoid</small></label>
-            <input type="text" id="studio-neg-input" placeholder="e.g. blurry, low quality, distorted text, watermark" value="${esc(studioNegativePrompt || '')}">
+            <label for="studio-neg-input"><span>Negative Prompt</span><small>Avoid elements</small></label>
+            <input type="text" id="studio-neg-input" placeholder="e.g. blurry, low quality, distorted, watermark" value="${esc(studioNegativePrompt || '')}">
           </div>
           <div class="ref-advanced-row">
             <label for="studio-cfg-range"><span>Guidance Scale (CFG)</span><b>${studioCfgScale}</b></label>
-            <input type="range" min="1" max="15" step="0.5" id="studio-cfg-range" value="${studioCfgScale}">
+            <input type="range" min="1.0" max="7.0" step="0.5" id="studio-cfg-range" value="${studioCfgScale}">
           </div>
           <div class="ref-advanced-row">
-            <label for="studio-seed-input"><span>Seed</span><small>Fixed number for reproducibility</small></label>
+            <label for="studio-seed-input"><span>Seed</span><small>Empty = Random</small></label>
             <div style="display:flex;gap:6px;">
-              <input type="number" id="studio-seed-input" placeholder="Random" value="${esc(studioSeed || '')}" style="flex:1;">
+              <input type="number" id="studio-seed-input" placeholder="Random (Auto)" value="${esc(studioSeed || '')}" style="flex:1;">
               <button type="button" class="outline small" data-action="studio-dice-seed" title="Randomize Seed">🎲</button>
             </div>
           </div>
@@ -490,8 +461,23 @@ function refImageStudio() {
       </div>
 
       <button type="button" class="ref-generate-btn" data-action="studio-generate" ${studioGenerating ? 'disabled' : ''}>
-        ${icon('spark')} ${studioGenerating ? 'Generating on 32-core Xeon…' : 'Generate Image'} <kbd>Ctrl+Enter</kbd>
+        ${icon('spark')} ${studioGenerating ? 'Synthesizing Visual…' : 'Synthesize Visual'} <kbd>Ctrl+Enter</kbd>
       </button>
+
+      <div class="ref-recent-prompts-bar">
+        <div class="ref-recent-prompts-header">
+          <span>${icon('history')} Recent Prompts</span>
+          <button type="button" class="ref-recent-prompt-more-btn" data-action="studio-open-prompt-history">View All (${(typeof studioRecentPrompts!=='undefined'&&studioRecentPrompts.length)||studioHistory.length})</button>
+        </div>
+        <div class="ref-recent-prompts-list">
+          ${((typeof studioRecentPrompts!=='undefined'&&studioRecentPrompts.length>0)?studioRecentPrompts.slice(0,3):studioHistory.slice(0,3)).map(p=>`
+            <button type="button" class="ref-recent-prompt-chip" data-action="studio-use-prompt-text" data-prompt="${esc(p.prompt)}" data-style="${esc(p.style||'natural')}" data-ratio="${esc(p.aspectRatio||'1:1')}" data-seed="${esc(String(p.seed||''))}" title="${esc(p.prompt)}">
+              <span class="ref-recent-chip-style">${esc((p.style||'natural').slice(0,4).toUpperCase())}</span>
+              <span class="ref-recent-chip-text">${esc(p.prompt)}</span>
+            </button>
+          `).join('')}
+        </div>
+      </div>
     </section>
   `;
 
@@ -500,17 +486,21 @@ function refImageStudio() {
       <div class="ref-stage-viewport">
         ${studioGenerating ? `
           <div class="ref-stage-loading-overlay">
-            <div class="ref-pulse-ring"></div>
-            <b style="color:#ffffff;font-size:14px;margin-bottom:4px;">Synthesizing with Qwen-Image-2.1-Turbo…</b>
+            <div class="ref-pulse-wrapper">
+              <div class="ref-pulse-ring"></div>
+              <div class="ref-pulse-ring-outer"></div>
+              <span class="ref-pulse-icon">${icon('spark')}</span>
+            </div>
+            <b class="ref-stage-generating-title">Synthesizing Visual Asset…</b>
             <div class="ref-stage-active-prompt" title="${esc(studioPrompt)}">"${esc(studioPrompt.slice(0, 95))}${studioPrompt.length > 95 ? '…' : ''}"</div>
             <div class="ref-stage-progress-bar">
-              <div class="ref-stage-progress-fill" style="width:${Math.min(96, Math.max(5, Math.round((studioGenTimer / 250) * 100)))}%;"></div>
+              <div class="ref-stage-progress-fill" style="width:${Math.min(96, Math.max(5, Math.round((studioGenTimer / 220) * 100)))}%;"></div>
             </div>
-            <small style="color:#9be680;font-family:monospace;margin-top:6px;">
-              Elapsed: ${studioGenTimer.toFixed(1)}s / ~250s • ${Math.min(96, Math.max(5, Math.round((studioGenTimer / 250) * 100)))}% Synthesized
+            <small class="ref-stage-elapsed">
+              Elapsed: ${studioGenTimer.toFixed(1)}s / ~220s • ${Math.min(96, Math.max(5, Math.round((studioGenTimer / 220) * 100)))}% Synthesized
             </small>
-            <span style="font-size:11px;color:#8fa798;max-width:320px;text-align:center;margin-top:4px;">
-              Diffusion runs in background. You can navigate away or sign out anytime.
+            <span class="ref-stage-subtext">
+              Diffusion runs asynchronously. You can navigate between tabs or sign out anytime.
             </span>
             ${typeof studioActiveJob!=='undefined'&&studioActiveJob?`
               <button type="button" class="ref-cancel-job-btn" data-action="studio-cancel-job" data-id="${esc(studioActiveJob.id)}">Cancel Generation</button>
@@ -519,58 +509,60 @@ function refImageStudio() {
         ` : ''}
 
         ${activeAsset ? `
-          <img class="ref-stage-image" id="studio-stage-img" src="${esc(activeAsset.url)}" alt="${esc(activeAsset.prompt)}">
-          <div class="ref-stage-floating-bar">
-            <a class="soft-button" href="${esc(activeAsset.url)}" download="${esc(activeAsset.filename)}" title="Download Asset">${icon('download')} Download</a>
-            <button type="button" data-action="studio-copy-asset" data-url="${esc(activeAsset.url)}" title="Copy Image Binary">${icon('file')} Copy</button>
-            <span class="sep"></span>
-            <button type="button" data-action="studio-save-knowledge-modal" data-id="${esc(activeAsset.id)}" title="Save directly to Knowledge Hub">${icon('folder')} Save to Hub</button>
-            <button type="button" data-action="studio-inspect-vision" data-url="${esc(activeAsset.url)}" title="Analyze in Vision AI">${icon('spark')} Inspect Vision</button>
-            <button type="button" data-action="studio-remix-active" data-id="${esc(activeAsset.id)}" title="Create Variations">${icon('sliders')} Remix</button>
-            <span class="sep"></span>
-            <button type="button" data-action="studio-lightbox-active" data-url="${esc(activeAsset.url)}" data-prompt="${esc(activeAsset.prompt)}" title="Fullscreen Lightbox">${icon('arrow')} Expand</button>
+          <div class="ref-stage-image-wrapper">
+            <img class="ref-stage-image" id="studio-stage-img" src="${esc(activeAsset.url)}" alt="${esc(activeAsset.prompt)}">
+            <div class="ref-stage-floating-dock">
+              <button type="button" class="ref-dock-btn" data-action="studio-lightbox-active" data-url="${esc(activeAsset.url)}" data-prompt="${esc(activeAsset.prompt)}" title="Fullscreen Lightbox">${icon('arrow')} Expand</button>
+              <a class="ref-dock-btn ref-dock-link" href="${esc(activeAsset.url)}" download="${esc(activeAsset.filename)}" title="Download Full 1080p Image">${icon('download')} Download 1080p</a>
+              <button type="button" class="ref-dock-btn" data-action="studio-copy-asset" data-url="${esc(activeAsset.url)}" title="Copy Image Binary to Clipboard">${icon('file')} Copy</button>
+              <span class="ref-dock-sep"></span>
+              <button type="button" class="ref-dock-btn" data-action="studio-save-knowledge-modal" data-id="${esc(activeAsset.id)}" title="Save directly to Knowledge Hub">${icon('folder')} Save to Hub</button>
+              <button type="button" class="ref-dock-btn" data-action="studio-inspect-vision" data-url="${esc(activeAsset.url)}" title="Inspect in Vision AI & OCR">${icon('spark')} Vision AI</button>
+              <button type="button" class="ref-dock-btn" data-action="studio-remix-active" data-id="${esc(activeAsset.id)}" title="Create Variations / Remix">${icon('sliders')} Remix</button>
+            </div>
           </div>
         ` : `
           <div class="ref-stage-empty">
-            <span class="feature-icon" style="margin:0 auto 12px;">${icon('image')}</span>
-            <h3>Studio Canvas Ready</h3>
-            <p>Describe your visual concept on the left and click <b>Generate Image</b> to create high-definition enterprise assets.</p>
+            <div class="ref-stage-empty-icon">${icon('image')}</div>
+            <h3>Ready for Visual Synthesis</h3>
+            <p>Compose your prompt on the left and click <b>Synthesize Visual</b> (or press <kbd>Ctrl+Enter</kbd>) to render high-definition 1080p assets.</p>
           </div>
         `}
       </div>
 
       ${activeAsset ? `
-        <div class="ref-meta-strip" style="align-items:flex-start;">
-          <div style="flex:1;min-width:0;padding-right:12px;">
-            <div style="font-size:11px;font-weight:600;color:#182820;margin-bottom:3px;display:flex;align-items:center;justify-content:space-between;">
-              <span>Prompt:</span>
+        <div class="ref-meta-strip">
+          <div class="ref-meta-prompt-col">
+            <div class="ref-meta-label-row">
+              <span class="ref-meta-label">Synthesized Prompt</span>
               <button type="button" class="soft-button small" data-action="studio-use-prompt-text" data-prompt="${esc(activeAsset.prompt)}" data-style="${esc(activeAsset.style)}" data-ratio="${esc(activeAsset.aspectRatio)}" data-seed="${esc(String(activeAsset.seed))}">
                 ${icon('spark')} Use This Prompt
               </button>
             </div>
-            <div style="font-size:12px;color:#2f4638;line-height:1.4;">"${esc(activeAsset.prompt)}"</div>
+            <div class="ref-meta-prompt-text">"${esc(activeAsset.prompt)}"</div>
           </div>
-          <div style="font-family:monospace;font-size:10px;white-space:nowrap;color:#2f593b;padding-left:12px;border-left:1px solid #d4ded7;display:flex;flex-direction:column;gap:3px;flex-shrink:0;">
-            <span>SEED: #${activeAsset.seed}</span>
-            <span>${(activeAsset.durationMs / 1000).toFixed(1)}s • ${activeAsset.width}x${activeAsset.height} px</span>
-            <span>${esc((activeAsset.style||'corporate').toUpperCase())}</span>
+          <div class="ref-meta-specs-col">
+            <span class="ref-spec-tag">SEED #${activeAsset.seed}</span>
+            <span class="ref-spec-tag">${activeAsset.width}×${activeAsset.height} px • ${(activeAsset.durationMs / 1000).toFixed(1)}s</span>
+            <span class="ref-spec-tag highlight">${esc((activeAsset.style||'natural').toUpperCase())}</span>
           </div>
         </div>
       ` : ''}
 
       <div class="ref-filmstrip-section">
         <div class="ref-filmstrip-title">
-          <span>Recent Generations Filmstrip</span>
+          <span>Recent Generations Reel</span>
           <small>${studioHistory.length} assets</small>
         </div>
         <div class="ref-filmstrip-rail">
           ${studioHistory.length > 0 ? studioHistory.map(a => `
             <div class="ref-filmstrip-thumb ${activeAsset?.id === a.id ? 'active' : ''}" data-action="studio-load-history-item" data-id="${esc(a.id)}" title="${esc(a.prompt)}">
-              <img src="${esc(a.url)}" alt="${esc(a.prompt)}">
+              <img src="${esc(a.url)}" alt="${esc(a.prompt)}" loading="lazy">
+              <span class="ref-filmstrip-badge">${esc((a.style||'natural').slice(0,3).toUpperCase())}</span>
             </div>
           `).join('') : `
-            <div style="padding:16px;font-size:11px;color:#7a8c80;text-align:center;width:100%;">
-              No generations yet. Create your first image to populate the filmstrip.
+            <div class="ref-filmstrip-empty">
+              No generations yet. Synthesize your first image to build your creation reel.
             </div>
           `}
         </div>
@@ -682,12 +674,13 @@ function refStudioGallery() {
 
   const filterChips = [
     ['all', 'All Assets'],
-    ['corporate', 'Corporate Cloud'],
+    ['natural', 'Natural (Raw)'],
     ['photoreal', 'Photoreal Studio'],
+    ['corporate', 'Corporate Cloud'],
     ['diagram', 'Diagram'],
     ['isometric', '3D Isometric'],
-    ['minimalist', 'Minimalist'],
-    ['cyber', 'Cyber Tech']
+    ['cyber', 'Cyber Tech'],
+    ['minimalist', 'Minimalist']
   ];
 
   return `
@@ -1006,8 +999,12 @@ function refBind() {
   if(typeof bindSettingsForms==='function')bindSettingsForms();
   const studioPromptInput=$('#studio-prompt-input');
   if(studioPromptInput){
+    studioPromptInput.style.height='auto';
+    studioPromptInput.style.height=Math.min(220, Math.max(88, studioPromptInput.scrollHeight))+'px';
     studioPromptInput.oninput=e=>{
       if(typeof studioPrompt!=='undefined')studioPrompt=e.target.value;
+      studioPromptInput.style.height='auto';
+      studioPromptInput.style.height=Math.min(220, Math.max(88, studioPromptInput.scrollHeight))+'px';
       const countEl=$('#studio-char-count');
       if(countEl)countEl.textContent=`${e.target.value.length}/500`;
     };
