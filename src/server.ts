@@ -4,7 +4,8 @@ import { dirname, isAbsolute, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
-import { ImageInputError, normalizeReference, parseRemixFields, probeImageEngine, remixImage, STUDIO_RATIOS, STUDIO_STYLES } from './image-engine.js';
+import { estimateJobDurationMs, ImageInputError, normalizeReference, parseRemixFields, probeImageEngine, remixImage, requestEngineJson, STUDIO_RATIOS, STUDIO_STYLES, TARGET_1080P_DIMENSIONS } from './image-engine.js';
+export { TARGET_1080P_DIMENSIONS, estimateJobDurationMs };
 import { downloadImageUrl } from './image-url.js';
 import express from 'express';
 import session from 'express-session';
@@ -810,12 +811,7 @@ function saveImageJobs() {
   } catch {}
 }
 
-export const TARGET_1080P_DIMENSIONS: Record<string, { width: number; height: number }> = {
-  '16:9': { width: 1920, height: 1080 },
-  '1:1': { width: 1080, height: 1080 },
-  '9:16': { width: 1080, height: 1920 },
-  '4:3': { width: 1440, height: 1080 }
-};
+const activeImageJobControllers = new Map<string, AbortController>();
 
 export const STYLE_PROMPT_MODIFIERS: Record<string, { positive: string; negative: string }> = {
   natural: {
@@ -1039,7 +1035,7 @@ function assertImageJobActive(job: ImageJob) {
   if (job.status === 'cancelled') throw new Error('Cancelled by user. Result discarded.');
 }
 
-async function executeImageJob(job: ImageJob): Promise<GeneratedAsset> {
+async function executeImageJob(job: ImageJob, signal?: AbortSignal): Promise<GeneratedAsset> {
   const start = Date.now();
   const id = job.id;
   let generatedPngBuffer: Buffer | null = null;
@@ -1055,65 +1051,49 @@ async function executeImageJob(job: ImageJob): Promise<GeneratedAsset> {
     if (!job.referenceFilename) throw new Error('The reference image is missing. Choose it again.');
     const reference = readFileSync(resolve(imageReferenceDir, job.referenceFilename));
     generatedPngBuffer = await remixImage(config.ai.imageEngineUrl, {
-      prompt:promptText, negativePrompt:negativePromptText, width:targetDims.width, height:targetDims.height,
-      seed:job.seed, strength:job.strength ?? 0.65, reference
-    });
-    actualDurationMs = Date.now()-start;
+      prompt: promptText,
+      negativePrompt: negativePromptText,
+      width: targetDims.width,
+      height: targetDims.height,
+      seed: job.seed,
+      strength: job.strength ?? 0.65,
+      reference
+    }, signal);
+    actualDurationMs = Date.now() - start;
   } else if (config.ai.imageEngineUrl) {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 1800000); // 30 min timeout for native 1080p CPU diffusion
+    const engineRes = await requestEngineJson(`${config.ai.imageEngineUrl}/sdapi/v1/txt2img`, {
+      method: 'POST',
+      body: {
+        prompt: promptText,
+        negative_prompt: negativePromptText || undefined,
+        width: targetDims.width,
+        height: targetDims.height,
+        steps: 8,
+        cfg_scale: 1.0,
+        seed: job.seed
+      },
+      timeoutMs: 3600000,
+      signal
+    });
 
-      // Native 1080p standard txt2img endpoint
-      let engineRes: any = await fetch(`${config.ai.imageEngineUrl}/sdapi/v1/txt2img`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: promptText,
-          negative_prompt: negativePromptText || undefined,
-          width: targetDims.width,
-          height: targetDims.height,
-          steps: 8,
-          cfg_scale: 1.0,
-          seed: job.seed
-        }),
-        signal: controller.signal
-      }).catch(() => null);
-
-      // 2. If 404 or failed, try legacy /generate endpoint
-      if (!engineRes || engineRes.status === 404) {
-        engineRes = await fetch(`${config.ai.imageEngineUrl}/generate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prompt: promptText,
-            negative_prompt: negativePromptText || undefined,
-            width: targetDims.width,
-            height: targetDims.height,
-            steps: 8,
-            guidance_scale: 1.0,
-            seed: job.seed
-          }),
-          signal: controller.signal
-        }).catch(() => null);
+    if (engineRes.ok && engineRes.data) {
+      const data: any = engineRes.data;
+      if (Array.isArray(data.images) && data.images.length > 0) {
+        generatedPngBuffer = Buffer.from(data.images[0].replace(/^data:image\/[^;]+;base64,/, ''), 'base64');
+        actualDurationMs = Date.now() - start;
+      } else if (data.b64_json) {
+        generatedPngBuffer = Buffer.from(data.b64_json.replace(/^data:image\/[^;]+;base64,/, ''), 'base64');
+        actualDurationMs = Number(data.duration_ms) || (Date.now() - start);
+      } else if (Array.isArray(data.data) && data.data[0]?.b64_json) {
+        generatedPngBuffer = Buffer.from(data.data[0].b64_json.replace(/^data:image\/[^;]+;base64,/, ''), 'base64');
+        actualDurationMs = Date.now() - start;
       }
+    }
 
-      clearTimeout(timeout);
-      if (engineRes && engineRes.ok) {
-        const data: any = await engineRes.json();
-        if (Array.isArray(data.images) && data.images.length > 0) {
-          generatedPngBuffer = Buffer.from(data.images[0], 'base64');
-          actualDurationMs = Date.now() - start;
-        } else if (data.b64_json) {
-          generatedPngBuffer = Buffer.from(data.b64_json, 'base64');
-          actualDurationMs = Number(data.duration_ms) || (Date.now() - start);
-        } else if (Array.isArray(data.data) && data.data[0]?.b64_json) {
-          generatedPngBuffer = Buffer.from(data.data[0].b64_json, 'base64');
-          actualDurationMs = Date.now() - start;
-        }
-      }
-    } catch (engineErr) {
-      logger.info({ err: engineErr instanceof Error ? engineErr.message : String(engineErr) }, 'Image engine call skipped or offline, using vector fallback');
+    if (!generatedPngBuffer) {
+      const errMsg = (engineRes.data && engineRes.data.error)
+        || (engineRes.status ? `Image engine returned status ${engineRes.status}` : 'Image engine synthesis failed.');
+      throw new Error(errMsg);
     }
   }
 
@@ -1209,8 +1189,10 @@ async function processImageQueue() {
         nextJob.stageText = nextJob.operation === 'remix' ? 'Remixing the reference image…' : 'Creating your image…';
         saveImageJobs();
       }
+      const jobController = new AbortController();
+      activeImageJobControllers.set(nextJob.id, jobController);
       try {
-        const asset = await executeImageJob(nextJob);
+        const asset = await executeImageJob(nextJob, jobController.signal);
         if (nextJob.status === 'processing') {
           nextJob.status = 'completed';
           nextJob.progress = 100;
@@ -1227,6 +1209,7 @@ async function processImageQueue() {
           saveImageJobs();
         }
       } finally {
+        activeImageJobControllers.delete(nextJob.id);
         if (nextJob.referenceFilename) {
           try { unlinkSync(resolve(imageReferenceDir, nextJob.referenceFilename)); } catch {}
         }
@@ -1282,6 +1265,11 @@ app.post('/api/images/jobs/:id/cancel', requireUser, (req, res) => {
     job.status = 'cancelled';
     job.error = wasQueued ? 'Cancelled before generation started.' : 'Cancelled. The engine may finish computing, but its result will be discarded.';
     job.completedAt = new Date().toISOString();
+    const controller = activeImageJobControllers.get(id);
+    if (controller) {
+      try { controller.abort(); } catch {}
+      activeImageJobControllers.delete(id);
+    }
     if (wasQueued && job.referenceFilename) { try { unlinkSync(resolve(imageReferenceDir,job.referenceFilename)); } catch {} }
     saveImageJobs();
     return res.json({ success: true, message: job.error });
@@ -1373,7 +1361,7 @@ app.post('/api/images/remix', requireUser, async (req,res) => {
       negativePrompt:sanitizePrompt(fields.negativePrompt),style:fields.style,aspectRatio:fields.aspectRatio,
       sourceAssetId:fields.sourceAssetId || undefined,sourceName,referenceFilename,strength:fields.strength,
       seed:fields.seed,steps:8,cfgScale:1,width:dims.width,height:dims.height,status:'queued',progress:0,
-      stageText:'Your remix is queued.',startedAt:new Date().toISOString(),estimatedDurationMs:1250000};
+      stageText:'Your remix is queued.',startedAt:new Date().toISOString(),estimatedDurationMs:estimateJobDurationMs(fields.aspectRatio)};
     imageJobs.unshift(job); saveImageJobs();
     referencePath = undefined; // The queue owns reference cleanup from this point.
     setImmediate(()=>processImageQueue().catch(error=>logger.warn({error:String(error)},'remix queue failed')));
@@ -1427,7 +1415,7 @@ app.post('/api/images/generate', requireUser, async (req, res) => {
       progress: 5,
       stageText: 'Your image is queued.',
       startedAt: new Date().toISOString(),
-      estimatedDurationMs: 1250000
+      estimatedDurationMs: estimateJobDurationMs(aspectRatio)
     };
 
     imageJobs.unshift(newJob);

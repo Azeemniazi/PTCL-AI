@@ -155,3 +155,57 @@ test('AI Image Studio: job queue lifecycle and cancellation tracking', async () 
   assert.equal(getActiveJob('test-user'), null);
 });
 
+test('AI Image Studio: estimateJobDurationMs and requestEngineJson', async () => {
+  const { estimateJobDurationMs, requestEngineJson } = await import('../build/image-engine.js');
+  const { createServer } = await import('node:http');
+  const { once } = await import('node:events');
+
+  assert.equal(estimateJobDurationMs('16:9'), 2400000);
+  assert.equal(estimateJobDurationMs('9:16'), 2400000);
+  assert.equal(estimateJobDurationMs('4:3'), 1700000);
+  assert.equal(estimateJobDurationMs('1:1'), 1250000);
+
+  // Test requestEngineJson against a local mock HTTP server
+  const server = createServer(async (req, res) => {
+    if (req.url === '/sdapi/v1/txt2img') {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      if (parsed.prompt === 'fail') {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'GPU fault' }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ images: ['dGVzdA=='] }));
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const port = server.address().port;
+
+  try {
+    const successRes = await requestEngineJson(`http://127.0.0.1:${port}/sdapi/v1/txt2img`, {
+      method: 'POST',
+      body: { prompt: 'A sunny beach' }
+    });
+    assert.equal(successRes.ok, true);
+    assert.equal(successRes.status, 200);
+    assert.deepEqual(successRes.data, { images: ['dGVzdA=='] });
+
+    const failRes = await requestEngineJson(`http://127.0.0.1:${port}/sdapi/v1/txt2img`, {
+      method: 'POST',
+      body: { prompt: 'fail' }
+    });
+    assert.equal(failRes.ok, false);
+    assert.equal(failRes.status, 500);
+    assert.equal(failRes.data.error, 'GPU fault');
+  } finally {
+    server.close();
+  }
+});
+
