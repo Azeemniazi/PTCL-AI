@@ -178,15 +178,16 @@ function selectRecentTranscript(clean:TranscriptSegment[], question = ''):string
 }
 
 function buildMeetingPrompt(meetingTitle:string,attendees:string[],transcriptText:string):string{
-  return `You are an intelligent, executive AI Meeting Assistant for "${meetingTitle}".
+  return `You are CloudCore AI, an exceptionally sharp, intelligent Meeting Assistant for "${meetingTitle}".
 Attendees: ${attendees.length?attendees.join(', '):'Meeting participants'}.
 
-Formatting and Tone Instructions:
-1. Always complete your thoughts, sentences, and bullet points fully—never stop mid-sentence. Keep standard answers focused and well-structured (around 150-300 words) using clean Markdown (**bold headings** and bullet points), or provide a full, detailed breakdown when requested.
-2. Quote or attribute important statements to specific speakers with their [mm:ss] timestamps when available.
-3. If the user asks "what is he saying?", "what are they talking about?", or asks for a summary, provide a structured breakdown of the discussion topics, who spoke, and key conclusions.
-4. If the transcript contains Urdu, Pakistani English, or Roman Urdu, translate and interpret it into natural, professional English or clear Roman text. Never use Hindi / Devanagari script.
-5. If a requested detail was not discussed or is absent from the transcript, state what is known from the meeting versus what was not mentioned.
+Core Guidelines:
+1. Adaptive Depth & Conciseness: Match your response length directly to what the user asks. For quick facts, basic questions, or simple status checks (e.g., "Did Azeem join?", "What was the agreed date?", "Who spoke last?"), answer directly in 1-3 crisp, natural sentences. Avoid unnecessary filler or padding. Only provide comprehensive breakdowns, structured sections, or full summaries when the user asks for them (e.g., "Summarize the meeting", "What are all action items?").
+2. Natural, Intelligent Partner (Not Scripted): Speak like a knowledgeable, sharp human colleague. Never sound like a scripted corporate robot. Skip fluff openers like "Certainly! I would be glad to help with that" and get straight to the answer.
+3. Speaker Attribution & Timestamps: Attribute statements to specific speakers with their [mm:ss] timestamp whenever relevant from the transcript.
+4. Discussion Overviews: When asked "what is he saying?", "what are they talking about?", or for meeting progress, provide a concise, high-signal breakdown of topics, who spoke, and key takeaways.
+5. Multilingual & Cultural Understanding: Accurately understand English, Urdu, Pakistani English, and Roman Urdu. Respond in clear, professional English or natural Roman Urdu as appropriate. Never use Hindi / Devanagari script.
+6. Factual Integrity: Ground all answers in the verified transcript below. Never invent attendees, statements, or decisions. If a detail was not discussed or is absent, state plainly what is known versus what wasn't mentioned.
 
 Verified chronological meeting transcript:
 ---
@@ -247,7 +248,7 @@ export async function askMeetingAssistant(transcript:TranscriptSegment[],attende
 
   const body={
     model:config.ai.momModel||'qwen2.5-7b',
-    temperature:0.2,
+    temperature:0.35,
     max_tokens:resolveReplyMaxTokens(question),
     cache_prompt:true,
     messages:[
@@ -299,7 +300,7 @@ export async function* askMeetingAssistantStream(transcript:TranscriptSegment[],
       headers:buildAiHeaders({'content-type':'application/json'}),
       body:JSON.stringify({
         model:config.ai.momModel||'qwen2.5-7b',
-        temperature:0.2,
+        temperature:0.35,
         max_tokens:resolveReplyMaxTokens(question),
         cache_prompt:true,
         stream:true,

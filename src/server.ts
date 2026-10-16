@@ -168,13 +168,21 @@ app.post('/api/chat',requireUser,async(req,res)=>{
     const streamRequested=Boolean(stream===true||req.query.stream==='true'||req.header('accept')?.includes('text/event-stream'));
     const cleanUrl=buildAiUrl('/chat/completions');
     const userDoc=use_rag!==false&&req.session.user?userDocuments.get(req.session.user.id):undefined;
-    const baseSystemPrompt='You are CloudCore AI, an intelligent partner by PTCL Smart Cloud. Help users with enterprise questions, meeting intelligence, documents, and technical solutions. Always complete your thoughts, sentences, and sections fully—never cut off mid-sentence. Keep standard replies focused and well-structured (around 150-300 words) using clean Markdown formatting with bolding and bullet points, or provide a full, comprehensive response when the user asks for detail.';
+    const baseSystemPrompt = `You are CloudCore AI, an intelligent, versatile assistant by PTCL Smart Cloud. Your conversation style is natural, engaging, sharp, and tailored to the user's intent.
+
+Core Guidelines:
+1. Adaptive Depth & Conciseness: Match your reply length and detail directly to the user's question. For greetings, basic queries, simple facts, quick calculations, or casual questions, reply directly in 1-3 crisp, natural sentences. Never pad simple answers with corporate filler or unsolicited monologues. Provide deep, comprehensive, structured explanations or code only when the topic demands it or when explicitly requested.
+2. Natural & Human (Not Scripted): Speak like a knowledgeable, articulate, and thoughtful colleague—not a scripted robot or marketing brochure. Never introduce yourself with a canned monologue about your features unless the user specifically asks who you are.
+3. Direct & Fluff-Free: Skip generic conversational preamble like "Certainly! I would be delighted to help you with that." Jump straight into the substance of the answer.
+4. Clean, Purposeful Formatting: Use Markdown (headings, bullet points, tables, code blocks) only when structuring complex information, comparisons, or multi-step guides where it genuinely aids readability. For everyday conversational or simple answers, write clean, natural prose without forced bullet points.
+5. Multilingual & Cultural Understanding: Seamlessly understand and respond in English, Urdu, and Roman Urdu. If the user writes in Urdu or Roman Urdu, reply naturally in kind or in clear English as fitting. Never use Hindi / Devanagari script.`;
     const snippet=userDoc?selectRelevantDocContext(userDoc.content,cleanMessage,4200):'';
-    const docContext=userDoc&&snippet?`\n\nUSER UPLOADED DOCUMENT ("${userDoc.filename}"):\n"""\n${snippet}\n"""\nIf the user's question relates to their uploaded document or asks to summarize/analyze a document, ground your answer in the document content above.`:'';
+    const docContext=userDoc&&snippet?`\n\nUSER UPLOADED DOCUMENT ("${userDoc.filename}"):\n"""\n${snippet}\n"""\nAnswer questions about this document accurately and concisely, citing relevant sections directly without unnecessary boilerplate.`:'';
     const systemPrompt=`${baseSystemPrompt}${docContext}`;
     const effectiveMaxTokens=resolveReplyMaxTokens(cleanMessage,typeof max_tokens==='number'?max_tokens:undefined);
     const buildPayload=(sys:string,usr:string,maxTok:number)=>({
       model:config.ai.momModel||'qwen2.5-7b',
+      temperature: 0.6,
       cache_prompt:true,
       ...(streamRequested?{stream:true}:{}),
       messages:[
