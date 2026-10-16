@@ -160,10 +160,10 @@ test('AI Image Studio: estimateJobDurationMs and requestEngineJson', async () =>
   const { createServer } = await import('node:http');
   const { once } = await import('node:events');
 
-  assert.equal(estimateJobDurationMs('16:9'), 2400000);
-  assert.equal(estimateJobDurationMs('9:16'), 2400000);
-  assert.equal(estimateJobDurationMs('4:3'), 1700000);
-  assert.equal(estimateJobDurationMs('1:1'), 1250000);
+  assert.equal(estimateJobDurationMs('16:9'), 950000);
+  assert.equal(estimateJobDurationMs('9:16'), 950000);
+  assert.equal(estimateJobDurationMs('4:3'), 700000);
+  assert.equal(estimateJobDurationMs('1:1'), 480000);
 
   // Test requestEngineJson against a local mock HTTP server
   const server = createServer(async (req, res) => {

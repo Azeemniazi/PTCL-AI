@@ -229,13 +229,14 @@ export function tryFastMeetingAnswer(clean: TranscriptSegment[], attendees: stri
   return undefined;
 }
 
-export async function askMeetingAssistant(transcript:TranscriptSegment[],attendees:string[],question:string,meetingTitle='Meeting'):Promise<string>{
+export async function askMeetingAssistant(transcript:TranscriptSegment[],attendees:string[],question:string,meetingTitle='Meeting',history?:Array<{role:'user'|'assistant';content:string}>):Promise<string>{
   const clean=transcript.filter(s=>s.text.trim());
   const fast = tryFastMeetingAnswer(clean, attendees, question);
   if (fast) return fast;
 
+  const hasHistory = Array.isArray(history) && history.length > 0;
   const cacheKey = getMeetingCacheKey(meetingTitle, clean, question);
-  const cached = meetingQaCache.get(cacheKey);
+  const cached = !hasHistory ? meetingQaCache.get(cacheKey) : undefined;
   if (cached) return cached;
 
   if(!config.ai.baseUrl){
@@ -245,6 +246,7 @@ export async function askMeetingAssistant(transcript:TranscriptSegment[],attende
   }
   const transcriptText=selectRecentTranscript(clean, question);
   const systemPrompt=buildMeetingPrompt(meetingTitle,attendees,transcriptText);
+  const prevTurns = Array.isArray(history) ? history.slice(-8) : [];
 
   const body={
     model:config.ai.momModel||'qwen2.5-7b',
@@ -253,6 +255,7 @@ export async function askMeetingAssistant(transcript:TranscriptSegment[],attende
     cache_prompt:true,
     messages:[
       {role:'system',content:systemPrompt},
+      ...prevTurns,
       {role:'user',content:question}
     ]
   };
@@ -263,33 +266,35 @@ export async function askMeetingAssistant(transcript:TranscriptSegment[],attende
     const answer=payload.choices?.[0]?.message?.content;
     if(!answer||typeof answer!=='string')throw new Error('No answer returned from AI model.');
     const trimmed = answer.trim();
-    saveMeetingCache(cacheKey, trimmed);
+    if (!hasHistory) saveMeetingCache(cacheKey, trimmed);
     return trimmed;
   } finally {
     endLiveChat();
   }
 }
 
-export async function* askMeetingAssistantStream(transcript:TranscriptSegment[],attendees:string[],question:string,meetingTitle='Meeting'):AsyncGenerator<string,void,unknown>{
+export async function* askMeetingAssistantStream(transcript:TranscriptSegment[],attendees:string[],question:string,meetingTitle='Meeting',history?:Array<{role:'user'|'assistant';content:string}>):AsyncGenerator<string,void,unknown>{
   const clean=transcript.filter(s=>s.text.trim());
   const fast = tryFastMeetingAnswer(clean, attendees, question);
   if (fast) {
     yield fast;
     return;
   }
+  const hasHistory = Array.isArray(history) && history.length > 0;
   const cacheKey = getMeetingCacheKey(meetingTitle, clean, question);
-  const cached = meetingQaCache.get(cacheKey);
+  const cached = !hasHistory ? meetingQaCache.get(cacheKey) : undefined;
   if (cached) {
     yield cached;
     return;
   }
   if(!config.ai.baseUrl){
-    const fallback=await askMeetingAssistant(transcript,attendees,question,meetingTitle);
+    const fallback=await askMeetingAssistant(transcript,attendees,question,meetingTitle,history);
     yield fallback;
     return;
   }
   const transcriptText=selectRecentTranscript(clean, question);
   const systemPrompt=buildMeetingPrompt(meetingTitle,attendees,transcriptText);
+  const prevTurns = Array.isArray(history) ? history.slice(-8) : [];
 
   const cleanUrl=buildAiUrl('/chat/completions');
 
@@ -306,6 +311,7 @@ export async function* askMeetingAssistantStream(transcript:TranscriptSegment[],
         stream:true,
         messages:[
           {role:'system',content:systemPrompt},
+          ...prevTurns,
           {role:'user',content:question}
         ]
       })

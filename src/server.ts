@@ -161,10 +161,23 @@ export {
 app.post('/api/chat',requireUser,async(req,res)=>{
   try{
     if(!config.ai.baseUrl)return res.status(503).json({error:{code:'ai_disconnected',message:'Internal AI service is not configured.'}});
-    const {message,max_tokens,stream=false,use_rag=true}=req.body??{};
+    const {message,history,messages:clientMessages,max_tokens,stream=false,use_rag=true}=req.body??{};
     if(!message||typeof message!=='string')return res.status(400).json({error:{code:'invalid_request',message:'Message is required.'}});
     const cleanMessage=sanitizePrompt(message).slice(0,8000);
     if(!cleanMessage)return res.status(400).json({error:{code:'invalid_request',message:'Valid message is required.'}});
+
+    const rawHistory = Array.isArray(history) ? history : Array.isArray(clientMessages) ? clientMessages : [];
+    const cleanHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+    for (const item of rawHistory) {
+      if (item && (item.role === 'user' || item.role === 'assistant') && typeof item.content === 'string') {
+        const text = sanitizePrompt(item.content).trim();
+        if (text && !text.startsWith('This is the CloudCore AI frontend preview')) {
+          cleanHistory.push({ role: item.role, content: text.slice(0, 3000) });
+        }
+      }
+    }
+    const contextHistory = cleanHistory.slice(-12);
+
     const streamRequested=Boolean(stream===true||req.query.stream==='true'||req.header('accept')?.includes('text/event-stream'));
     const cleanUrl=buildAiUrl('/chat/completions');
     const userDoc=use_rag!==false&&req.session.user?userDocuments.get(req.session.user.id):undefined;
@@ -172,21 +185,25 @@ app.post('/api/chat',requireUser,async(req,res)=>{
 
 Core Guidelines:
 1. Adaptive Depth & Conciseness: Match your reply length and detail directly to the user's question. For greetings, basic queries, simple facts, quick calculations, or casual questions, reply directly in 1-3 crisp, natural sentences. Never pad simple answers with corporate filler or unsolicited monologues. Provide deep, comprehensive, structured explanations or code only when the topic demands it or when explicitly requested.
-2. Natural & Human (Not Scripted): Speak like a knowledgeable, articulate, and thoughtful colleague—not a scripted robot or marketing brochure. Never introduce yourself with a canned monologue about your features unless the user specifically asks who you are.
-3. Direct & Fluff-Free: Skip generic conversational preamble like "Certainly! I would be delighted to help you with that." Jump straight into the substance of the answer.
-4. Clean, Purposeful Formatting: Use Markdown (headings, bullet points, tables, code blocks) only when structuring complex information, comparisons, or multi-step guides where it genuinely aids readability. For everyday conversational or simple answers, write clean, natural prose without forced bullet points.
-5. Multilingual & Cultural Understanding: Seamlessly understand and respond in English, Urdu, and Roman Urdu. If the user writes in Urdu or Roman Urdu, reply naturally in kind or in clear English as fitting. Never use Hindi / Devanagari script.`;
+2. Context Awareness & Multi-Turn Memory: Actively track and maintain conversational context from preceding turns. When the user gives a follow-up (e.g. a vehicle model year like "2022 model city aspire", a clarification, a pronoun like "it", or a location), connect it seamlessly to what was discussed previously. Never reset context, ask what topic they want to discuss, or act as if the conversation just started if a topic was already established.
+3. Regional & Pakistan Context: Accurately understand Pakistani markets, automotive models (e.g., Honda Atlas trims like City Aspire, Civic Oriel/RS; Indus Motor / Toyota Corolla Altis Grande, Yaris ATIV X; Pak Suzuki Swift GLX, Cultus, Alto), local cities, dealerships (e.g. 3S dealerships), and enterprise landscape. Do not confuse Pakistani vehicles or services with Indian or global markets.
+4. Factual Accuracy & Anti-Hallucination: Ground your statements in verified facts. If a local trim or model is specific to a market, recognize it. Never falsely claim a real vehicle, trim, or concept "does not exist". If you need clarification on an ambiguous specification, ask politely without dismissing the user.
+5. Natural & Human (Not Scripted): Speak like a knowledgeable, articulate, and thoughtful colleague—not a scripted robot or marketing brochure. Never introduce yourself with a canned monologue about your features unless the user specifically asks who you are.
+6. Direct & Fluff-Free: Skip generic conversational preamble like "Certainly! I would be delighted to help you with that." Jump straight into the substance of the answer.
+7. Clean, Purposeful Formatting: Use Markdown (headings, bullet points, tables, code blocks) only when structuring complex information, comparisons, or multi-step guides where it genuinely aids readability. For everyday conversational or simple answers, write clean, natural prose without forced bullet points.
+8. Multilingual & Cultural Understanding: Seamlessly understand and respond in English, Urdu, and Roman Urdu. If the user writes in Urdu or Roman Urdu, reply naturally in kind or in clear English as fitting. Never use Hindi / Devanagari script.`;
     const snippet=userDoc?selectRelevantDocContext(userDoc.content,cleanMessage,4200):'';
     const docContext=userDoc&&snippet?`\n\nUSER UPLOADED DOCUMENT ("${userDoc.filename}"):\n"""\n${snippet}\n"""\nAnswer questions about this document accurately and concisely, citing relevant sections directly without unnecessary boilerplate.`:'';
     const systemPrompt=`${baseSystemPrompt}${docContext}`;
     const effectiveMaxTokens=resolveReplyMaxTokens(cleanMessage,typeof max_tokens==='number'?max_tokens:undefined);
     const buildPayload=(sys:string,usr:string,maxTok:number)=>({
       model:config.ai.momModel||'qwen2.5-7b',
-      temperature: 0.6,
+      temperature: 0.5,
       cache_prompt:true,
       ...(streamRequested?{stream:true}:{}),
       messages:[
         {role:'system',content:sys},
+        ...contextHistory,
         {role:'user',content:usr}
       ],
       max_tokens:maxTok
@@ -1742,6 +1759,18 @@ app.post('/api/meetings/:id/chat',requireUser,async(req,res,next)=>{try{
   const explicitNonStream=req.query.stream==='false'||req.body?.stream===false;
   const streamRequested=!explicitNonStream&&(req.query.stream==='true'||req.body?.stream===true||!req.header('accept')?.includes('application/json')||req.header('accept')?.includes('text/event-stream'));
 
+  const rawHistory = Array.isArray(req.body?.history) ? req.body.history : Array.isArray(req.body?.messages) ? req.body.messages : [];
+  const cleanHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+  for (const item of rawHistory) {
+    if (item && (item.role === 'user' || item.role === 'assistant') && typeof item.content === 'string') {
+      const text = sanitizePrompt(item.content).trim();
+      if (text) {
+        cleanHistory.push({ role: item.role, content: text.slice(0, 3000) });
+      }
+    }
+  }
+  const contextHistory = cleanHistory.slice(-8);
+
   if(streamRequested){
     res.setHeader('content-type','text/event-stream; charset=utf-8');
     res.setHeader('cache-control','no-cache, no-transform');
@@ -1752,7 +1781,7 @@ app.post('/api/meetings/:id/chat',requireUser,async(req,res,next)=>{try{
     res.write(': stream-start\n\n');
     let fullAnswer='';
     try{
-      for await(const delta of askMeetingAssistantStream(meeting.transcript||[],attendees,query,meeting.title)){
+      for await(const delta of askMeetingAssistantStream(meeting.transcript||[],attendees,query,meeting.title,contextHistory)){
         fullAnswer+=delta;
         res.write(`data: ${JSON.stringify({delta,full:fullAnswer})}\n\n`);
       }
@@ -1765,7 +1794,7 @@ app.post('/api/meetings/:id/chat',requireUser,async(req,res,next)=>{try{
     return;
   }
 
-  const answer=await askMeetingAssistant(meeting.transcript||[],attendees,query,meeting.title);
+  const answer=await askMeetingAssistant(meeting.transcript||[],attendees,query,meeting.title,contextHistory);
   res.json({query,answer,timestamp:new Date().toISOString()});
 }catch(error){next(error)}});
 
