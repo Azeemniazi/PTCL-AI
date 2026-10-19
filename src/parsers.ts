@@ -19,70 +19,77 @@ export function extractZipEntries(bytes: Buffer): Map<string, Buffer> {
   const entries = new Map<string, Buffer>();
   if (bytes.length < 22) return entries;
 
-  // 1. Scan Central Directory headers (0x02014b50)
-  let cdOffset = 0;
-  while (cdOffset + 46 <= bytes.length) {
-    if (bytes.readUInt32LE(cdOffset) !== 0x02014b50) {
-      cdOffset++;
-      continue;
-    }
-    const compression = bytes.readUInt16LE(cdOffset + 10);
-    const compressedSize = bytes.readUInt32LE(cdOffset + 20);
-    const nameLen = bytes.readUInt16LE(cdOffset + 28);
-    const extraLen = bytes.readUInt16LE(cdOffset + 30);
-    const commentLen = bytes.readUInt16LE(cdOffset + 32);
-    const localHeaderOffset = bytes.readUInt32LE(cdOffset + 42);
-    const nameStart = cdOffset + 46;
-    if (nameStart + nameLen > bytes.length) break;
-    const entryName = bytes.subarray(nameStart, nameStart + nameLen).toString('utf8');
-
-    if (compressedSize > 0 && localHeaderOffset + 30 <= bytes.length && bytes.readUInt32LE(localHeaderOffset) === 0x04034b50) {
-      const localNameLen = bytes.readUInt16LE(localHeaderOffset + 26);
-      const localExtraLen = bytes.readUInt16LE(localHeaderOffset + 28);
-      const dataStart = localHeaderOffset + 30 + localNameLen + localExtraLen;
-      const dataEnd = Math.min(bytes.length, dataStart + compressedSize);
-      if (dataStart < dataEnd) {
-        try {
-          const slice = bytes.subarray(dataStart, dataEnd);
-          const raw = compression === 0 ? slice : compression === 8 ? inflateRawSync(slice) : null;
-          if (raw) entries.set(entryName, raw);
-        } catch {
-          // Ignore malformed zip entry
-        }
-      }
-    }
-    const nextOffset = nameStart + nameLen + extraLen + commentLen;
-    cdOffset = nextOffset > cdOffset ? nextOffset : cdOffset + 46;
-  }
-
-  // 2. Fallback scan of Local File Headers (0x04034b50) for non-central-directory archives
-  if (entries.size === 0) {
-    let offset = 0;
-    while (offset + 30 <= bytes.length) {
-      if (bytes.readUInt32LE(offset) !== 0x04034b50) {
-        offset++;
+  try {
+    // 1. Scan Central Directory headers (0x02014b50)
+    let cdOffset = 0;
+    let cdIterations = 0;
+    const maxIterations = 20000;
+    while (cdOffset + 46 <= bytes.length && cdIterations++ < maxIterations && entries.size < 500) {
+      if (bytes.readUInt32LE(cdOffset) !== 0x02014b50) {
+        cdOffset++;
         continue;
       }
-      const compression = bytes.readUInt16LE(offset + 8);
-      const compressedSize = bytes.readUInt32LE(offset + 18);
-      const nameLen = bytes.readUInt16LE(offset + 26);
-      const extraLen = bytes.readUInt16LE(offset + 28);
-      const nameStart = offset + 30;
-      const dataStart = nameStart + nameLen + extraLen;
-      if (dataStart > bytes.length) break;
+      const compression = bytes.readUInt16LE(cdOffset + 10);
+      const compressedSize = bytes.readUInt32LE(cdOffset + 20);
+      const nameLen = bytes.readUInt16LE(cdOffset + 28);
+      const extraLen = bytes.readUInt16LE(cdOffset + 30);
+      const commentLen = bytes.readUInt16LE(cdOffset + 32);
+      const localHeaderOffset = bytes.readUInt32LE(cdOffset + 42);
+      const nameStart = cdOffset + 46;
+      if (nameStart + nameLen > bytes.length) break;
       const entryName = bytes.subarray(nameStart, nameStart + nameLen).toString('utf8');
-      const dataEnd = Math.min(bytes.length, dataStart + compressedSize);
-      if (!entries.has(entryName) && compressedSize > 0) {
-        try {
-          const slice = bytes.subarray(dataStart, dataEnd);
-          const raw = compression === 0 ? slice : compression === 8 ? inflateRawSync(slice) : null;
-          if (raw) entries.set(entryName, raw);
-        } catch {
-          // Ignore malformed entry
+
+      if (compressedSize > 0 && localHeaderOffset >= 0 && localHeaderOffset + 30 <= bytes.length && bytes.readUInt32LE(localHeaderOffset) === 0x04034b50) {
+        const localNameLen = bytes.readUInt16LE(localHeaderOffset + 26);
+        const localExtraLen = bytes.readUInt16LE(localHeaderOffset + 28);
+        const dataStart = localHeaderOffset + 30 + localNameLen + localExtraLen;
+        const dataEnd = Math.min(bytes.length, dataStart + compressedSize);
+        if (dataStart < dataEnd) {
+          try {
+            const slice = bytes.subarray(dataStart, dataEnd);
+            const raw = compression === 0 ? slice : compression === 8 ? inflateRawSync(slice) : null;
+            if (raw) entries.set(entryName, raw);
+          } catch {
+            // Ignore malformed zip entry
+          }
         }
       }
-      offset = dataEnd > offset ? dataEnd : offset + 30;
+      const nextOffset = nameStart + nameLen + extraLen + commentLen;
+      cdOffset = nextOffset > cdOffset ? nextOffset : cdOffset + 46;
     }
+
+    // 2. Fallback scan of Local File Headers (0x04034b50) for non-central-directory archives
+    if (entries.size === 0) {
+      let offset = 0;
+      let localIterations = 0;
+      while (offset + 30 <= bytes.length && localIterations++ < maxIterations && entries.size < 500) {
+        if (bytes.readUInt32LE(offset) !== 0x04034b50) {
+          offset++;
+          continue;
+        }
+        const compression = bytes.readUInt16LE(offset + 8);
+        const compressedSize = bytes.readUInt32LE(offset + 18);
+        const nameLen = bytes.readUInt16LE(offset + 26);
+        const extraLen = bytes.readUInt16LE(offset + 28);
+        const nameStart = offset + 30;
+        const dataStart = nameStart + nameLen + extraLen;
+        if (dataStart > bytes.length) break;
+        const entryName = bytes.subarray(nameStart, nameStart + nameLen).toString('utf8');
+        const dataEnd = Math.min(bytes.length, dataStart + compressedSize);
+        if (!entries.has(entryName) && compressedSize > 0) {
+          try {
+            const slice = bytes.subarray(dataStart, dataEnd);
+            const raw = compression === 0 ? slice : compression === 8 ? inflateRawSync(slice) : null;
+            if (raw) entries.set(entryName, raw);
+          } catch {
+            // Ignore malformed entry
+          }
+        }
+        offset = dataEnd > offset ? dataEnd : offset + 30;
+      }
+    }
+  } catch {
+    // Return whatever entries were extracted safely
   }
 
   return entries;
@@ -285,51 +292,64 @@ export function parseXlsxSheets(bytes: Buffer): { name: string; totalRows: numbe
 }
 
 export function extractPdfText(bytes: Buffer): string {
-  const rawLatin = bytes.toString('latin1');
-  const chunks: string[] = [];
-  const streamRegex = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
-  let match: RegExpExecArray | null;
-  while ((match = streamRegex.exec(rawLatin)) !== null && chunks.length < 200) {
-    const rawStream = match[1] ?? '';
-    const streamBytes = Buffer.from(rawStream, 'latin1');
-    let decoded = '';
-    try {
-      decoded = inflateSync(streamBytes).toString('latin1');
-    } catch {
-      decoded = rawStream;
+  try {
+    const rawLatin = bytes.toString('latin1');
+    const chunks: string[] = [];
+    const streamRegex = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
+    let match: RegExpExecArray | null;
+    let streamCount = 0;
+    while ((match = streamRegex.exec(rawLatin)) !== null && chunks.length < 200 && streamCount++ < 300) {
+      const rawStream = match[1] ?? '';
+      const streamBytes = Buffer.from(rawStream, 'latin1');
+      let decoded = '';
+      try {
+        decoded = inflateSync(streamBytes).toString('latin1');
+      } catch {
+        decoded = rawStream;
+      }
+      const strMatches = decoded.match(/\(([^()\\]|\\.)*\)/g);
+      if (strMatches) {
+        const line = strMatches
+          .map(s => s.slice(1, -1).replace(/\\([()\\])/g, '$1').replace(/\\n/g, '\n'))
+          .filter(s => /[a-zA-Z]{2,}/.test(s) && !/[^\x20-\x7E\n\r\t]/.test(s))
+          .join(' ');
+        if (line.trim()) chunks.push(line.trim());
+      }
     }
-    const strMatches = decoded.match(/\(([^()\\]|\\.)*\)/g);
-    if (strMatches) {
-      const line = strMatches
-        .map(s => s.slice(1, -1).replace(/\\([()\\])/g, '$1').replace(/\\n/g, '\n'))
-        .filter(s => /[a-zA-Z]{2,}/.test(s) && !/[^\x20-\x7E\n\r\t]/.test(s))
-        .join(' ');
-      if (line.trim()) chunks.push(line.trim());
-    }
+    if (chunks.length > 0) return chunks.join('\n').slice(0, 24000);
+    const readablePhrases = rawLatin.match(/\b[A-Za-z][A-Za-z0-9,.;:'"?!()\- ]{12,}\b/g) ?? [];
+    const filtered = readablePhrases.filter(p => !/\b(obj|endobj|stream|endstream|xref|FlateDecode|Filter|Length|Type|Font|Page|Parent|Resources)\b/.test(p));
+    return filtered.join('\n').slice(0, 24000).trim();
+  } catch {
+    return '';
   }
-  if (chunks.length > 0) return chunks.join('\n').slice(0, 24000);
-  const readablePhrases = rawLatin.match(/\b[A-Za-z][A-Za-z0-9,.;:'"?!()\- ]{12,}\b/g) ?? [];
-  const filtered = readablePhrases.filter(p => !/\b(obj|endobj|stream|endstream|xref|FlateDecode|Filter|Length|Type|Font|Page|Parent|Resources)\b/.test(p));
-  return filtered.join('\n').slice(0, 24000).trim();
 }
 
 export function extractDocumentText(filename: string, bytes: Buffer): string {
-  const lower = filename.toLowerCase();
-  if (/\.(txt|md|csv|json|log)$/i.test(lower)) {
-    return bytes.toString('utf8').slice(0, 24000).trim();
+  try {
+    const lower = filename.toLowerCase();
+    if (/\.(txt|md|csv|json|log|xml|yaml|yml|tsv|html|htm|css|js|ts|py|sh|sql|ini|conf|env)$/i.test(lower)) {
+      return bytes.toString('utf8').slice(0, 24000).trim();
+    }
+    if (bytes.length >= 4 && bytes.readUInt32LE(0) === 0x04034b50) {
+      try {
+        const zipText = extractZipXmlText(bytes);
+        if (zipText) return zipText.slice(0, 24000);
+      } catch {}
+      return `Uploaded Office document "${filename}" (${Math.max(1, Math.round(bytes.length / 1024))} KB).`;
+    }
+    if (lower.endsWith('.pdf') || (bytes.length >= 5 && bytes.subarray(0, 5).toString('ascii') === '%PDF-')) {
+      try {
+        const pdfText = extractPdfText(bytes);
+        if (pdfText) return pdfText.slice(0, 24000);
+      } catch {}
+      return `Uploaded PDF document "${filename}" (${Math.max(1, Math.round(bytes.length / 1024))} KB).`;
+    }
+    const readablePhrases = bytes.toString('utf8').match(/\b[A-Za-z][A-Za-z0-9,.;:'"?!()\- ]{10,}\b/g) ?? [];
+    return readablePhrases.join('\n').slice(0, 12000).trim();
+  } catch {
+    return `Uploaded document "${filename}" (${Math.max(1, Math.round(bytes.length / 1024))} KB).`;
   }
-  if (bytes.length >= 4 && bytes.readUInt32LE(0) === 0x04034b50) {
-    const zipText = extractZipXmlText(bytes);
-    if (zipText) return zipText.slice(0, 24000);
-    return `Uploaded Office document "${filename}" (${Math.max(1, Math.round(bytes.length / 1024))} KB).`;
-  }
-  if (lower.endsWith('.pdf') || bytes.subarray(0, 5).toString('ascii') === '%PDF-') {
-    const pdfText = extractPdfText(bytes);
-    if (pdfText) return pdfText.slice(0, 24000);
-    return `Uploaded PDF document "${filename}" (${Math.max(1, Math.round(bytes.length / 1024))} KB).`;
-  }
-  const readablePhrases = bytes.toString('utf8').match(/\b[A-Za-z][A-Za-z0-9,.;:'"?!()\- ]{10,}\b/g) ?? [];
-  return readablePhrases.join('\n').slice(0, 12000).trim();
 }
 
 export function selectRelevantDocContext(content: string, query: string, maxChars = 4200): string {

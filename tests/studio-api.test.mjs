@@ -86,6 +86,6 @@ test('studio API integrates remix, ownership, cancellation, output formats and a
     if(child.exitCode===null){const exited=once(child,'exit');child.kill();await exited;}
     await new Promise(r=>{engine.close(r);engine.closeAllConnections();});
     assert.ok(resolve(temp).startsWith(resolve(tmpdir(),'cloudcore-studio-')),'Only remove this test’s temporary directory');
-    rmSync(temp,{recursive:true,force:true});
+    rmSync(temp,{recursive:true,force:true,maxRetries:10,retryDelay:100});
   }
 });

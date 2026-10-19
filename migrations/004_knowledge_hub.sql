@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS knowledge_folders (
 );
 
 CREATE INDEX IF NOT EXISTS knowledge_folders_user_idx ON knowledge_folders(user_id);
+CREATE INDEX IF NOT EXISTS knowledge_folders_parent_idx ON knowledge_folders(parent_id);
 CREATE INDEX IF NOT EXISTS knowledge_folders_shared_idx ON knowledge_folders(is_shared, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS knowledge_documents (

@@ -67,7 +67,7 @@ export function isAuthorizedAudioHost(targetHost:string):boolean{
   return Boolean(targetHost&&(targetHost===vexaHost||(s3Host&&targetHost===s3Host)));
 }
 
-class VexaEngine implements MeetingEngine {
+export class VexaEngine implements MeetingEngine {
   private headers(extra:HeadersInit={}){return {'content-type':'application/json','x-api-key':config.vexa.apiKey,...extra}}
   private async response(path:string,init:RequestInit={}){
     const response=await fetch(`${config.vexa.baseUrl}${path}`,{...init,headers:this.headers(init.headers)});
@@ -116,7 +116,32 @@ class VexaEngine implements MeetingEngine {
     }
     const response=await fetch(targetUrl.href,{headers});if(!response.ok)throw new Error(`Meeting audio returned ${response.status}.`);return response;
   }
-  async screenshot(_engineId:string):Promise<Response|undefined>{
+  async screenshot(engineId:string):Promise<Response|undefined>{
+    if(process.env.SCREENSHOT_SERVICE_URL){
+      try{
+        const customResp=await fetch(process.env.SCREENSHOT_SERVICE_URL,{signal:AbortSignal.timeout(4000)});
+        if(customResp.ok)return customResp;
+      }catch{}
+    }
+    if(config.vexa.baseUrl&&config.vexa.apiKey&&engineId){
+      try{
+        const native=vexaNativeMeetingId(engineId);
+        const endpoints=[
+          `${config.vexa.baseUrl}/bots/teams/${encodeURIComponent(native)}/screenshot`,
+          `${config.vexa.baseUrl}/bots/teams/${encodeURIComponent(native)}/screen-share`,
+          `${config.vexa.baseUrl}/bots/teams/${encodeURIComponent(native)}/screen`
+        ];
+        for(const ep of endpoints){
+          try{
+            const upstream=await fetch(ep,{
+              headers:{'x-api-key':config.vexa.apiKey},
+              signal:AbortSignal.timeout(3500)
+            });
+            if(upstream.ok)return upstream;
+          }catch{}
+        }
+      }catch{}
+    }
     const primaryPort = (config.vexa.baseUrl.includes(':8056') || config.nodeEnv === 'production') ? '8057' : '18058';
     try{
       const response=await fetch(`http://127.0.0.1:${primaryPort}/screenshot`,{signal:AbortSignal.timeout(4000)});

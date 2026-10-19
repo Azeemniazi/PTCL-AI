@@ -23,7 +23,7 @@ import { purgeMeetingContent } from './cleanup.js';
 import { encryptMeetingUrl, hashPassword, sanitizePrompt } from './crypto.js';
 import { meetingEngine, reconcileMeetingStatus, TEAMS_BOT_NAME, vexaEngineId } from './engine.js';
 import { clearMomInFlight, enqueue, isMomInFlight, markMomInFlight, redisConnection } from './jobs.js';
-import { activeStatuses, type Meeting, type MeetingStatus, type User, type Role } from './models.js';
+import { activeStatuses, type Meeting, type MeetingStatus, type User, type Role, type GeneratedAsset, type ImageJob } from './models.js';
 import { repository } from './repository.js';
 import { createMeetingSchema, momSchema, validateTeamsUrl } from './validation.js';
 
@@ -380,7 +380,7 @@ app.delete('/api/knowledge/folders/:id', requireUser, async (req, res) => {
     if (cascade && folderDocs.length > 0) {
       for (const d of folderDocs) {
         try {
-          const fullPath = resolve(knowledgeStorageDir, d.storagePath);
+          const fullPath = isAbsolute(d.storagePath) ? d.storagePath : resolve(knowledgeStorageDir, d.storagePath);
           if (existsSync(fullPath)) unlinkSync(fullPath);
         } catch {}
       }
@@ -420,11 +420,18 @@ app.post('/api/knowledge/upload', requireUser, async (req, res) => {
     if (!contentType.includes('multipart/form-data')) {
       return res.status(400).json({ error: { code: 'invalid_content_type', message: 'Multipart form data is required.' } });
     }
-    const rawBuffer = await readRequestBuffer(req, 100 * 1048576);
+
+    let rawBuffer: Buffer;
+    try {
+      rawBuffer = await readRequestBuffer(req, 250 * 1048576);
+    } catch (sizeErr: any) {
+      return res.status(413).json({ error: { code: 'payload_too_large', message: sizeErr?.message || 'Upload exceeds maximum allowed size (250 MB).' } });
+    }
+
     const formData = await new Response(new Uint8Array(rawBuffer), { headers: { 'content-type': contentType } }).formData();
 
     const rawFolderId = formData.get('folderId');
-    const folderId = (typeof rawFolderId === 'string' && rawFolderId.trim() && rawFolderId !== 'null') ? rawFolderId.trim() : null;
+    const baseFolderId = (typeof rawFolderId === 'string' && rawFolderId.trim() && rawFolderId !== 'null') ? rawFolderId.trim() : null;
     const rawIsShared = formData.get('isShared');
     const isShared = rawIsShared === 'false' ? false : true;
 
@@ -436,39 +443,100 @@ app.post('/api/knowledge/upload', requireUser, async (req, res) => {
       return res.status(400).json({ error: { code: 'no_files', message: 'No valid files provided in upload.' } });
     }
 
+    // Relative paths array sent alongside files (e.g. "Folder/Sub/doc.pdf" or "doc.pdf")
+    const rawPaths = [...formData.getAll('paths'), ...formData.getAll('relativePaths')].map(p => typeof p === 'string' ? p : '');
+
+    // Cache of resolved folder hierarchies to avoid redundant DB queries within this batch
+    const folderCache = new Map<string, string | null>();
+
     const uploadedDocs = [];
-    for (const entry of entries) {
-      const filename = sanitizePrompt(entry.name).slice(0, 200) || 'document.txt';
-      const fileBytes = Buffer.from(await entry.arrayBuffer());
-      const ext = filename.split('.').pop()?.toLowerCase() || 'bin';
-      const docId = randomUUID();
-      const storageFilename = `${docId}.${ext}`;
-      const storagePath = resolve(knowledgeStorageDir, storageFilename);
+    const failedDocs: Array<{ filename: string; reason: string }> = [];
 
-      writeFileSync(storagePath, fileBytes);
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
+      if (!entry) continue;
+      const entryRawName = typeof entry.name === 'string' ? entry.name : 'document.bin';
+      const rawPath = rawPaths[i];
+      const relPath = (rawPath && typeof rawPath === 'string' && rawPath.trim()) ? rawPath.trim() : entryRawName;
 
-      const extractedText = extractDocumentText(filename, fileBytes) || '';
-      const tokenCount = Math.round(extractedText.split(/\s+/).filter(Boolean).length * 1.3);
+      try {
+        // Resolve nested folder hierarchy if relative path contains directories
+        const normalizedPath = relPath.replace(/\\/g, '/').replace(/^\/+/, '');
+        const pathSegments = normalizedPath.split('/').filter(Boolean);
+        const leafFilename = pathSegments.pop() || entryRawName;
+        const dirSegments = pathSegments;
 
-      const doc = await repository.createDocument({
-        userId: req.session.user!.id,
-        folderId,
-        filename,
-        mimeType: entry.type || 'application/octet-stream',
-        sizeBytes: fileBytes.length,
-        storagePath: storageFilename,
-        isShared,
-        status: 'ready',
-        extractedText,
-        tokenCount
-      });
-      uploadedDocs.push(doc);
+        let targetFolderId = baseFolderId;
+        if (dirSegments.length > 0) {
+          const cacheKey = `${baseFolderId || 'root'}::${dirSegments.join('/')}`;
+          if (folderCache.has(cacheKey)) {
+            targetFolderId = folderCache.get(cacheKey)!;
+          } else {
+            targetFolderId = await repository.findOrCreateFolderHierarchy(
+              req.session.user!.id,
+              dirSegments,
+              baseFolderId,
+              isShared
+            );
+            folderCache.set(cacheKey, targetFolderId);
+          }
+        }
+
+        const cleanLeaf = sanitizePrompt(leafFilename).slice(0, 200) || 'document.txt';
+        const fileBytes = Buffer.from(await entry.arrayBuffer());
+        const rawExt = cleanLeaf.split('.').pop() || 'bin';
+        const ext = rawExt.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 16) || 'bin';
+        const docId = randomUUID();
+        const storageFilename = `${docId}.${ext}`;
+        const storagePath = resolve(knowledgeStorageDir, storageFilename);
+
+        writeFileSync(storagePath, fileBytes);
+
+        let extractedText = '';
+        try {
+          extractedText = extractDocumentText(cleanLeaf, fileBytes) || '';
+        } catch {
+          extractedText = `Uploaded document "${cleanLeaf}" (${Math.max(1, Math.round(fileBytes.length / 1024))} KB).`;
+        }
+
+        const tokenCount = Math.round(extractedText.split(/\s+/).filter(Boolean).length * 1.3);
+
+        const doc = await repository.createDocument({
+          userId: req.session.user!.id,
+          folderId: targetFolderId,
+          filename: cleanLeaf,
+          mimeType: entry.type || 'application/octet-stream',
+          sizeBytes: fileBytes.length,
+          storagePath: storageFilename,
+          isShared,
+          status: 'ready',
+          extractedText,
+          tokenCount
+        });
+        uploadedDocs.push(doc);
+      } catch (fileErr: any) {
+        logger.warn({ error: fileErr?.message, filename: entryRawName }, 'Failed to process single file during upload');
+        failedDocs.push({ filename: entryRawName, reason: fileErr?.message || 'Processing failed' });
+      }
     }
 
-    return res.status(201).json({ uploaded: uploadedDocs });
-  } catch (err) {
+    if (uploadedDocs.length === 0 && failedDocs.length > 0) {
+      return res.status(400).json({
+        error: { code: 'upload_failed', message: `All ${failedDocs.length} files failed to upload: ${failedDocs.map(f => f.filename + ' (' + f.reason + ')').join(', ')}` },
+        failed: failedDocs
+      });
+    }
+
+    return res.status(201).json({
+      uploaded: uploadedDocs,
+      failed: failedDocs,
+      total: entries.length,
+      successCount: uploadedDocs.length,
+      failedCount: failedDocs.length
+    });
+  } catch (err: any) {
     logger.warn({ error: err instanceof Error ? err.message : String(err) }, 'Knowledge Hub upload failed');
-    return res.status(500).json({ error: { code: 'upload_failed', message: 'Failed to process document upload.' } });
+    return res.status(500).json({ error: { code: 'upload_failed', message: err?.message || 'Failed to process document upload.' } });
   }
 });
 
@@ -745,29 +813,6 @@ Provide a concise, well-structured Markdown inspection report covering:
   }
 });
 
-interface GeneratedAsset {
-  id: string;
-  userId: string;
-  url: string;
-  filename: string;
-  prompt: string;
-  negativePrompt?: string;
-  style: string;
-  aspectRatio: string;
-  seed: number;
-  steps: number;
-  cfgScale: number;
-  width: number;
-  height: number;
-  durationMs: number;
-  createdAt: string;
-  operation?: 'generate' | 'remix';
-  sourceAssetId?: string;
-  sourceName?: string;
-  strength?: number;
-  renderKind?: 'generated' | 'vector-preview';
-}
-
 const imageManifestPath = resolve(imageStorageDir, 'manifest.json');
 let studioAssets: GeneratedAsset[] = [];
 try {
@@ -781,33 +826,6 @@ function saveStudioManifest() {
   try {
     writeFileSync(imageManifestPath, JSON.stringify(studioAssets.slice(0, 200), null, 2), 'utf8');
   } catch {}
-}
-
-interface ImageJob {
-  id: string;
-  userId: string;
-  prompt: string;
-  negativePrompt?: string;
-  style: string;
-  aspectRatio: string;
-  seed: number;
-  steps: number;
-  cfgScale: number;
-  width: number;
-  height: number;
-  status: 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled';
-  operation?: 'generate' | 'remix';
-  sourceAssetId?: string;
-  sourceName?: string;
-  referenceFilename?: string;
-  strength?: number;
-  progress: number;
-  stageText: string;
-  error?: string;
-  asset?: GeneratedAsset;
-  startedAt: string;
-  completedAt?: string;
-  estimatedDurationMs: number;
 }
 
 const imageJobsPath = resolve(imageStorageDir, 'jobs.json');
@@ -836,6 +854,12 @@ function saveImageJobs() {
     writeFileSync(imageJobsPath, JSON.stringify(imageJobs.slice(0, 100), null, 2), 'utf8');
   } catch {}
 }
+
+// Seed existing assets and jobs into repository for multi-instance distributed persistence
+void repository.seedImageAssetsAndJobs(studioAssets, imageJobs).catch(err => {
+  logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'Seeding studio assets and jobs notice');
+});
+void repository.resetStaleImageJobs().catch(() => {});
 
 const activeImageJobControllers = new Map<string, AbortController>();
 
@@ -1212,6 +1236,7 @@ async function executeImageJob(job: ImageJob, signal?: AbortSignal): Promise<Gen
     renderKind: generatedPngBuffer ? 'generated' : 'vector-preview'
   };
 
+  await repository.saveGeneratedAsset(asset);
   studioAssets.unshift(asset);
   saveStudioManifest();
   return asset;
@@ -1222,12 +1247,19 @@ async function processImageQueue() {
   isProcessingImageQueue = true;
   try {
     while (true) {
-      const nextJob = imageJobs.find(j => j.status === 'queued' || j.status === 'processing');
+      const nextJob = (await repository.getNextQueuedImageJob()) || imageJobs.find(j => j.status === 'queued' || j.status === 'processing');
       if (!nextJob) break;
       if (nextJob.status === 'queued') {
         nextJob.status = 'processing';
         nextJob.startedAt = new Date().toISOString();
         nextJob.stageText = nextJob.operation === 'remix' ? 'Remixing the reference image…' : 'Creating your image…';
+        await repository.updateImageJob(nextJob.id, {
+          status: 'processing',
+          startedAt: nextJob.startedAt,
+          stageText: nextJob.stageText
+        });
+        const memJob = imageJobs.find(j => j.id === nextJob.id);
+        if (memJob) { memJob.status = 'processing'; memJob.startedAt = nextJob.startedAt; memJob.stageText = nextJob.stageText; }
         saveImageJobs();
       }
       const jobController = new AbortController();
@@ -1240,6 +1272,15 @@ async function processImageQueue() {
           nextJob.stageText = 'Visual synthesis completed.';
           nextJob.asset = asset;
           nextJob.completedAt = new Date().toISOString();
+          await repository.updateImageJob(nextJob.id, {
+            status: 'completed',
+            progress: 100,
+            stageText: nextJob.stageText,
+            asset,
+            completedAt: nextJob.completedAt
+          });
+          const memJob = imageJobs.find(j => j.id === nextJob.id);
+          if (memJob) { memJob.status = 'completed'; memJob.progress = 100; memJob.stageText = nextJob.stageText; memJob.asset = asset; memJob.completedAt = nextJob.completedAt; }
           saveImageJobs();
         }
       } catch (err: any) {
@@ -1247,6 +1288,13 @@ async function processImageQueue() {
           nextJob.status = 'failed';
           nextJob.error = err.message || 'Image synthesis failed.';
           nextJob.completedAt = new Date().toISOString();
+          await repository.updateImageJob(nextJob.id, {
+            status: 'failed',
+            error: nextJob.error,
+            completedAt: nextJob.completedAt
+          });
+          const memJob = imageJobs.find(j => j.id === nextJob.id);
+          if (memJob) { memJob.status = 'failed'; memJob.error = nextJob.error; memJob.completedAt = nextJob.completedAt; }
           saveImageJobs();
         }
       } finally {
@@ -1261,9 +1309,13 @@ async function processImageQueue() {
   }
 }
 
-app.get('/api/images/jobs/active', requireUser, (req, res) => {
+app.get('/api/images/jobs/active', requireUser, async (req, res) => {
   const userId = req.session.user!.id;
   const isPrivileged = ['dev', 'admin'].includes(req.session.user!.role);
+  const activeState = await repository.getActiveImageJob(userId, isPrivileged);
+  if (activeState.activeJob || activeState.recentCompleted) {
+    return res.json(activeState);
+  }
   const activeJob = imageJobs.find(j => (j.status === 'processing' || j.status === 'queued') && (isPrivileged || j.userId === userId));
   const recentCompleted = !activeJob ? imageJobs.find(j => j.status === 'completed' && (isPrivileged || j.userId === userId) && (Date.now() - new Date(j.completedAt || j.startedAt).getTime() < 30000)) : null;
   return res.json({
@@ -1275,11 +1327,11 @@ app.get('/api/images/jobs/active', requireUser, (req, res) => {
   });
 });
 
-app.get('/api/images/jobs/:id', requireUser, (req, res) => {
+app.get('/api/images/jobs/:id', requireUser, async (req, res) => {
   const id = String(req.params.id);
   const userId = req.session.user!.id;
   const isPrivileged = ['dev', 'admin'].includes(req.session.user!.role);
-  const job = imageJobs.find(j => j.id === id);
+  const job = (await repository.getImageJob(id)) || imageJobs.find(j => j.id === id);
   if (!job) return res.status(404).json({ error: { code: 'not_found', message: 'Image job not found.' } });
   if (!isPrivileged && job.userId !== userId) {
     return res.status(403).json({ error: { code: 'forbidden', message: 'Access denied.' } });
@@ -1292,11 +1344,11 @@ app.get('/api/images/jobs/:id', requireUser, (req, res) => {
   });
 });
 
-app.post('/api/images/jobs/:id/cancel', requireUser, (req, res) => {
+app.post('/api/images/jobs/:id/cancel', requireUser, async (req, res) => {
   const id = String(req.params.id);
   const userId = req.session.user!.id;
   const isPrivileged = ['dev', 'admin'].includes(req.session.user!.role);
-  const job = imageJobs.find(j => j.id === id);
+  const job = (await repository.getImageJob(id)) || imageJobs.find(j => j.id === id);
   if (!job) return res.status(404).json({ error: { code: 'not_found', message: 'Image job not found.' } });
   if (!isPrivileged && job.userId !== userId) {
     return res.status(403).json({ error: { code: 'forbidden', message: 'Access denied.' } });
@@ -1306,6 +1358,17 @@ app.post('/api/images/jobs/:id/cancel', requireUser, (req, res) => {
     job.status = 'cancelled';
     job.error = wasQueued ? 'Cancelled before generation started.' : 'Cancelled. Generation stopped and engine reset.';
     job.completedAt = new Date().toISOString();
+    await repository.updateImageJob(id, {
+      status: 'cancelled',
+      error: job.error,
+      completedAt: job.completedAt
+    });
+    const memJob = imageJobs.find(j => j.id === id);
+    if (memJob) {
+      memJob.status = 'cancelled';
+      memJob.error = job.error;
+      memJob.completedAt = job.completedAt;
+    }
     const controller = activeImageJobControllers.get(id);
     if (controller) {
       try { controller.abort(); } catch {}
@@ -1324,12 +1387,14 @@ app.post('/api/images/jobs/:id/cancel', requireUser, (req, res) => {
   return res.json({ success: false, message: `Job is already ${job.status}.` });
 });
 
-app.get('/api/images/prompts/recent', requireUser, (req, res) => {
+app.get('/api/images/prompts/recent', requireUser, async (req, res) => {
   const userId = req.session.user!.id;
   const isPrivileged = ['dev', 'admin'].includes(req.session.user!.role);
+  const prompts = await repository.listRecentPrompts(userId, isPrivileged, 25);
+  if (prompts.length > 0) return res.json({ prompts });
   const userAssets = studioAssets.filter(a => isPrivileged || a.userId === userId);
   const seen = new Set<string>();
-  const prompts: Array<{
+  const fallbackPrompts: Array<{
     id: string;
     prompt: string;
     style: string;
@@ -1342,7 +1407,7 @@ app.get('/api/images/prompts/recent', requireUser, (req, res) => {
     const key = a.prompt.trim().toLowerCase();
     if (!seen.has(key)) {
       seen.add(key);
-      prompts.push({
+      fallbackPrompts.push({
         id: a.id,
         prompt: a.prompt,
         style: a.style,
@@ -1351,10 +1416,10 @@ app.get('/api/images/prompts/recent', requireUser, (req, res) => {
         url: a.url,
         createdAt: a.createdAt
       });
-      if (prompts.length >= 25) break;
+      if (fallbackPrompts.length >= 25) break;
     }
   }
-  return res.json({ prompts });
+  return res.json({ prompts: fallbackPrompts });
 });
 
 app.get('/api/images/capabilities', requireUser, async (_req,res) => {
@@ -1376,7 +1441,7 @@ app.post('/api/images/remix', requireUser, async (req,res) => {
   let referencePath: string | undefined;
   try {
     const actor = req.session.user!;
-    if (imageJobs.some(j=>j.userId===actor.id && (j.status==='queued'||j.status==='processing'))) {
+    if ((await repository.hasActiveJobForUser(actor.id)) || imageJobs.some(j=>j.userId===actor.id && (j.status==='queued'||j.status==='processing'))) {
       return res.status(409).json({error:{code:'active_job',message:'An image is already generating. Wait for it or cancel it first.'}});
     }
     const contentType = req.header('content-type') || '';
@@ -1386,7 +1451,7 @@ app.post('/api/images/remix', requireUser, async (req,res) => {
     const fields = parseRemixFields(form);
     let sourceBytes: Buffer, sourceMime: string, sourceName: string;
     if (fields.sourceAssetId) {
-      const source = studioAssets.find(a=>a.id===fields.sourceAssetId);
+      const source = (await repository.getGeneratedAsset(fields.sourceAssetId)) || studioAssets.find(a=>a.id===fields.sourceAssetId);
       if (!source) throw new ImageInputError('The reference image no longer exists.',404,'reference_missing');
       if (source.userId !== actor.id && !['admin','dev'].includes(actor.role)) throw new ImageInputError('You do not have access to this reference image.',403,'forbidden');
       const sourcePath = resolve(imageStorageDir,source.filename);
@@ -1400,7 +1465,7 @@ app.post('/api/images/remix', requireUser, async (req,res) => {
     const capabilities = await probeImageEngine(config.ai.imageEngineUrl,config.ai.imageRemixVerified);
     if (!capabilities.remix) throw new ImageInputError(capabilities.remixMessage,503,'remix_unavailable');
     // Recheck after asynchronous validation to prevent concurrent submissions racing the queue.
-    if (imageJobs.some(j=>j.userId===actor.id && (j.status==='queued'||j.status==='processing'))) throw new ImageInputError('An image is already generating.',409,'active_job');
+    if ((await repository.hasActiveJobForUser(actor.id)) || imageJobs.some(j=>j.userId===actor.id && (j.status==='queued'||j.status==='processing'))) throw new ImageInputError('An image is already generating.',409,'active_job');
     const id = randomUUID(), referenceFilename = `${id}.png`;
     referencePath = resolve(imageReferenceDir,referenceFilename); writeFileSync(referencePath,reference);
     const dims = TARGET_1080P_DIMENSIONS[fields.aspectRatio]!;
@@ -1409,6 +1474,7 @@ app.post('/api/images/remix', requireUser, async (req,res) => {
       sourceAssetId:fields.sourceAssetId || undefined,sourceName,referenceFilename,strength:fields.strength,
       seed:fields.seed,steps:4,cfgScale:1,width:dims.width,height:dims.height,status:'queued',progress:0,
       stageText:'Your remix is queued.',startedAt:new Date().toISOString(),estimatedDurationMs:estimateJobDurationMs(fields.aspectRatio)};
+    await repository.saveImageJob(job);
     imageJobs.unshift(job); saveImageJobs();
     referencePath = undefined; // The queue owns reference cleanup from this point.
     setImmediate(()=>processImageQueue().catch(error=>logger.warn({error:String(error)},'remix queue failed')));
@@ -1424,7 +1490,7 @@ app.post('/api/images/remix', requireUser, async (req,res) => {
 app.post('/api/images/generate', requireUser, async (req, res) => {
   try {
     const prompt = sanitizePrompt(String(req.body?.prompt || '')).trim();
-    if (imageJobs.some(j=>j.userId===req.session.user!.id && (j.status==='queued'||j.status==='processing'))) return res.status(409).json({error:{code:'active_job',message:'An image is already generating. Wait for it or cancel it first.'}});
+    if ((await repository.hasActiveJobForUser(req.session.user!.id)) || imageJobs.some(j=>j.userId===req.session.user!.id && (j.status==='queued'||j.status==='processing'))) return res.status(409).json({error:{code:'active_job',message:'An image is already generating. Wait for it or cancel it first.'}});
     if (prompt.length > 500) return res.status(400).json({error:{code:'invalid_prompt',message:'Keep the prompt within 500 characters.'}});
     if (!prompt) {
       return res.status(400).json({ error: { code: 'missing_prompt', message: 'Prompt is required.' } });
@@ -1466,6 +1532,7 @@ app.post('/api/images/generate', requireUser, async (req, res) => {
       estimatedDurationMs: estimateJobDurationMs(aspectRatio)
     };
 
+    await repository.saveImageJob(newJob);
     imageJobs.unshift(newJob);
     saveImageJobs();
 
@@ -1476,6 +1543,12 @@ app.post('/api/images/generate', requireUser, async (req, res) => {
       newJob.progress = 100;
       newJob.asset = asset;
       newJob.completedAt = new Date().toISOString();
+      await repository.updateImageJob(newJob.id, {
+        status: 'completed',
+        progress: 100,
+        asset,
+        completedAt: newJob.completedAt
+      });
       saveImageJobs();
       return res.json({ asset, job: newJob });
     }
@@ -1500,6 +1573,8 @@ app.post('/api/images/generate', requireUser, async (req, res) => {
 app.get('/api/images/history', requireUser, async (req, res) => {
   const userId = req.session.user!.id;
   const isPrivileged = ['dev', 'admin'].includes(req.session.user!.role);
+  const repoAssets = await repository.listGeneratedAssets(userId, isPrivileged, 50);
+  if (repoAssets.length > 0) return res.json({ assets: repoAssets });
   const userAssets = studioAssets.filter(a => isPrivileged || a.userId === userId).slice(0, 50);
   return res.json({ assets: userAssets });
 });
@@ -1508,16 +1583,18 @@ app.delete('/api/images/:id', requireUser, async (req, res) => {
   const id = String(req.params.id);
   const userId = req.session.user!.id;
   const isPrivileged = ['dev', 'admin'].includes(req.session.user!.role);
+  const asset = await repository.deleteGeneratedAsset(id, userId, isPrivileged).catch(() => undefined);
   const idx = studioAssets.findIndex(a => a.id === id);
-  if (idx === -1) return res.status(404).json({ error: { code: 'not_found', message: 'Asset not found.' } });
-  const asset = studioAssets[idx]!;
-  if (!isPrivileged && asset.userId !== userId) {
+  const memAsset = idx !== -1 ? studioAssets[idx] : undefined;
+  if (!asset && !memAsset) return res.status(404).json({ error: { code: 'not_found', message: 'Asset not found.' } });
+  const targetAsset = asset || memAsset!;
+  if (!isPrivileged && targetAsset.userId !== userId) {
     return res.status(403).json({ error: { code: 'forbidden', message: 'Access denied.' } });
   }
-  studioAssets.splice(idx, 1);
+  if (idx !== -1) studioAssets.splice(idx, 1);
   saveStudioManifest();
   try {
-    const fPath = resolve(imageStorageDir, asset.filename);
+    const fPath = resolve(imageStorageDir, targetAsset.filename);
     if (existsSync(fPath)) unlinkSync(fPath);
   } catch {}
   return res.json({ success: true, id });
@@ -1528,18 +1605,29 @@ app.post('/api/images/batch-delete', requireUser, async (req, res) => {
   if (!ids.length) return res.status(400).json({ error: { code: 'missing_ids', message: 'ids array required.' } });
   const userId = req.session.user!.id;
   const isPrivileged = ['dev', 'admin'].includes(req.session.user!.role);
-  let deletedCount = 0;
+  const deletedRepo = await repository.batchDeleteGeneratedAssets(ids, userId, isPrivileged);
+  let deletedCount = deletedRepo.length;
+  for (const asset of deletedRepo) {
+    const idx = studioAssets.findIndex(a => a.id === asset.id);
+    if (idx !== -1) studioAssets.splice(idx, 1);
+    try {
+      const fPath = resolve(imageStorageDir, asset.filename);
+      if (existsSync(fPath)) unlinkSync(fPath);
+    } catch {}
+  }
   for (const id of ids) {
-    const idx = studioAssets.findIndex(a => a.id === id);
-    if (idx !== -1) {
-      const asset = studioAssets[idx]!;
-      if (isPrivileged || asset.userId === userId) {
-        studioAssets.splice(idx, 1);
-        deletedCount++;
-        try {
-          const fPath = resolve(imageStorageDir, asset.filename);
-          if (existsSync(fPath)) unlinkSync(fPath);
-        } catch {}
+    if (!deletedRepo.some(a => a.id === id)) {
+      const idx = studioAssets.findIndex(a => a.id === id);
+      if (idx !== -1) {
+        const asset = studioAssets[idx]!;
+        if (isPrivileged || asset.userId === userId) {
+          studioAssets.splice(idx, 1);
+          deletedCount++;
+          try {
+            const fPath = resolve(imageStorageDir, asset.filename);
+            if (existsSync(fPath)) unlinkSync(fPath);
+          } catch {}
+        }
       }
     }
   }
@@ -1550,7 +1638,7 @@ app.post('/api/images/batch-delete', requireUser, async (req, res) => {
 app.post('/api/images/:id/save-to-knowledge', requireUser, async (req, res) => {
   try {
     const id = String(req.params.id);
-    const asset = studioAssets.find(a => a.id === id);
+    const asset = (await repository.getGeneratedAsset(id)) || studioAssets.find(a => a.id === id);
     if (!asset) return res.status(404).json({ error: { code: 'not_found', message: 'Asset not found.' } });
     const actor = req.session.user!;
     if (asset.userId !== actor.id && !['admin','dev'].includes(actor.role)) return res.status(403).json({error:{code:'forbidden',message:'You do not have access to this image.'}});
@@ -1595,12 +1683,12 @@ app.post('/api/images/:id/save-to-knowledge', requireUser, async (req, res) => {
   }
 });
 
-app.get('/api/images/generated/:filename', requireUser, (req, res) => {
+app.get('/api/images/generated/:filename', requireUser, async (req, res) => {
   const rawParam = req.params.filename;
   const rawName = Array.isArray(rawParam) ? rawParam[0] : rawParam;
   const filename = sanitizePrompt(String(rawName || '')).replace(/[^a-zA-Z0-9._-]/g, '');
   const actor = req.session.user!;
-  const asset = studioAssets.find(a=>a.filename===filename);
+  const asset = (await repository.getGeneratedAssetByFilename(filename)) || studioAssets.find(a=>a.filename===filename);
   if (!asset) return res.status(404).json({error:{code:'not_found',message:'Generated image not found.'}});
   if (asset.userId !== actor.id && !['dev','admin'].includes(actor.role)) return res.status(403).json({error:{code:'forbidden',message:'You do not have access to this image.'}});
   const filePath = resolve(imageStorageDir, filename);
@@ -1750,6 +1838,7 @@ async function streamArtifact(req:express.Request,res:express.Response,kind:'aud
 app.get('/api/meetings/:id/audio',requireUser,async(req,res)=>{const meeting=await repository.getMeeting(String(req.params.id),res.locals.user);if(!meeting)return res.status(404).end();if(meeting.engineId&&!meeting.engineId.startsWith('dev_')){try{const upstream=await meetingEngine.audio(meeting.engineId,req.header('range'));if(upstream?.body){res.status(upstream.status);for(const header of ['content-type','content-length','content-range','accept-ranges']){const value=upstream.headers.get(header);if(value)res.setHeader(header,value)}res.setHeader('cache-control','private, max-age=60');Readable.fromWeb(upstream.body as any).pipe(res);return}}catch(error){logger.warn({meetingId:meeting.id,error:error instanceof Error?error.message:String(error)},'meeting audio proxy failed')}}return streamArtifact(req,res,'audio',meeting.recordingObjectKey?.startsWith('vexa:')?undefined:meeting.recordingObjectKey,'audio/webm')});
 app.get('/api/meetings/:id/snapshots/:snapshotId',requireUser,async(req,res)=>{const meeting=await repository.getMeetingDetail(String(req.params.id),res.locals.user);const snapshot=meeting?.snapshots?.find(s=>s.id===String(req.params.snapshotId));if(!snapshot)return res.status(404).end();const cached=snapshotCache.get(snapshot.id);if(cached){res.setHeader('content-type','image/jpeg');res.setHeader('cache-control','private, max-age=3600');return res.end(cached)}return streamArtifact(req,res,'snapshot',snapshot.objectKey,'image/jpeg')});
 app.get('/api/meetings/:id/live-screenshot',requireUser,async(req,res)=>{const meeting=await repository.getMeeting(String(req.params.id),res.locals.user);if(!meeting)return res.status(404).end();try{const upstream=await meetingEngine.screenshot(meeting.engineId??'');if(upstream?.body){res.setHeader('content-type','image/jpeg');res.setHeader('cache-control','no-cache, no-store, must-revalidate');Readable.fromWeb(upstream.body as any).pipe(res);return}}catch(error){logger.warn({error:error instanceof Error?error.message:String(error)},'live screenshot failed')}return res.status(404).json({error:{code:'not_available',message:'Live screenshot is not available.'}})});
+app.post('/api/meetings/:id/capture-snapshot',requireUser,async(req,res)=>{try{const meeting=await repository.getMeeting(String(req.params.id),res.locals.user);if(!meeting)return res.status(404).json({error:{code:'not_found',message:'Meeting not found.'}});if(!activeStatuses.includes(meeting.status)){return res.status(400).json({error:{code:'meeting_not_active',message:'Snapshots can only be captured while the meeting is actively recording.'}});}const engineId=meeting.engineId??'';const shot=await meetingEngine.screenshot(engineId);if(!shot||!shot.ok){return res.status(503).json({error:{code:'capture_unavailable',message:'Live screen stream is currently unavailable from the bot display.'}});}const bytes=Buffer.from(await shot.arrayBuffer());const meetingStart=Date.parse(meeting.startedAt??new Date().toISOString());const capturedAtMs=Math.max(0,Date.now()-meetingStart);const key=`snapshot_${Date.now()}`;await artifacts.put('snapshot',key,bytes,'image/jpeg').catch(()=>{});const saved=await repository.addSnapshot({meetingId:meeting.id,objectKey:key,capturedAtMs});if(saved?.id)cacheSnapshotBuffer(saved.id,bytes);return res.status(201).json({success:true,snapshot:saved});}catch(err){logger.warn({error:err instanceof Error?err.message:String(err)},'manual snapshot capture failed');return res.status(500).json({error:{code:'capture_failed',message:'Failed to capture screen snapshot.'}});}});
 app.post('/api/meetings/:id/chat',requireUser,async(req,res,next)=>{try{
   const meeting=await repository.getMeetingDetail(String(req.params.id),res.locals.user);
   if(!meeting)return res.status(404).json({error:{code:'not_found',message:'Meeting not found.'}});

@@ -67,3 +67,55 @@ export interface KnowledgeDocument {
   creatorName?: string;
   folderName?: string;
 }
+
+export interface GeneratedAsset {
+  id: string;
+  userId: string;
+  url: string;
+  filename: string;
+  prompt: string;
+  negativePrompt?: string;
+  style: string;
+  aspectRatio: string;
+  seed: number;
+  steps: number;
+  cfgScale: number;
+  width: number;
+  height: number;
+  durationMs: number;
+  createdAt: string;
+  operation?: 'generate' | 'remix';
+  sourceAssetId?: string;
+  sourceName?: string;
+  strength?: number;
+  renderKind?: 'generated' | 'vector-preview';
+}
+
+export interface ImageJob {
+  id: string;
+  userId: string;
+  prompt: string;
+  negativePrompt?: string;
+  style: string;
+  aspectRatio: string;
+  seed: number;
+  steps: number;
+  cfgScale: number;
+  width: number;
+  height: number;
+  status: 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled';
+  operation?: 'generate' | 'remix';
+  sourceAssetId?: string;
+  sourceName?: string;
+  referenceFilename?: string;
+  strength?: number;
+  progress: number;
+  stageText: string;
+  error?: string;
+  asset?: GeneratedAsset;
+  startedAt: string;
+  completedAt?: string;
+  estimatedDurationMs: number;
+  createdAt?: string;
+}
+

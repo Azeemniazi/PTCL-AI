@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { config } from './config.js';
 import { hashPassword } from './crypto.js';
-import { activeStatuses, type Meeting, type MeetingStatus, type Mom, type Participant, type Snapshot, type TranscriptSegment, type User, type UserWithSecret, type Role, type KnowledgeFolder, type KnowledgeDocument } from './models.js';
+import { activeStatuses, type Meeting, type MeetingStatus, type Mom, type Participant, type Snapshot, type TranscriptSegment, type User, type UserWithSecret, type Role, type KnowledgeFolder, type KnowledgeDocument, type GeneratedAsset, type ImageJob } from './models.js';
 const { Pool } = pg;
 
 const iso = (value: unknown) => value ? new Date(value as string).toISOString() : undefined;
@@ -110,6 +110,62 @@ function documentRow(r: any): KnowledgeDocument {
   };
 }
 
+function generatedAssetRow(r: any): GeneratedAsset {
+  return {
+    id: r.id,
+    userId: r.user_id ?? r.userId,
+    url: r.url,
+    filename: r.filename,
+    prompt: r.prompt,
+    negativePrompt: r.negative_prompt ?? r.negativePrompt ?? undefined,
+    style: r.style,
+    aspectRatio: r.aspect_ratio ?? r.aspectRatio,
+    seed: Number(r.seed),
+    steps: Number(r.steps ?? 4),
+    cfgScale: Number(r.cfg_scale ?? r.cfgScale ?? 1.0),
+    width: Number(r.width),
+    height: Number(r.height),
+    durationMs: Number(r.duration_ms ?? r.durationMs ?? 0),
+    operation: r.operation ?? 'generate',
+    sourceAssetId: r.source_asset_id ?? r.sourceAssetId ?? undefined,
+    sourceName: r.source_name ?? r.sourceName ?? undefined,
+    strength: r.strength !== null && r.strength !== undefined ? Number(r.strength) : undefined,
+    renderKind: r.render_kind ?? r.renderKind ?? 'generated',
+    createdAt: iso(r.created_at ?? r.createdAt)!,
+  };
+}
+
+function imageJobRow(r: any): ImageJob {
+  const asset = r.asset ? (typeof r.asset === 'string' ? JSON.parse(r.asset) : r.asset) : undefined;
+  return {
+    id: r.id,
+    userId: r.user_id ?? r.userId,
+    prompt: r.prompt,
+    negativePrompt: r.negative_prompt ?? r.negativePrompt ?? undefined,
+    style: r.style,
+    aspectRatio: r.aspect_ratio ?? r.aspectRatio,
+    seed: Number(r.seed),
+    steps: Number(r.steps ?? 4),
+    cfgScale: Number(r.cfg_scale ?? r.cfgScale ?? 1.0),
+    width: Number(r.width),
+    height: Number(r.height),
+    status: r.status,
+    operation: r.operation ?? 'generate',
+    sourceAssetId: r.source_asset_id ?? r.sourceAssetId ?? undefined,
+    sourceName: r.source_name ?? r.sourceName ?? undefined,
+    referenceFilename: r.reference_filename ?? r.referenceFilename ?? undefined,
+    strength: r.strength !== null && r.strength !== undefined ? Number(r.strength) : undefined,
+    progress: Number(r.progress ?? 0),
+    stageText: r.stage_text ?? r.stageText ?? '',
+    error: r.error ?? undefined,
+    asset: asset ? generatedAssetRow(asset) : undefined,
+    startedAt: iso(r.started_at ?? r.startedAt)!,
+    completedAt: iso(r.completed_at ?? r.completedAt),
+    estimatedDurationMs: Number(r.estimated_duration_ms ?? r.estimatedDurationMs ?? 0),
+    createdAt: iso(r.created_at ?? r.createdAt),
+  };
+}
+
 export class Repository {
   private pool = config.databaseUrl ? new Pool({
     connectionString: config.databaseUrl,
@@ -125,6 +181,8 @@ export class Repository {
   private moms = new Map<string, Mom[]>();
   private knowledgeFolders = new Map<string, KnowledgeFolder>();
   private knowledgeDocuments = new Map<string, KnowledgeDocument>();
+  private generatedAssets = new Map<string, GeneratedAsset>();
+  private imageJobs = new Map<string, ImageJob>();
 
   constructor() {
     this.pool?.on('error', (err) => {
@@ -135,7 +193,14 @@ export class Repository {
   async init() {
     if (this.pool) {
       const dir = dirname(fileURLToPath(import.meta.url));
-      for (const file of ['001_init.sql', '002_auth_users.sql', '003_scalability_and_indexes.sql', '004_knowledge_hub.sql']) {
+      for (const file of [
+        '001_init.sql',
+        '002_auth_users.sql',
+        '003_scalability_and_indexes.sql',
+        '004_knowledge_hub.sql',
+        '005_trigram_knowledge_search.sql',
+        '006_image_studio.sql'
+      ]) {
         await this.pool.query(await readFile(resolve(dir, '../migrations', file), 'utf8'));
       }
     }
@@ -375,6 +440,18 @@ export class Repository {
         for (const meeting of this.meetings.values()) {
           if (meeting.ownerId === id) meeting.ownerId = dev.id;
         }
+      }
+      for (const [docId, doc] of this.knowledgeDocuments.entries()) {
+        if (doc.userId === id) this.knowledgeDocuments.delete(docId);
+      }
+      for (const [folderId, folder] of this.knowledgeFolders.entries()) {
+        if (folder.userId === id) this.knowledgeFolders.delete(folderId);
+      }
+      for (const [assetId, asset] of this.generatedAssets.entries()) {
+        if (asset.userId === id) this.generatedAssets.delete(assetId);
+      }
+      for (const [jobId, job] of this.imageJobs.entries()) {
+        if (job.userId === id) this.imageJobs.delete(jobId);
       }
       this.users.delete(id);
       return;
@@ -733,7 +810,9 @@ export class Repository {
       return;
     }
     await this.pool.query(
-      `INSERT INTO meeting_summaries(id,meeting_id,version,content) SELECT $1,$2,COALESCE(max(version),0)+1,$3 FROM meeting_summaries WHERE meeting_id=$2`,
+      `INSERT INTO meeting_summaries(id,meeting_id,version,content)
+       SELECT $1,$2,COALESCE(max(version),0)+1,$3 FROM meeting_summaries WHERE meeting_id=$2
+       ON CONFLICT (meeting_id, version) DO UPDATE SET content = EXCLUDED.content, created_at = now()`,
       [randomUUID(), meetingId, JSON.stringify(content)]
     );
   }
@@ -809,6 +888,64 @@ export class Repository {
     row.file_count = 0;
     row.total_size_bytes = 0;
     return folderRow(row);
+  }
+
+  async findOrCreateFolderHierarchy(
+    userId: string,
+    folderSegments: string[],
+    baseParentId?: string | null,
+    isShared?: boolean
+  ): Promise<string | null> {
+    if (!folderSegments || !folderSegments.length) return baseParentId ?? null;
+    let currentParentId: string | null = (baseParentId && baseParentId.trim() && baseParentId !== 'null') ? baseParentId.trim() : null;
+    const shared = isShared ?? true;
+
+    for (const rawSegment of folderSegments) {
+      const cleanSegment = rawSegment.trim().slice(0, 100);
+      if (!cleanSegment || cleanSegment === '.' || cleanSegment === '..') continue;
+
+      if (!this.pool) {
+        let existing = [...this.knowledgeFolders.values()].find(f => {
+          const matchParent = currentParentId ? f.parentId === currentParentId : (f.parentId == null || f.parentId === '');
+          const matchName = f.name.toLowerCase() === cleanSegment.toLowerCase();
+          const matchAccess = f.isShared || f.userId === userId;
+          return matchParent && matchName && matchAccess;
+        });
+
+        if (!existing) {
+          existing = await this.createFolder({
+            userId,
+            name: cleanSegment,
+            parentId: currentParentId,
+            isShared: shared
+          });
+        }
+        currentParentId = existing.id;
+      } else {
+        const lookup = await this.pool.query(
+          `SELECT id FROM knowledge_folders
+           WHERE (parent_id = $1 OR ($1 IS NULL AND parent_id IS NULL))
+             AND LOWER(name) = LOWER($2)
+             AND (is_shared = true OR user_id = $3)
+           ORDER BY created_at ASC
+           LIMIT 1`,
+          [currentParentId, cleanSegment, userId]
+        );
+
+        if (lookup.rows.length > 0) {
+          currentParentId = lookup.rows[0].id;
+        } else {
+          const created = await this.createFolder({
+            userId,
+            name: cleanSegment,
+            parentId: currentParentId,
+            isShared: shared
+          });
+          currentParentId = created.id;
+        }
+      }
+    }
+    return currentParentId;
   }
 
   async listFolders(userId: string, scope?: 'all' | 'shared' | 'personal'): Promise<KnowledgeFolder[]> {
@@ -914,16 +1051,31 @@ export class Repository {
     if (existing.userId !== userId && !isPrivileged) throw new Error('Unauthorized to delete this folder.');
 
     if (!this.pool) {
+      const folderIdsToDelete = new Set<string>([id]);
       if (cascade) {
-        for (const [docId, doc] of this.knowledgeDocuments.entries()) {
-          if (doc.folderId === id) this.knowledgeDocuments.delete(docId);
+        let added = true;
+        while (added) {
+          added = false;
+          for (const f of this.knowledgeFolders.values()) {
+            if (f.parentId && folderIdsToDelete.has(f.parentId) && !folderIdsToDelete.has(f.id)) {
+              folderIdsToDelete.add(f.id);
+              added = true;
+            }
+          }
         }
+        for (const [docId, doc] of this.knowledgeDocuments.entries()) {
+          if (doc.folderId && folderIdsToDelete.has(doc.folderId)) this.knowledgeDocuments.delete(docId);
+        }
+        for (const fId of folderIdsToDelete) {
+          this.knowledgeFolders.delete(fId);
+        }
+        return true;
       } else {
         for (const doc of this.knowledgeDocuments.values()) {
           if (doc.folderId === id) doc.folderId = null;
         }
+        return this.knowledgeFolders.delete(id);
       }
-      return this.knowledgeFolders.delete(id);
     }
 
     if (cascade) {
@@ -1169,6 +1321,301 @@ export class Repository {
       if (updated) moved.push(id);
     }
     return moved;
+  }
+
+  async saveGeneratedAsset(asset: GeneratedAsset): Promise<GeneratedAsset> {
+    if (!this.pool) {
+      this.generatedAssets.set(asset.id, { ...asset });
+      return asset;
+    }
+    const q = await this.pool.query(
+      `INSERT INTO generated_assets (
+         id, user_id, url, filename, prompt, negative_prompt, style, aspect_ratio,
+         seed, steps, cfg_scale, width, height, duration_ms, operation,
+         source_asset_id, source_name, strength, render_kind, created_at
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+       ON CONFLICT (id) DO UPDATE SET
+         user_id = EXCLUDED.user_id,
+         url = EXCLUDED.url,
+         filename = EXCLUDED.filename,
+         prompt = EXCLUDED.prompt,
+         negative_prompt = EXCLUDED.negative_prompt,
+         style = EXCLUDED.style,
+         aspect_ratio = EXCLUDED.aspect_ratio,
+         seed = EXCLUDED.seed,
+         steps = EXCLUDED.steps,
+         cfg_scale = EXCLUDED.cfg_scale,
+         width = EXCLUDED.width,
+         height = EXCLUDED.height,
+         duration_ms = EXCLUDED.duration_ms,
+         operation = EXCLUDED.operation,
+         source_asset_id = EXCLUDED.source_asset_id,
+         source_name = EXCLUDED.source_name,
+         strength = EXCLUDED.strength,
+         render_kind = EXCLUDED.render_kind,
+         created_at = EXCLUDED.created_at
+       RETURNING *`,
+      [
+        asset.id, asset.userId, asset.url, asset.filename, asset.prompt,
+        asset.negativePrompt || null, asset.style, asset.aspectRatio,
+        asset.seed, asset.steps, asset.cfgScale, asset.width, asset.height,
+        asset.durationMs, asset.operation || 'generate',
+        asset.sourceAssetId || null, asset.sourceName || null,
+        asset.strength !== undefined ? asset.strength : null,
+        asset.renderKind || 'generated', asset.createdAt
+      ]
+    );
+    return generatedAssetRow(q.rows[0]);
+  }
+
+  async getGeneratedAsset(id: string): Promise<GeneratedAsset | undefined> {
+    if (!this.pool) {
+      return this.generatedAssets.get(id);
+    }
+    const q = await this.pool.query('SELECT * FROM generated_assets WHERE id = $1', [id]);
+    return q.rows[0] ? generatedAssetRow(q.rows[0]) : undefined;
+  }
+
+  async getGeneratedAssetByFilename(filename: string): Promise<GeneratedAsset | undefined> {
+    if (!this.pool) {
+      return [...this.generatedAssets.values()].find(a => a.filename === filename);
+    }
+    const q = await this.pool.query('SELECT * FROM generated_assets WHERE filename = $1', [filename]);
+    return q.rows[0] ? generatedAssetRow(q.rows[0]) : undefined;
+  }
+
+  async listGeneratedAssets(userId: string, isPrivileged = false, limit = 50): Promise<GeneratedAsset[]> {
+    if (!this.pool) {
+      return [...this.generatedAssets.values()]
+        .filter(a => isPrivileged || a.userId === userId)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .slice(0, limit);
+    }
+    const q = isPrivileged
+      ? await this.pool.query('SELECT * FROM generated_assets ORDER BY created_at DESC LIMIT $1', [limit])
+      : await this.pool.query('SELECT * FROM generated_assets WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2', [userId, limit]);
+    return q.rows.map(generatedAssetRow);
+  }
+
+  async deleteGeneratedAsset(id: string, userId: string, isPrivileged = false): Promise<GeneratedAsset | undefined> {
+    const asset = await this.getGeneratedAsset(id);
+    if (!asset) return undefined;
+    if (asset.userId !== userId && !isPrivileged) throw new Error('Unauthorized to delete this asset.');
+    if (!this.pool) {
+      this.generatedAssets.delete(id);
+      return asset;
+    }
+    await this.pool.query('DELETE FROM generated_assets WHERE id = $1', [id]);
+    return asset;
+  }
+
+  async batchDeleteGeneratedAssets(ids: string[], userId: string, isPrivileged = false): Promise<GeneratedAsset[]> {
+    const deleted: GeneratedAsset[] = [];
+    for (const id of ids) {
+      const asset = await this.deleteGeneratedAsset(id, userId, isPrivileged).catch(() => undefined);
+      if (asset) deleted.push(asset);
+    }
+    return deleted;
+  }
+
+  async saveImageJob(job: ImageJob): Promise<ImageJob> {
+    if (!this.pool) {
+      this.imageJobs.set(job.id, { ...job });
+      return job;
+    }
+    const q = await this.pool.query(
+      `INSERT INTO image_jobs (
+         id, user_id, prompt, negative_prompt, style, aspect_ratio, seed, steps,
+         cfg_scale, width, height, status, operation, source_asset_id, source_name,
+         reference_filename, strength, progress, stage_text, error, asset,
+         started_at, completed_at, estimated_duration_ms, created_at
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
+       ON CONFLICT (id) DO UPDATE SET
+         status = EXCLUDED.status,
+         progress = EXCLUDED.progress,
+         stage_text = EXCLUDED.stage_text,
+         error = EXCLUDED.error,
+         asset = EXCLUDED.asset,
+         started_at = EXCLUDED.started_at,
+         completed_at = EXCLUDED.completed_at
+       RETURNING *`,
+      [
+        job.id, job.userId, job.prompt, job.negativePrompt || null, job.style,
+        job.aspectRatio, job.seed, job.steps, job.cfgScale, job.width, job.height,
+        job.status, job.operation || 'generate', job.sourceAssetId || null,
+        job.sourceName || null, job.referenceFilename || null,
+        job.strength !== undefined ? job.strength : null,
+        job.progress, job.stageText, job.error || null,
+        job.asset ? JSON.stringify(job.asset) : null,
+        job.startedAt, job.completedAt || null, job.estimatedDurationMs,
+        job.createdAt || job.startedAt
+      ]
+    );
+    return imageJobRow(q.rows[0]);
+  }
+
+  async updateImageJob(id: string, updates: Partial<ImageJob>): Promise<ImageJob | undefined> {
+    if (!this.pool) {
+      const existing = this.imageJobs.get(id);
+      if (!existing) return undefined;
+      Object.assign(existing, updates);
+      return existing;
+    }
+    const setClauses: string[] = [];
+    const values: any[] = [id];
+    let idx = 2;
+    if (updates.status !== undefined) { setClauses.push(`status = $${idx++}`); values.push(updates.status); }
+    if (updates.progress !== undefined) { setClauses.push(`progress = $${idx++}`); values.push(updates.progress); }
+    if (updates.stageText !== undefined) { setClauses.push(`stage_text = $${idx++}`); values.push(updates.stageText); }
+    if (updates.error !== undefined) { setClauses.push(`error = $${idx++}`); values.push(updates.error || null); }
+    if (updates.asset !== undefined) { setClauses.push(`asset = $${idx++}`); values.push(updates.asset ? JSON.stringify(updates.asset) : null); }
+    if (updates.startedAt !== undefined) { setClauses.push(`started_at = $${idx++}`); values.push(updates.startedAt); }
+    if (updates.completedAt !== undefined) { setClauses.push(`completed_at = $${idx++}`); values.push(updates.completedAt || null); }
+    if (setClauses.length === 0) return this.getImageJob(id);
+
+    const q = await this.pool.query(
+      `UPDATE image_jobs SET ${setClauses.join(', ')} WHERE id = $1 RETURNING *`,
+      values
+    );
+    return q.rows[0] ? imageJobRow(q.rows[0]) : undefined;
+  }
+
+  async getImageJob(id: string): Promise<ImageJob | undefined> {
+    if (!this.pool) {
+      return this.imageJobs.get(id);
+    }
+    const q = await this.pool.query('SELECT * FROM image_jobs WHERE id = $1', [id]);
+    return q.rows[0] ? imageJobRow(q.rows[0]) : undefined;
+  }
+
+  async getActiveImageJob(userId: string, isPrivileged = false): Promise<{ activeJob: (ImageJob & { elapsedMs: number }) | null; recentCompleted: ImageJob | null }> {
+    if (!this.pool) {
+      const jobs = [...this.imageJobs.values()];
+      const active = jobs.find(j => (j.status === 'processing' || j.status === 'queued') && (isPrivileged || j.userId === userId));
+      const recent = !active ? jobs.find(j => j.status === 'completed' && (isPrivileged || j.userId === userId) && (Date.now() - new Date(j.completedAt || j.startedAt).getTime() < 30000)) : null;
+      return {
+        activeJob: active ? { ...active, elapsedMs: Date.now() - new Date(active.startedAt).getTime() } : null,
+        recentCompleted: recent || null,
+      };
+    }
+    const userClause = isPrivileged ? '' : 'AND user_id = $1';
+    const params = isPrivileged ? [] : [userId];
+    const activeRes = await this.pool.query(
+      `SELECT * FROM image_jobs WHERE status IN ('processing', 'queued') ${userClause} ORDER BY started_at DESC LIMIT 1`,
+      params
+    );
+    if (activeRes.rows.length > 0) {
+      const active = imageJobRow(activeRes.rows[0]);
+      return {
+        activeJob: { ...active, elapsedMs: Date.now() - new Date(active.startedAt).getTime() },
+        recentCompleted: null,
+      };
+    }
+    const recentRes = await this.pool.query(
+      `SELECT * FROM image_jobs WHERE status = 'completed' AND completed_at >= now() - interval '30 seconds' ${userClause} ORDER BY completed_at DESC LIMIT 1`,
+      params
+    );
+    const recent = recentRes.rows[0] ? imageJobRow(recentRes.rows[0]) : null;
+    return {
+      activeJob: null,
+      recentCompleted: recent,
+    };
+  }
+
+  async getNextQueuedImageJob(): Promise<ImageJob | undefined> {
+    if (!this.pool) {
+      return [...this.imageJobs.values()].find(j => j.status === 'queued' || j.status === 'processing');
+    }
+    const res = await this.pool.query(
+      `SELECT * FROM image_jobs WHERE status IN ('queued', 'processing') ORDER BY CASE WHEN status = 'processing' THEN 0 ELSE 1 END, created_at ASC LIMIT 1`
+    );
+    return res.rows[0] ? imageJobRow(res.rows[0]) : undefined;
+  }
+
+  async hasActiveJobForUser(userId: string): Promise<boolean> {
+    if (!this.pool) {
+      return [...this.imageJobs.values()].some(j => j.userId === userId && (j.status === 'queued' || j.status === 'processing'));
+    }
+    const res = await this.pool.query(
+      `SELECT 1 FROM image_jobs WHERE user_id = $1 AND status IN ('queued', 'processing') LIMIT 1`,
+      [userId]
+    );
+    return res.rows.length > 0;
+  }
+
+  async listRecentPrompts(userId: string, isPrivileged = false, limit = 20): Promise<Array<{
+    id: string;
+    prompt: string;
+    style: string;
+    aspectRatio: string;
+    seed: number;
+    url: string;
+    createdAt: string;
+  }>> {
+    const assets = await this.listGeneratedAssets(userId, isPrivileged, 100);
+    const seen = new Set<string>();
+    const prompts: Array<{
+      id: string;
+      prompt: string;
+      style: string;
+      aspectRatio: string;
+      seed: number;
+      url: string;
+      createdAt: string;
+    }> = [];
+    for (const a of assets) {
+      const key = `${a.prompt.toLowerCase()}::${a.style}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        prompts.push({
+          id: a.id,
+          prompt: a.prompt,
+          style: a.style,
+          aspectRatio: a.aspectRatio,
+          seed: a.seed,
+          url: a.url,
+          createdAt: a.createdAt,
+        });
+        if (prompts.length >= limit) break;
+      }
+    }
+    return prompts;
+  }
+
+  async resetStaleImageJobs(): Promise<void> {
+    if (!this.pool) {
+      for (const j of this.imageJobs.values()) {
+        if (j.status === 'processing') {
+          j.status = 'failed';
+          j.error = 'Server restarted while generation was in progress.';
+        }
+      }
+      return;
+    }
+    await this.pool.query(
+      `UPDATE image_jobs SET status = 'failed', error = 'Server restarted while generation was in progress.' WHERE status = 'processing'`
+    );
+  }
+
+  async seedImageAssetsAndJobs(assets: GeneratedAsset[], jobs: ImageJob[]): Promise<void> {
+    for (const asset of assets) {
+      if (!this.pool) {
+        if (!this.generatedAssets.has(asset.id)) {
+          this.generatedAssets.set(asset.id, { ...asset });
+        }
+      } else {
+        await this.saveGeneratedAsset(asset).catch(() => {});
+      }
+    }
+    for (const job of jobs) {
+      if (!this.pool) {
+        if (!this.imageJobs.has(job.id)) {
+          this.imageJobs.set(job.id, { ...job });
+        }
+      } else {
+        await this.saveImageJob(job).catch(() => {});
+      }
+    }
   }
 }
 
