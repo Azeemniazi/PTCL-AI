@@ -1442,11 +1442,15 @@ export class Repository {
               THEN (1 - (c.embedding <=> $${vecIdx}::vector))
             ELSE 0 
           END AS vector_score,
-          similarity(c.content, $${queryIdx}) AS text_score,
+          GREATEST(
+            similarity(c.content, $${queryIdx}),
+            similarity(d.filename, $${queryIdx}) * 0.9,
+            similarity(COALESCE(f.name, ''), $${queryIdx}) * 0.5
+          ) AS text_score,
           CASE 
             WHEN c.embedding IS NOT NULL 
-              THEN ((1 - (c.embedding <=> $${vecIdx}::vector)) * 0.75) + (similarity(c.content, $${queryIdx}) * 0.25)
-            ELSE similarity(c.content, $${queryIdx})
+              THEN ((1 - (c.embedding <=> $${vecIdx}::vector)) * 0.70) + (GREATEST(similarity(c.content, $${queryIdx}), similarity(d.filename, $${queryIdx}) * 0.9, similarity(COALESCE(f.name, ''), $${queryIdx}) * 0.5) * 0.30)
+            ELSE GREATEST(similarity(c.content, $${queryIdx}), similarity(d.filename, $${queryIdx}) * 0.9, similarity(COALESCE(f.name, ''), $${queryIdx}) * 0.5)
           END AS final_score
         FROM knowledge_document_chunks c
         JOIN knowledge_documents d ON c.document_id = d.id
@@ -1482,7 +1486,11 @@ export class Repository {
           c.content,
           d.filename,
           f.name AS folder_name,
-          similarity(c.content, $${queryIdx}) AS final_score
+          GREATEST(
+            similarity(c.content, $${queryIdx}),
+            similarity(d.filename, $${queryIdx}) * 0.9,
+            similarity(COALESCE(f.name, ''), $${queryIdx}) * 0.5
+          ) AS final_score
         FROM knowledge_document_chunks c
         JOIN knowledge_documents d ON c.document_id = d.id
         LEFT JOIN knowledge_folders f ON d.folder_id = f.id

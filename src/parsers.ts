@@ -1,4 +1,9 @@
 import { inflateRawSync, inflateSync } from 'node:zlib';
+import { execSync } from 'node:child_process';
+import { writeFileSync, unlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 export function cleanXmlEntryToText(xml: string): string {
   return xml
@@ -292,6 +297,27 @@ export function parseXlsxSheets(bytes: Buffer): { name: string; totalRows: numbe
 }
 
 export function extractPdfText(bytes: Buffer): string {
+  // 1. High-fidelity extraction via pdftotext CLI (handles custom font CMaps, ToUnicode encodings)
+  try {
+    const tempPath = join(tmpdir(), `pdf_${randomUUID()}.pdf`);
+    writeFileSync(tempPath, bytes);
+    try {
+      const text = execSync(`pdftotext "${tempPath}" -`, {
+        encoding: 'utf8',
+        timeout: 8000,
+        maxBuffer: 10 * 1024 * 1024
+      });
+      if (text && text.trim().length >= 40) {
+        return text.slice(0, 32000).trim();
+      }
+    } finally {
+      try { unlinkSync(tempPath); } catch {}
+    }
+  } catch {
+    // pdftotext not present or failed, proceed to built-in fallback
+  }
+
+  // 2. Built-in Flate stream decompressor fallback
   try {
     const rawLatin = bytes.toString('latin1');
     const chunks: string[] = [];

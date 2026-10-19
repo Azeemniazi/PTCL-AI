@@ -2,6 +2,11 @@ import { config } from './config.js';
 import type { KnowledgeChunk, RetrievedChunk } from './models.js';
 import { repository } from './repository.js';
 import pino from 'pino';
+import { execSync } from 'node:child_process';
+import { writeFileSync, readFileSync, unlinkSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
 
@@ -228,6 +233,42 @@ export async function extractDocumentImageOcr(
   }
 }
 
+/**
+ * Render PDF pages to high-resolution PNGs and transcribe via Qwen3-VL 30B multimodal vision.
+ */
+export async function extractPdfOcr(pdfBuffer: Buffer, maxPages = 3): Promise<string> {
+  const tempId = randomUUID();
+  const tempPdf = join(tmpdir(), `ocr_${tempId}.pdf`);
+  const tempPrefix = join(tmpdir(), `page_${tempId}`);
+  try {
+    writeFileSync(tempPdf, pdfBuffer);
+    execSync(`pdftoppm -png -r 150 -f 1 -l ${maxPages} "${tempPdf}" "${tempPrefix}"`, {
+      timeout: 25000
+    });
+    const ocrPages: string[] = [];
+    for (let p = 1; p <= maxPages; p++) {
+      const pagePath = `${tempPrefix}-${p}.png`;
+      if (existsSync(pagePath)) {
+        try {
+          const pageBuffer = readFileSync(pagePath);
+          const pageText = await extractDocumentImageOcr(pageBuffer, 'image/png');
+          if (pageText && pageText.trim()) {
+            ocrPages.push(`--- Page ${p} ---\n${pageText.trim()}`);
+          }
+        } finally {
+          try { unlinkSync(pagePath); } catch {}
+        }
+      }
+    }
+    return ocrPages.join('\n\n');
+  } catch (err) {
+    logger.warn({ error: String(err) }, 'PDF OCR rendering failed');
+    return '';
+  } finally {
+    try { unlinkSync(tempPdf); } catch {}
+  }
+}
+
 export interface RetrievalOptions {
   scope?: {
     mode: 'all' | 'folder' | 'document';
@@ -264,7 +305,9 @@ export async function retrieveKnowledgeContext(
   query: string,
   options?: RetrievalOptions
 ): Promise<RetrievalResult> {
-  const topK = options?.topK ?? 4;
+  const isBroadQuery = /\b(all|every|list|certifications?|standards?|audit|facilities|datacenter|data\s*center|overview|summary|what\s+are)\b/i.test(query) || options?.scope?.mode === 'folder';
+  const candidatePoolSize = isBroadQuery ? 30 : 12;
+  const effectiveTopK = isBroadQuery ? Math.max(options?.topK ?? 4, 12) : (options?.topK ?? 4);
   const threshold = options?.minScoreThreshold ?? 0.05;
 
   const queryEmbedding = await generateEmbedding(query);
@@ -272,7 +315,7 @@ export async function retrieveKnowledgeContext(
     userId,
     query,
     queryEmbedding ?? undefined,
-    8,
+    candidatePoolSize,
     options?.scope
   );
 
@@ -294,14 +337,34 @@ export async function retrieveKnowledgeContext(
         score: r.relevanceScore
       };
     })
-    .filter((c): c is RetrievedChunk => c !== null)
+    .filter((c): c is RetrievedChunk => c !== null && c.score >= threshold)
     .sort((a, b) => b.score - a.score);
 
-  // Filter by relevance threshold and take Top K
-  const relevantChunks = scoredChunks.filter(c => c.score >= threshold).slice(0, topK);
-
-  if (!relevantChunks.length) {
+  if (!scoredChunks.length) {
     return { contextBlock: '', citations: [] };
+  }
+
+  // Diversity selection: ensure every relevant document gets represented before multiple chunks from the same doc
+  const relevantChunks: RetrievedChunk[] = [];
+  const seenDocIds = new Set<string>();
+
+  // Pass 1: Add highest-scoring chunk from each unique document
+  for (const chunk of scoredChunks) {
+    if (!seenDocIds.has(chunk.documentId)) {
+      relevantChunks.push(chunk);
+      seenDocIds.add(chunk.documentId);
+      if (relevantChunks.length >= effectiveTopK) break;
+    }
+  }
+
+  // Pass 2: If we still have slots under effectiveTopK, fill with secondary chunks
+  if (relevantChunks.length < effectiveTopK) {
+    for (const chunk of scoredChunks) {
+      if (!relevantChunks.some(c => c.id === chunk.id)) {
+        relevantChunks.push(chunk);
+        if (relevantChunks.length >= effectiveTopK) break;
+      }
+    }
   }
 
   // Format Grounded Knowledge Context Block
@@ -333,7 +396,7 @@ export async function retrieveKnowledgeContext(
 
   contextParts.push('=== END KNOWLEDGE BASE CONTEXT ===');
   contextParts.push(
-    'INSTRUCTION: Use the retrieved knowledge base sources above to answer the user query accurately and factually. Explicitly cite the source document name (e.g. "According to [Document Name]...") when stating facts, standards, or specifications from them. If the retrieved context does not contain the answer, politely state that the knowledge base does not contain that specific information.'
+    'INSTRUCTION: Use the retrieved knowledge base sources above to answer the user query accurately and factually. Explicitly cite the source document name (e.g. "According to [Document Name]...") when stating facts, standards, or specifications from them. Provide a comprehensive, complete answer covering all relevant sources. If the retrieved context does not contain the answer, politely state that the knowledge base does not contain that specific information.'
   );
 
   return {

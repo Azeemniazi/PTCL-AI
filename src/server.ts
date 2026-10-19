@@ -26,7 +26,7 @@ import { clearMomInFlight, enqueue, isMomInFlight, markMomInFlight, redisConnect
 import { activeStatuses, type Meeting, type MeetingStatus, type User, type Role, type GeneratedAsset, type ImageJob } from './models.js';
 import { repository } from './repository.js';
 import { createMeetingSchema, momSchema, validateTeamsUrl } from './validation.js';
-import { retrieveKnowledgeContext, indexDocumentChunks, backfillUnindexedDocuments, extractDocumentImageOcr } from './rag.js';
+import { retrieveKnowledgeContext, indexDocumentChunks, backfillUnindexedDocuments, extractDocumentImageOcr, extractPdfOcr } from './rag.js';
 
 export function verifyCsrfOrigin(originHeader: string | undefined, hostHeader: string | undefined, customHeader: string | undefined, publicBaseUrl = config.publicBaseUrl): boolean {
   if (customHeader === 'CloudCoreAI') return true;
@@ -551,15 +551,26 @@ app.post('/api/knowledge/upload', requireUser, async (req, res) => {
           extractedText = `Uploaded document "${cleanLeaf}" (${Math.max(1, Math.round(fileBytes.length / 1024))} KB).`;
         }
 
-        // If extracted text is empty or very short, and file is an image, run Qwen3-VL OCR!
-        if ((!extractedText || extractedText.trim().length < 50) && /\.(png|jpe?g|webp|bmp|tiff)$/i.test(cleanLeaf)) {
-          try {
-            const ocrText = await extractDocumentImageOcr(fileBytes, entry.type || 'image/png');
-            if (ocrText && ocrText.trim()) {
-              extractedText = ocrText.trim();
+        // If extracted text is empty or very short, run multimodal Vision OCR (for images or scanned PDFs)!
+        if (!extractedText || extractedText.trim().length < 50) {
+          if (/\.(png|jpe?g|webp|bmp|tiff)$/i.test(cleanLeaf)) {
+            try {
+              const ocrText = await extractDocumentImageOcr(fileBytes, entry.type || 'image/png');
+              if (ocrText && ocrText.trim()) {
+                extractedText = ocrText.trim();
+              }
+            } catch (ocrErr) {
+              logger.warn({ error: String(ocrErr), filename: cleanLeaf }, 'Image OCR fallback failed');
             }
-          } catch (ocrErr) {
-            logger.warn({ error: String(ocrErr), filename: cleanLeaf }, 'Image OCR fallback failed');
+          } else if (cleanLeaf.toLowerCase().endsWith('.pdf') || (fileBytes.length >= 5 && fileBytes.subarray(0, 5).toString('ascii') === '%PDF-')) {
+            try {
+              const pdfOcrText = await extractPdfOcr(fileBytes, 3);
+              if (pdfOcrText && pdfOcrText.trim()) {
+                extractedText = pdfOcrText.trim();
+              }
+            } catch (pdfOcrErr) {
+              logger.warn({ error: String(pdfOcrErr), filename: cleanLeaf }, 'PDF Vision OCR fallback failed');
+            }
           }
         }
 
