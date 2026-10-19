@@ -117,6 +117,7 @@ app.get('/api/ai/health',requireUser,async(_req,res)=>{
   }
 });
 const userDocuments = new Map<string, { filename: string; content: string; uploadedAt: string }>();
+const userLastImages = new Map<string, { filename: string; mimeType: string; base64: string; uploadedAt: string }>();
 const ingestJobs = new Map<string, { job_id: string; filename: string; status: 'queued' | 'processing' | 'finished' | 'failed'; error?: string }>();
 
 async function readRequestBuffer(req: express.Request, maxBytes: number): Promise<Buffer> {
@@ -224,11 +225,26 @@ Core Guidelines:
 5. Natural & Human (Not Scripted): Speak like a knowledgeable, articulate, and thoughtful colleague—not a scripted robot or marketing brochure. Never introduce yourself with a canned monologue about your features unless the user specifically asks who you are.
 6. Direct & Fluff-Free: Skip generic conversational preamble like "Certainly! I would be delighted to help you with that." Jump straight into the substance of the answer.
 7. Clean, Purposeful Formatting: Use Markdown (headings, bullet points, tables, code blocks) only when structuring complex information, comparisons, or multi-step guides where it genuinely aids readability. For everyday conversational or simple answers, write clean, natural prose without forced bullet points.
-8. Multilingual & Cultural Understanding: Seamlessly understand and respond in English, Urdu, and Roman Urdu. If the user writes in Urdu or Roman Urdu, reply naturally in kind or in clear English as fitting. Never use Hindi / Devanagari script.`;
+8. Multilingual & Cultural Understanding: Seamlessly understand and respond in English, Urdu, and Roman Urdu. If the user writes in Urdu or Roman Urdu, reply naturally in kind or in clear English as fitting. Never use Hindi / Devanagari script.
+9. Multimodal Vision Understanding: You are powered by Qwen3-VL, a high-performance multimodal vision-language model. You CAN see, interpret, and analyze images, diagrams, documents, and screenshots directly. When an image is provided in the conversation, inspect its visual elements, transcribe text verbatim, describe layout, and answer questions accurately. Never claim you lack vision or image analysis capability.`;
     const systemPrompt=`${baseSystemPrompt}${docContext}`;
     const effectiveMaxTokens=resolveReplyMaxTokens(cleanMessage,typeof max_tokens==='number'?max_tokens:undefined);
-    const buildPayload=(sys:string,usr:string,maxTok:number)=>({
-      model:config.ai.momModel||'qwen2.5-7b',
+
+    // Check if the user has an active image in their session
+    const lastImage = req.session.user ? userLastImages.get(req.session.user.id) : undefined;
+    const isRecentImage = Boolean(lastImage && (Date.now() - Date.parse(lastImage.uploadedAt) < 30 * 60 * 1000));
+    const mentionsImage = /\b(image|picture|photo|screenshot|graphic|diagram|showing|shows|visible|display|see|look at|screen|what is this|in this)\b/i.test(cleanMessage);
+    const shouldAttachImage = Boolean(isRecentImage && mentionsImage && lastImage);
+
+    const userMessageContent: any = shouldAttachImage && lastImage
+      ? [
+          { type: 'text', text: cleanMessage },
+          { type: 'image_url', image_url: { url: `data:${lastImage.mimeType};base64,${lastImage.base64}` } }
+        ]
+      : cleanMessage;
+
+    const buildPayload=(sys:string,usr:any,maxTok:number)=>({
+      model:config.ai.momModel||'qwen-30b',
       temperature: 0.5,
       cache_prompt:true,
       ...(streamRequested?{stream:true}:{}),
@@ -245,7 +261,7 @@ Core Guidelines:
       let upstream=await fetch(cleanUrl,{
         method:'POST',
         headers:buildAiHeaders({'content-type':'application/json'}),
-        body:JSON.stringify(buildPayload(systemPrompt,cleanMessage,effectiveMaxTokens))
+        body:JSON.stringify(buildPayload(systemPrompt,userMessageContent,effectiveMaxTokens))
       });
       if(upstream.status===400){
         const errText=await upstream.text().catch(()=>'');
@@ -823,34 +839,46 @@ app.post('/api/vision',requireUser,async(req,res)=>{
     }
     const formData=await new Response(new Uint8Array(rawBuffer),{headers:{'content-type':contentType}}).formData();
     const imageEntry=formData.get('image');
-    const rawQuestion=String(formData.get('question')||'Analyze this image and provide key observations.');
+    const rawQuestion=String(formData.get('question')||'Analyze this image thoroughly, transcribe all visible text, identify objects, and provide detailed observations.');
     if(!imageEntry||typeof imageEntry==='string'){
       return res.status(400).json({error:{code:'missing_image',message:'An image file is required.'}});
     }
     const filename=sanitizePrompt(imageEntry.name||'image.png').slice(0,120)||'image.png';
+    const mimeType=imageEntry.type||'image/png';
     const imageBytes=Buffer.from(await imageEntry.arrayBuffer());
-    const meta=inspectImageMetadata(filename,imageEntry.type||'image/png',imageBytes);
-    const dims=meta.width&&meta.height?`${meta.width}x${meta.height} px`:'standard resolution';
-    const prompt=`The user uploaded an image asset for inspection in CloudCore AI Image Analysis:
-- File Name: ${filename}
-- Format: ${meta.format} (${dims}, ${meta.sizeKb} KB)
-${meta.svgText?`- Embedded Text/Labels: ${meta.svgText}\n`:''}- User Request: ${sanitizePrompt(rawQuestion)}
+    const base64Data=imageBytes.toString('base64');
+    const meta=inspectImageMetadata(filename,mimeType,imageBytes);
 
-Provide a concise, well-structured Markdown inspection report covering:
-1. **Asset Summary & Technical Properties** (format, dimensions, file size, suitability for enterprise/web use)
-2. **Contextual & Visual Assessment** (based on the asset type "${filename}" and any extracted labels/metadata)
-3. **Recommended Next Steps**`;
+    // Save image to session store so follow-up chat turns can reference it!
+    userLastImages.set(req.session.user!.id,{
+      filename,
+      mimeType,
+      base64:base64Data,
+      uploadedAt:new Date().toISOString()
+    });
+
+    const userPrompt=sanitizePrompt(rawQuestion).trim()||'Describe this image in detail and extract all visible text.';
+
     const llmRes=await fetch(buildAiUrl('/chat/completions'),{
       method:'POST',
       headers:buildAiHeaders({'content-type':'application/json'}),
       body:JSON.stringify({
-        model:config.ai.momModel||'qwen2.5-7b',
-        cache_prompt:true,
+        model:config.ai.momModel||'qwen-30b',
         messages:[
-          {role:'system',content:'You are CloudCore AI Image & Asset Inspector by PTCL Smart Cloud. Provide clear, structured Markdown analysis.'},
-          {role:'user',content:prompt}
+          {
+            role:'system',
+            content:'You are CloudCore AI Vision Intelligence, powered by Qwen3-VL. You have full vision capabilities and can see images directly. Analyze the visual scene, read and transcribe any text verbatim, identify key objects and entities, and provide an articulate, accurate response.'
+          },
+          {
+            role:'user',
+            content:[
+              {type:'text',text:userPrompt},
+              {type:'image_url',image_url:{url:`data:${mimeType};base64,${base64Data}`}}
+            ]
+          }
         ],
-        max_tokens:420
+        max_tokens:1024,
+        temperature:0.2
       })
     });
     if(!llmRes.ok){
