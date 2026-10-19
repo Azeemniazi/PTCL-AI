@@ -6,30 +6,78 @@ services:
     ports:
       - 127.0.0.1:8000:8080
     volumes:
-      - /opt/ai-stack/models/mom:/models:ro
+      - /opt/ai-stack/models/main:/models:ro
     command:
       - -m
-      - /models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf
+      - /models/Qwen3VL-30B-A3B-Instruct-Q4_K_M.gguf
+      - --mmproj
+      - /models/mmproj-Qwen3VL-30B-A3B-Instruct-Q8_0.gguf
       - -c
       - '8192'
       - -np
       - '1'
-      - --cache-reuse
-      - '256'
       - --host
       - 0.0.0.0
       - --port
       - '8080'
       - -t
-      - '12'
+      - '16'
       - -tb
       - '16'
-      - --prio
-      - '2'
-      - --prio-batch
-      - '2'
       - -fa
       - 'on'
       - -cb
       - --alias
       - qwen2.5-7b
+      - --alias
+      - qwen-30b
+
+  rag-embed:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    container_name: cloudcore-ai-rag-embed
+    restart: unless-stopped
+    ports:
+      - 127.0.0.1:8001:8080
+    volumes:
+      - /opt/ai-stack/models/embedding:/models:ro
+    command:
+      - -m
+      - /models/Qwen3-Embedding-4B-Q4_K_M.gguf
+      - --embedding
+      - -c
+      - '4096'
+      - -t
+      - '16'
+      - -tb
+      - '16'
+      - -fa
+      - 'on'
+      - --host
+      - 0.0.0.0
+      - --port
+      - '8080'
+
+  rag-rerank:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    container_name: cloudcore-ai-rag-rerank
+    restart: unless-stopped
+    ports:
+      - 127.0.0.1:8002:8080
+    volumes:
+      - /opt/ai-stack/models/reranker:/models:ro
+    command:
+      - -m
+      - /models/qwen3-reranker-0.6b-q8_0.gguf
+      - --reranking
+      - -c
+      - '2048'
+      - -t
+      - '8'
+      - -tb
+      - '8'
+      - -fa
+      - 'on'
+      - --host
+      - 0.0.0.0
+      - --port
+      - '8080'
