@@ -156,15 +156,16 @@ export async function rerankCandidates(
 ): Promise<Array<{ index: number; relevanceScore: number }>> {
   if (!documents.length) return [];
   const url = `${config.ai.rerankerUrl}/v1/rerank`;
+  const cappedDocs = documents.slice(0, 8);
   try {
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        query: query.slice(0, 4000),
-        documents: documents.map(d => d.slice(0, 4000))
+        query: query.slice(0, 1500),
+        documents: cappedDocs.map(d => d.slice(0, 1500))
       }),
-      signal: AbortSignal.timeout(15000)
+      signal: AbortSignal.timeout(30000)
     });
     if (!res.ok) {
       const err = await res.text().catch(() => '');
@@ -271,7 +272,7 @@ export async function retrieveKnowledgeContext(
     userId,
     query,
     queryEmbedding ?? undefined,
-    20,
+    8,
     options?.scope
   );
 
