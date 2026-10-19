@@ -98,7 +98,7 @@ export async function generateEmbedding(input: string): Promise<number[] | null>
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ input: input.slice(0, 16000) }),
-      signal: AbortSignal.timeout(12000)
+      signal: AbortSignal.timeout(60000)
     });
     if (!res.ok) {
       const err = await res.text().catch(() => '');
@@ -114,15 +114,35 @@ export async function generateEmbedding(input: string): Promise<number[] | null>
 }
 
 /**
- * Batch generate embeddings for document chunks.
+ * Batch generate embeddings for document chunks using native array batching.
  */
-export async function generateBatchEmbeddings(inputs: string[], batchSize = 6): Promise<Array<number[] | null>> {
+export async function generateBatchEmbeddings(inputs: string[], batchSize = 3): Promise<Array<number[] | null>> {
   const results: Array<number[] | null> = [];
+  const url = `${config.ai.embeddingUrl}/v1/embeddings`;
+
   for (let i = 0; i < inputs.length; i += batchSize) {
-    const batch = inputs.slice(i, i + batchSize);
-    const batchPromises = batch.map(t => generateEmbedding(t));
-    const batchResults = await Promise.all(batchPromises);
-    results.push(...batchResults);
+    const batch = inputs.slice(i, i + batchSize).map(t => t.slice(0, 16000));
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input: batch }),
+        signal: AbortSignal.timeout(90000)
+      });
+      if (res.ok) {
+        const data: any = await res.json();
+        const batchVectors = (data?.data ?? []).map((item: any) => item?.embedding ?? null);
+        results.push(...batchVectors);
+      } else {
+        for (const singleText of batch) {
+          results.push(await generateEmbedding(singleText));
+        }
+      }
+    } catch {
+      for (const singleText of batch) {
+        results.push(await generateEmbedding(singleText));
+      }
+    }
   }
   return results;
 }
