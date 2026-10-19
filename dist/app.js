@@ -1867,6 +1867,7 @@ function previewMomPdf(m){
   }else{
     printMomPdf(m);
   }
+}
 function renderCitations(citations){
   if(!citations||!citations.length)return '';
   return `<details class="chat-citations-details" open><summary class="chat-citations-summary">${icon('folder')} <span>Sources Cited (${citations.length})</span></summary><div class="chat-citations-list">${citations.map((c,i)=>`<div class="citation-chip" title="${esc(c.preview||'')}"><span class="citation-num">${i+1}</span><span class="citation-name">${esc(c.filename)}</span>${c.score?`<span class="citation-score">${Math.round(c.score*100)}%</span>`:''}</div>`).join('')}</div></details>`;
