@@ -47,6 +47,8 @@ const knowledgeStorageDir=resolve(process.cwd(),'data/knowledge');
 try { mkdirSync(knowledgeStorageDir, { recursive: true }); } catch {}
 const imageStorageDir=resolve(process.cwd(),'data/images/generated');
 try { mkdirSync(imageStorageDir, { recursive: true }); } catch {}
+const imageUploadsDir=resolve(process.cwd(),'data/images/uploads');
+try { mkdirSync(imageUploadsDir, { recursive: true }); } catch {}
 app.set('trust proxy',config.trustProxy);app.use(pinoHttp({logger}));app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'","'unsafe-inline'",'https://fonts.googleapis.com'],fontSrc:["'self'",'https://fonts.gstatic.com'],imgSrc:["'self'",'data:','blob:'],connectSrc:["'self'"],upgradeInsecureRequests:null}},hsts:config.nodeEnv==='production'&&config.publicBaseUrl.startsWith('https://')}));app.use(express.json({limit:'1mb',verify:(req,_res,buffer)=>{(req as express.Request&{rawBody?:Buffer}).rawBody=Buffer.from(buffer)}}));
 app.use(session({name:'cloudcore.sid',secret:config.sessionSecret,resave:false,saveUninitialized:false,store:redisConnection?new RedisStore({client:redisConnection}):undefined,cookie:{httpOnly:true,sameSite:'lax',secure:config.nodeEnv==='production'&&config.publicBaseUrl.startsWith('https://'),maxAge:8*60*60*1000}}));
 app.use('/api',(req,res,next)=>{
@@ -885,9 +887,19 @@ app.post('/api/vision',requireUser,async(req,res)=>{
       const errText=await llmRes.text().catch(()=>'');
       return res.status(llmRes.status).json({error:{code:'ai_error',message:errText||'Vision analysis failed.'}});
     }
+    const ext = mimeType === 'image/jpeg' ? 'jpg' : mimeType === 'image/webp' ? 'webp' : 'png';
+    const storedFilename = `chat_${randomUUID()}.${ext}`;
+    const storedPath = resolve(imageUploadsDir, storedFilename);
+    try {
+      writeFileSync(storedPath, imageBytes);
+    } catch (writeErr) {
+      logger.warn({ error: String(writeErr) }, 'Failed to persist uploaded chat image to disk');
+    }
+    const persistentImageUrl = `/api/images/uploads/${storedFilename}`;
+
     const data:any=await llmRes.json().catch(()=>({}));
     const answer=data.choices?.[0]?.message?.content||'Image inspection completed.';
-    return res.json({answer,model:config.ai.momModel,metadata:meta,analysisKind:'metadata'});
+    return res.json({answer,model:config.ai.momModel,metadata:meta,analysisKind:'metadata',imageUrl:persistentImageUrl});
   }catch(error){
     logger.warn({error:error instanceof Error?error.message:String(error)},'AI vision analysis failed');
     return res.status(502).json({error:{code:'ai_unavailable',message:error instanceof Error?error.message:'AI service unavailable.'}});
@@ -1778,6 +1790,19 @@ app.get('/api/images/generated/:filename', requireUser, async (req, res) => {
   }
   res.type(filename.endsWith('.svg') ? 'image/svg+xml' : 'image/png');
   res.setHeader('Cache-Control', 'private, no-store');
+  createReadStream(filePath).pipe(res);
+});
+
+app.get('/api/images/uploads/:filename', requireUser, async (req, res) => {
+  const rawParam = req.params.filename;
+  const rawName = Array.isArray(rawParam) ? rawParam[0] : rawParam;
+  const filename = sanitizePrompt(String(rawName || '')).replace(/[^a-zA-Z0-9._-]/g, '');
+  const filePath = resolve(imageUploadsDir, filename);
+  if (!existsSync(filePath)) {
+    return res.status(404).json({ error: { code: 'not_found', message: 'Uploaded image not found.' } });
+  }
+  res.type(filename.endsWith('.png') ? 'image/png' : filename.endsWith('.jpg') || filename.endsWith('.jpeg') ? 'image/jpeg' : filename.endsWith('.webp') ? 'image/webp' : 'application/octet-stream');
+  res.setHeader('Cache-Control', 'private, max-age=86400');
   createReadStream(filePath).pipe(res);
 });
 

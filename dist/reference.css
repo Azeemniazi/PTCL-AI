@@ -121,6 +121,15 @@ button:disabled{opacity:.55;cursor:wait}
 .attachment-chip .icon{width:14px;height:14px;flex-shrink:0}
 .attachment-chip .chip-remove{border:0;background:#00442918;color:inherit;border-radius:50%;width:18px;height:18px;display:inline-grid;place-items:center;padding:0;font-size:13px;line-height:1;cursor:pointer;margin-left:2px}
 .attachment-chip .chip-remove:hover{background:#00442933}
+.attachment-chip.attachment-chip-image{padding:4px 10px 4px 5px}
+.composer-chip-thumb{width:26px;height:26px;border-radius:6px;object-fit:cover;flex-shrink:0;border:1px solid #75ba8d}
+.chat-msg-image-wrap{margin-bottom:12px;border-radius:12px;overflow:hidden;background:#0d1410;border:1px solid #cce2d3;max-width:360px;cursor:pointer;box-shadow:0 3px 12px rgba(0,50,25,0.06);transition:all .18s ease}
+.chat-msg-image-wrap:hover{border-color:#53aa73;box-shadow:0 6px 18px rgba(0,50,25,0.12);transform:translateY(-1px)}
+.chat-msg-image{display:block;width:100%;max-height:240px;object-fit:cover;background:#0d1410}
+.chat-msg-image-footer{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:#f3faf5;border-top:1px solid #e1eee4;font-size:11px;color:#1e4732}
+.chat-msg-image-name{display:inline-flex;align-items:center;gap:6px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chat-msg-image-name .icon{width:13px;height:13px;flex-shrink:0;color:#005b38}
+.chat-msg-image-size{color:#647d6f;font-size:10px;margin-left:8px;font-family:monospace}
 .ref-assistant-empty .attachment-chip{background:#10382acc;color:#e6ff9b;border-color:#59987099}
 .ref-assistant-empty .attachment-chip .chip-remove{background:#ffffff22;color:#fff}
 .notifications-list{display:flex;flex-direction:column;gap:8px;max-height:340px;overflow-y:auto;margin:10px 0 4px}
