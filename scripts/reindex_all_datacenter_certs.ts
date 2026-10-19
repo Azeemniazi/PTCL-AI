@@ -1,6 +1,6 @@
-import { repository } from '../src/repository.js';
-import { extractDocumentText } from '../src/parsers.js';
-import { extractPdfOcr, indexDocumentChunks, retrieveKnowledgeContext } from '../src/rag.js';
+import { repository } from '../build/repository.js';
+import { extractDocumentText } from '../build/parsers.js';
+import { extractPdfOcr, indexDocumentChunks, retrieveKnowledgeContext } from '../build/rag.js';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
