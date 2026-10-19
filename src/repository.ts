@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { config } from './config.js';
 import { hashPassword } from './crypto.js';
-import { activeStatuses, type Meeting, type MeetingStatus, type Mom, type Participant, type Snapshot, type TranscriptSegment, type User, type UserWithSecret, type Role, type KnowledgeFolder, type KnowledgeDocument, type GeneratedAsset, type ImageJob } from './models.js';
+import { activeStatuses, type Meeting, type MeetingStatus, type Mom, type Participant, type Snapshot, type TranscriptSegment, type User, type UserWithSecret, type Role, type KnowledgeFolder, type KnowledgeDocument, type KnowledgeChunk, type RetrievedChunk, type GeneratedAsset, type ImageJob } from './models.js';
 const { Pool } = pg;
 
 const iso = (value: unknown) => value ? new Date(value as string).toISOString() : undefined;
@@ -199,7 +199,8 @@ export class Repository {
         '003_scalability_and_indexes.sql',
         '004_knowledge_hub.sql',
         '005_trigram_knowledge_search.sql',
-        '006_image_studio.sql'
+        '006_image_studio.sql',
+        '007_knowledge_rag_chunks.sql'
       ]) {
         await this.pool.query(await readFile(resolve(dir, '../migrations', file), 'utf8'));
       }
@@ -1321,6 +1322,187 @@ export class Repository {
       if (updated) moved.push(id);
     }
     return moved;
+  }
+
+  async insertDocumentChunks(
+    documentId: string,
+    chunks: Array<{ chunkIndex: number; content: string; tokenCount: number; embedding?: number[] | null }>
+  ): Promise<void> {
+    if (!chunks.length) return;
+    if (!this.pool) return;
+
+    await this.pool.query('DELETE FROM knowledge_document_chunks WHERE document_id = $1', [documentId]);
+
+    for (const chunk of chunks) {
+      const vecString = chunk.embedding && chunk.embedding.length > 0
+        ? `[${chunk.embedding.join(',')}]`
+        : null;
+      await this.pool.query(
+        `INSERT INTO knowledge_document_chunks (id, document_id, chunk_index, content, token_count, embedding, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6::vector, now())
+         ON CONFLICT (document_id, chunk_index) DO UPDATE SET
+           content = EXCLUDED.content,
+           token_count = EXCLUDED.token_count,
+           embedding = EXCLUDED.embedding,
+           created_at = now()`,
+        [randomUUID(), documentId, chunk.chunkIndex, chunk.content, chunk.tokenCount, vecString]
+      );
+    }
+  }
+
+  async deleteDocumentChunks(documentId: string): Promise<void> {
+    if (!this.pool) return;
+    await this.pool.query('DELETE FROM knowledge_document_chunks WHERE document_id = $1', [documentId]);
+  }
+
+  async getUnindexedDocuments(limit = 100): Promise<KnowledgeDocument[]> {
+    if (!this.pool) return [];
+    const q = await this.pool.query(
+      `SELECT d.*, u.display_name AS creator_name, f.name AS folder_name
+       FROM knowledge_documents d
+       LEFT JOIN users u ON d.user_id = u.id
+       LEFT JOIN knowledge_folders f ON d.folder_id = f.id
+       WHERE d.extracted_text IS NOT NULL
+         AND length(trim(d.extracted_text)) > 0
+         AND NOT EXISTS (
+           SELECT 1 FROM knowledge_document_chunks c WHERE c.document_id = d.id
+         )
+       ORDER BY d.created_at DESC
+       LIMIT $1`,
+      [limit]
+    );
+    return q.rows.map(documentRow);
+  }
+
+  async searchChunksHybrid(
+    userId: string,
+    query: string,
+    queryEmbedding?: number[],
+    limit = 20,
+    scope?: { mode: 'all' | 'folder' | 'document'; id?: string }
+  ): Promise<RetrievedChunk[]> {
+    if (!this.pool) {
+      const qLower = query.toLowerCase().trim();
+      const results: RetrievedChunk[] = [];
+      for (const [, doc] of this.knowledgeDocuments.entries()) {
+        if (!doc.isShared && doc.userId !== userId) continue;
+        if (scope?.mode === 'folder' && scope.id && doc.folderId !== scope.id) continue;
+        if (scope?.mode === 'document' && scope.id && doc.id !== scope.id) continue;
+        const text = doc.extractedText || '';
+        if (text.toLowerCase().includes(qLower) || doc.filename.toLowerCase().includes(qLower)) {
+          results.push({
+            id: randomUUID(),
+            documentId: doc.id,
+            filename: doc.filename,
+            folderName: doc.folderName,
+            chunkIndex: 0,
+            content: text.slice(0, 1500),
+            score: 0.8,
+            retrievalType: 'keyword'
+          });
+        }
+      }
+      return results.slice(0, limit);
+    }
+
+    const conditions: string[] = ['(d.is_shared = true OR d.user_id = $1)'];
+    const params: any[] = [userId];
+
+    if (scope?.mode === 'folder' && scope.id) {
+      params.push(scope.id);
+      conditions.push(`d.folder_id = $${params.length}`);
+    } else if (scope?.mode === 'document' && scope.id) {
+      params.push(scope.id);
+      conditions.push(`d.id = $${params.length}`);
+    }
+
+    const whereClause = conditions.join(' AND ');
+
+    if (queryEmbedding && Array.isArray(queryEmbedding) && queryEmbedding.length > 0) {
+      const vecString = `[${queryEmbedding.join(',')}]`;
+      params.push(vecString);
+      const vecIdx = params.length;
+
+      params.push(query.trim());
+      const queryIdx = params.length;
+
+      params.push(limit);
+      const limitIdx = params.length;
+
+      const sql = `
+        SELECT 
+          c.id,
+          c.document_id,
+          c.chunk_index,
+          c.content,
+          d.filename,
+          f.name AS folder_name,
+          CASE 
+            WHEN c.embedding IS NOT NULL 
+              THEN (1 - (c.embedding <=> $${vecIdx}::vector))
+            ELSE 0 
+          END AS vector_score,
+          similarity(c.content, $${queryIdx}) AS text_score,
+          CASE 
+            WHEN c.embedding IS NOT NULL 
+              THEN ((1 - (c.embedding <=> $${vecIdx}::vector)) * 0.75) + (similarity(c.content, $${queryIdx}) * 0.25)
+            ELSE similarity(c.content, $${queryIdx})
+          END AS final_score
+        FROM knowledge_document_chunks c
+        JOIN knowledge_documents d ON c.document_id = d.id
+        LEFT JOIN knowledge_folders f ON d.folder_id = f.id
+        WHERE ${whereClause}
+        ORDER BY final_score DESC
+        LIMIT $${limitIdx}
+      `;
+
+      const res = await this.pool.query(sql, params);
+      return res.rows.map((r: any) => ({
+        id: r.id,
+        documentId: r.document_id,
+        filename: r.filename,
+        folderName: r.folder_name ?? undefined,
+        chunkIndex: r.chunk_index,
+        content: r.content,
+        score: Number(r.final_score ?? 0),
+        retrievalType: (r.vector_score > 0 ? 'hybrid' : 'keyword') as 'hybrid' | 'keyword'
+      }));
+    } else {
+      params.push(query.trim());
+      const queryIdx = params.length;
+
+      params.push(limit);
+      const limitIdx = params.length;
+
+      const sql = `
+        SELECT 
+          c.id,
+          c.document_id,
+          c.chunk_index,
+          c.content,
+          d.filename,
+          f.name AS folder_name,
+          similarity(c.content, $${queryIdx}) AS final_score
+        FROM knowledge_document_chunks c
+        JOIN knowledge_documents d ON c.document_id = d.id
+        LEFT JOIN knowledge_folders f ON d.folder_id = f.id
+        WHERE ${whereClause}
+        ORDER BY final_score DESC
+        LIMIT $${limitIdx}
+      `;
+
+      const res = await this.pool.query(sql, params);
+      return res.rows.map((r: any) => ({
+        id: r.id,
+        documentId: r.document_id,
+        filename: r.filename,
+        folderName: r.folder_name ?? undefined,
+        chunkIndex: r.chunk_index,
+        content: r.content,
+        score: Number(r.final_score ?? 0),
+        retrievalType: 'keyword' as const
+      }));
+    }
   }
 
   async saveGeneratedAsset(asset: GeneratedAsset): Promise<GeneratedAsset> {

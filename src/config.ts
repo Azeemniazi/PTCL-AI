@@ -34,6 +34,8 @@ export const config = {
   ai: {
     baseUrl: (process.env.AI_BASE_URL ?? '').replace(/\/$/, ''), apiKey: process.env.AI_API_KEY ?? '',
     transcribeModel: process.env.AI_TRANSCRIBE_MODEL ?? '', momModel: process.env.AI_MOM_MODEL ?? '',
+    embeddingUrl: (process.env.EMBEDDING_API_URL ?? 'http://127.0.0.1:8001').replace(/\/$/, ''),
+    rerankerUrl: (process.env.RERANKER_API_URL ?? 'http://127.0.0.1:8002').replace(/\/$/, ''),
     imageEngineUrl: (process.env.IMAGE_ENGINE_URL ?? process.env.FLUX_ENGINE_URL ?? 'http://127.0.0.1:8006').replace(/\/$/, ''),
     imageRemixVerified: bool(process.env.IMAGE_REMIX_VERIFIED)
   }

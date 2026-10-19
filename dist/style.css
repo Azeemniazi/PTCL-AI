@@ -353,3 +353,81 @@
 .user-mgmt-actions{display:flex;gap:6px}
 .must-change-password-box{max-width:440px;padding:6px 0}
 
+/* Knowledge Hub RAG Citations */
+.chat-citations-details {
+  margin-top: 10px;
+  padding: 6px 10px;
+  background: rgba(0, 102, 59, 0.05);
+  border: 1px solid rgba(0, 102, 59, 0.18);
+  border-radius: 8px;
+  font-size: 12px;
+  color: #1a4d33;
+}
+.chat-citations-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+}
+.chat-citations-summary:hover {
+  color: #00663b;
+}
+.chat-citations-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(0, 102, 59, 0.2);
+}
+.citation-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #ffffff;
+  border: 1px solid #c8ded1;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  color: #173826;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+.citation-num {
+  font-weight: 700;
+  color: #00663b;
+  background: #e6f3ec;
+  border-radius: 4px;
+  padding: 1px 4px;
+  font-size: 10px;
+}
+.citation-name {
+  font-weight: 500;
+  max-width: 220px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.citation-score {
+  font-size: 10px;
+  color: #4f735f;
+  background: #f0f7f3;
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+.rag-scope-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  background: #edf7f1;
+  border: 1px solid #b7dfc8;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #00663b;
+  margin-right: 6px;
+}
+

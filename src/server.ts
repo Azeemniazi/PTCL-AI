@@ -26,6 +26,7 @@ import { clearMomInFlight, enqueue, isMomInFlight, markMomInFlight, redisConnect
 import { activeStatuses, type Meeting, type MeetingStatus, type User, type Role, type GeneratedAsset, type ImageJob } from './models.js';
 import { repository } from './repository.js';
 import { createMeetingSchema, momSchema, validateTeamsUrl } from './validation.js';
+import { retrieveKnowledgeContext, indexDocumentChunks, backfillUnindexedDocuments, extractDocumentImageOcr } from './rag.js';
 
 export function verifyCsrfOrigin(originHeader: string | undefined, hostHeader: string | undefined, customHeader: string | undefined, publicBaseUrl = config.publicBaseUrl): boolean {
   if (customHeader === 'CloudCoreAI') return true;
@@ -180,7 +181,39 @@ app.post('/api/chat',requireUser,async(req,res)=>{
 
     const streamRequested=Boolean(stream===true||req.query.stream==='true'||req.header('accept')?.includes('text/event-stream'));
     const cleanUrl=buildAiUrl('/chat/completions');
-    const userDoc=use_rag!==false&&req.session.user?userDocuments.get(req.session.user.id):undefined;
+
+    let docContext = '';
+    let citations: any[] = [];
+    if (use_rag !== false && req.session.user) {
+      try {
+        const ragScope = req.body?.rag_scope;
+        const ragRes = await retrieveKnowledgeContext(req.session.user.id, cleanMessage, { scope: ragScope });
+        if (ragRes.contextBlock) {
+          docContext = `\n\n${ragRes.contextBlock}`;
+          citations = ragRes.citations;
+        }
+      } catch (err) {
+        logger.warn({ error: err instanceof Error ? err.message : String(err) }, 'Knowledge Hub RAG retrieval failed');
+      }
+
+      if (!docContext) {
+        const userDoc = userDocuments.get(req.session.user.id);
+        if (userDoc) {
+          const snippet = selectRelevantDocContext(userDoc.content, cleanMessage, 4200);
+          if (snippet) {
+            docContext = `\n\nUSER UPLOADED DOCUMENT ("${userDoc.filename}"):\n"""\n${snippet}\n"""\nAnswer questions about this document accurately and concisely, citing relevant sections directly without unnecessary boilerplate.`;
+            citations = [{
+              documentId: 'chat-upload',
+              filename: userDoc.filename,
+              chunkIndex: 0,
+              score: 1.0,
+              preview: snippet.slice(0, 200)
+            }];
+          }
+        }
+      }
+    }
+
     const baseSystemPrompt = `You are CloudCore AI, an intelligent, versatile assistant by PTCL Smart Cloud. Your conversation style is natural, engaging, sharp, and tailored to the user's intent.
 
 Core Guidelines:
@@ -192,8 +225,6 @@ Core Guidelines:
 6. Direct & Fluff-Free: Skip generic conversational preamble like "Certainly! I would be delighted to help you with that." Jump straight into the substance of the answer.
 7. Clean, Purposeful Formatting: Use Markdown (headings, bullet points, tables, code blocks) only when structuring complex information, comparisons, or multi-step guides where it genuinely aids readability. For everyday conversational or simple answers, write clean, natural prose without forced bullet points.
 8. Multilingual & Cultural Understanding: Seamlessly understand and respond in English, Urdu, and Roman Urdu. If the user writes in Urdu or Roman Urdu, reply naturally in kind or in clear English as fitting. Never use Hindi / Devanagari script.`;
-    const snippet=userDoc?selectRelevantDocContext(userDoc.content,cleanMessage,4200):'';
-    const docContext=userDoc&&snippet?`\n\nUSER UPLOADED DOCUMENT ("${userDoc.filename}"):\n"""\n${snippet}\n"""\nAnswer questions about this document accurately and concisely, citing relevant sections directly without unnecessary boilerplate.`:'';
     const systemPrompt=`${baseSystemPrompt}${docContext}`;
     const effectiveMaxTokens=resolveReplyMaxTokens(cleanMessage,typeof max_tokens==='number'?max_tokens:undefined);
     const buildPayload=(sys:string,usr:string,maxTok:number)=>({
@@ -219,7 +250,7 @@ Core Guidelines:
       if(upstream.status===400){
         const errText=await upstream.text().catch(()=>'');
         if(/exceedcontextsize|context size/i.test(errText)){
-          const compactDoc=userDoc&&snippet?`\n\nUSER UPLOADED DOCUMENT ("${userDoc.filename}"):\n"""\n${snippet.slice(0,1500)}\n"""`:'';
+          const compactDoc=docContext?docContext.slice(0, 1800):'';
           upstream=await fetch(cleanUrl,{
             method:'POST',
             headers:buildAiHeaders({'content-type':'application/json'}),
@@ -241,6 +272,9 @@ Core Guidelines:
         res.socket?.setNoDelay(true);
         res.flushHeaders?.();
         res.write(': stream-start\n\n');
+        if (citations.length > 0) {
+          res.write(`data: ${JSON.stringify({ citations })}\n\n`);
+        }
         const reader=upstream.body.getReader();
         try{
           while(true){
@@ -255,7 +289,7 @@ Core Guidelines:
       }
       const data:any=await upstream.json().catch(()=>({}));
       const answer=data.choices?.[0]?.message?.content||'';
-      return res.json({answer,model:config.ai.momModel});
+      return res.json({answer,model:config.ai.momModel,citations});
     }finally{
       endLiveChat();
     }
@@ -499,6 +533,18 @@ app.post('/api/knowledge/upload', requireUser, async (req, res) => {
           extractedText = `Uploaded document "${cleanLeaf}" (${Math.max(1, Math.round(fileBytes.length / 1024))} KB).`;
         }
 
+        // If extracted text is empty or very short, and file is an image, run Qwen3-VL OCR!
+        if ((!extractedText || extractedText.trim().length < 50) && /\.(png|jpe?g|webp|bmp|tiff)$/i.test(cleanLeaf)) {
+          try {
+            const ocrText = await extractDocumentImageOcr(fileBytes, entry.type || 'image/png');
+            if (ocrText && ocrText.trim()) {
+              extractedText = ocrText.trim();
+            }
+          } catch (ocrErr) {
+            logger.warn({ error: String(ocrErr), filename: cleanLeaf }, 'Image OCR fallback failed');
+          }
+        }
+
         const tokenCount = Math.round(extractedText.split(/\s+/).filter(Boolean).length * 1.3);
 
         const doc = await repository.createDocument({
@@ -514,6 +560,13 @@ app.post('/api/knowledge/upload', requireUser, async (req, res) => {
           tokenCount
         });
         uploadedDocs.push(doc);
+
+        // Immediately index chunks and vector embeddings asynchronously
+        setImmediate(() => {
+          indexDocumentChunks(doc).catch(err => {
+            logger.warn({ error: String(err), documentId: doc.id }, 'Async chunk indexing failed');
+          });
+        });
       } catch (fileErr: any) {
         logger.warn({ error: fileErr?.message, filename: entryRawName }, 'Failed to process single file during upload');
         failedDocs.push({ filename: entryRawName, reason: fileErr?.message || 'Processing failed' });
@@ -1931,5 +1984,6 @@ app.use(express.static(root,{
 app.use((error:any,_req:express.Request,res:express.Response,_next:express.NextFunction)=>{logger.error({error:error?.message,stack:error?.stack},'request failed');if(error?.name==='ZodError')return res.status(400).json({error:{code:'invalid_request',message:'Check the submitted meeting details.'}});res.status(error?.message?.includes('Teams')?400:500).json({error:{code:'request_failed',message:error instanceof Error?error.message:'Unexpected server error.'}})});
 const server=app.listen(config.port,'0.0.0.0',()=>logger.info({port:config.port,authMode:config.authMode},'CloudCore AI started'));
 setImmediate(()=>processImageQueue().catch(error=>logger.warn({error:String(error)},'resuming image queue failed')));
+setImmediate(()=>backfillUnindexedDocuments().catch(error=>logger.warn({error:String(error)},'Knowledge Hub auto-indexing failed')));
 let synchronizing=false;const syncTimer=setInterval(async()=>{if(synchronizing)return;synchronizing=true;try{for(const meeting of await repository.listActiveMeetings())await synchronizeMeeting(meeting).catch(error=>logger.warn({meetingId:meeting.id,error:error instanceof Error?error.message:String(error)},'meeting synchronization failed'))}catch(error){logger.warn({error:error instanceof Error?error.message:String(error)},'active meeting poll failed')}finally{synchronizing=false}},5_000);syncTimer.unref();
 for(const signal of ['SIGTERM','SIGINT'] as const)process.on(signal,()=>{clearInterval(syncTimer);server.close(async()=>{await repository.close();await redisConnection?.quit();process.exit(0)})});

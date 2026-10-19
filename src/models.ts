@@ -68,6 +68,27 @@ export interface KnowledgeDocument {
   folderName?: string;
 }
 
+export interface KnowledgeChunk {
+  id: string;
+  documentId: string;
+  chunkIndex: number;
+  content: string;
+  tokenCount: number;
+  embedding?: number[];
+  createdAt: string;
+}
+
+export interface RetrievedChunk {
+  id: string;
+  documentId: string;
+  filename: string;
+  folderName?: string;
+  chunkIndex: number;
+  content: string;
+  score: number;
+  retrievalType: 'vector' | 'keyword' | 'hybrid';
+}
+
 export interface GeneratedAsset {
   id: string;
   userId: string;

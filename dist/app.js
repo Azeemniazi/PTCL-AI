@@ -1465,7 +1465,7 @@ function composer(id){
   if(hasImg){
     chips.push(`<span class="attachment-chip">${icon('image')}<b>${esc(imageFile.name)}</b><small>Ready for Vision AI</small><button type="button" class="chip-remove" data-action="remove-attached-image" aria-label="Remove attached image">×</button></span>`);
   }
-  const placeholder=hasDoc?`Ask anything about "${docFile.name}" (or press Send to summarize)...`:hasImg?`Ask about "${imageFile.name}" (or press Send to analyze)...`:id==='home'?'Ask anything about PTCL, our services, documents, or upload an image...':'Ask CloudCore AI anything...';
+  const placeholder=hasDoc?`Ask anything about "${docFile.name}" (or press Send to summarize)...`:hasImg?`Ask about "${imageFile.name}" (or press Send to analyze)...`:id==='home'?'Ask anything about PTCL, our services, documents, or upload an image...':'Ask CloudCore AI anything or search Knowledge Base...';
   return `<form class="composer ${hasAttachment?'has-attachments':''}" id="${id}-composer"><div>${chips.length?`<div class="composer-attachments">${chips.join('')}</div>`:''}<input name="prompt" aria-label="Message CloudCore AI" placeholder="${esc(placeholder)}" autocomplete="off" ${hasAttachment?'':'required'}><button type="button" class="icon-button" data-action="attach-document" title="Attach PDF, Word, Excel or text file" aria-label="Attach a document">${icon('paperclip')}</button><button type="button" class="icon-button" data-action="attach-image" title="Attach image for analysis" aria-label="Upload an image">${icon('image')}</button></div><button type="submit" class="send" aria-label="Send message">${icon('arrow')}</button></form>`;
 }
 function title(eyebrow,title,sub){return `<div class="section-heading"><div><div class="eyebrow">${eyebrow}</div><h1>${title}</h1><p>${sub}</p></div><div class="heading-brand">${mark('heading-mark')}<span><b>CloudCore AI</b><small>A product of PTCL Smart Cloud</small></span></div></div>`}
@@ -1867,8 +1867,11 @@ function previewMomPdf(m){
   }else{
     printMomPdf(m);
   }
+function renderCitations(citations){
+  if(!citations||!citations.length)return '';
+  return `<details class="chat-citations-details" open><summary class="chat-citations-summary">${icon('folder')} <span>Sources Cited (${citations.length})</span></summary><div class="chat-citations-list">${citations.map((c,i)=>`<div class="citation-chip" title="${esc(c.preview||'')}"><span class="citation-num">${i+1}</span><span class="citation-name">${esc(c.filename)}</span>${c.score?`<span class="citation-score">${Math.round(c.score*100)}%</span>`:''}</div>`).join('')}</div></details>`;
 }
-function assistant(){return `${title('YOUR INTELLIGENT WORKSPACE','AI Assistant','Answers, ideas and a little help moving your business forward.')}<section class="chat-panel panel"><div class="chat-top">${mark('chat-brand-mark')}<strong>CloudCore AI</strong><span>Frontend preview</span><button class="icon-button" data-action="new-chat" aria-label="Start new chat">${icon('plus')}</button></div><div class="messages" aria-live="polite">${messages.length?messages.map(m=>`<div class="message ${m.role}"><span class="message-avatar">${m.role==='user'?esc((appUser?.displayName||'A').charAt(0).toUpperCase()):mark('message-mark')}</span><div ${m.streaming?'id="active-assistant-stream-bubble"':''} class="chat-text">${m.streaming&&!m.content?`<span class="live-pill"><span class="pulse-dot"></span> CloudCore AI is thinking...</span><span class="typing-cursor"></span>`:renderMarkdown(m.content)+(m.streaming?'<span class="typing-cursor"></span>':'')}</div></div>`).join(''):`<div class="chat-welcome"><span class="feature-icon ai-feature-mark">${mark()}</span><h2>What can I help you with?</h2><p>Bring your questions. Let’s find a way forward.</p><div class="chat-starters">${['Explore PTCL cloud solutions','Help me draft a proposal','How can I analyze a document?','What can Image Analysis do?'].map(t=>`<button data-action="suggestion" data-prompt="${t}">${t}${icon('arrow')}</button>`).join('')}</div></div>`}</div>${composer('chat')}<p class="chat-caption">CloudCore AI assistant · Real-time Qwen intelligence</p></section>`}
+function assistant(){return `${title('YOUR INTELLIGENT WORKSPACE','AI Assistant','Answers, ideas and a little help moving your business forward.')}<section class="chat-panel panel"><div class="chat-top">${mark('chat-brand-mark')}<strong>CloudCore AI</strong><span>Frontend preview</span><button class="icon-button" data-action="new-chat" aria-label="Start new chat">${icon('plus')}</button></div><div class="messages" aria-live="polite">${messages.length?messages.map(m=>`<div class="message ${m.role}"><span class="message-avatar">${m.role==='user'?esc((appUser?.displayName||'A').charAt(0).toUpperCase()):mark('message-mark')}</span><div ${m.streaming?'id="active-assistant-stream-bubble"':''} class="chat-text">${m.streaming&&!m.content?`<span class="live-pill"><span class="pulse-dot"></span> CloudCore AI is thinking...</span><span class="typing-cursor"></span>`:renderMarkdown(m.content)+renderCitations(m.citations)+(m.streaming?'<span class="typing-cursor"></span>':'')}</div></div>`).join(''):`<div class="chat-welcome"><span class="feature-icon ai-feature-mark">${mark()}</span><h2>What can I help you with?</h2><p>Bring your questions. Let’s find a way forward.</p><div class="chat-starters">${['Explore PTCL cloud solutions','Help me draft a proposal','How can I analyze a document?','What can Image Analysis do?'].map(t=>`<button data-action="suggestion" data-prompt="${t}">${t}${icon('arrow')}</button>`).join('')}</div></div>`}</div>${composer('chat')}<p class="chat-caption">CloudCore AI assistant · Real-time Qwen intelligence</p></section>`}
 function chatHistoryView(){const filtered=chats.filter(c=>c.title.toLowerCase().includes(historySearch.toLowerCase()));return `${title('YOUR CONVERSATIONS','Chat History','Pick up where you left off. Your conversations are saved on this device.')}<section class="panel history-panel"><div class="history-toolbar"><label>${icon('search')}<input id="history-search" aria-label="Search conversations" placeholder="Search your conversations..." value="${esc(historySearch)}"></label><button class="primary" data-action="new-chat">${icon('plus')}New Chat</button></div><div id="history-list">${filtered.length?filtered.map(c=>`<div class="history-row"><span class="mini-icon">${icon('chat')}</span><button class="history-open" data-action="open-chat" data-id="${c.id}"><b>${esc(c.title)}</b><small>${new Date(c.updated).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})} · ${c.messages.filter(m=>m.role==='user').length} messages</small></button><button class="icon-button" data-action="delete-chat" data-id="${c.id}" aria-label="Delete conversation">${icon('trash')}</button></div>`).join(''):`<div class="history-empty"><span class="feature-icon">${icon('history')}</span><h2>${historySearch?'No matching conversations':'Your next great idea starts here'}</h2><p>${historySearch?'Try searching with a different word.':'Start a conversation with CloudCore AI and find it here whenever you need it.'}</p><button class="outline" data-action="new-chat">Start a new chat ${icon('arrow')}</button></div>`}</div></section>`}
 function modal(content,{uncloseable=false}={}){
   $('#dialog-content').innerHTML=content;
@@ -2350,6 +2353,9 @@ async function sendMessage(t){
         if(!reader){
           const resData=await res.json();
           assistantMsg.content=resData.answer||'';
+          if(resData.citations&&Array.isArray(resData.citations)){
+            assistantMsg.citations=resData.citations;
+          }
         }else{
           const decoder=new TextDecoder();
           let buffer='';
@@ -2366,6 +2372,9 @@ async function sendMessage(t){
               if(trimmed.startsWith('data: ')){
                 try{
                   const json=JSON.parse(trimmed.slice(6));
+                  if(json.citations&&Array.isArray(json.citations)){
+                    assistantMsg.citations=json.citations;
+                  }
                   const delta=json.choices?.[0]?.delta?.content||json.delta;
                   if(delta){
                     assistantMsg.content+=delta;
@@ -2373,7 +2382,7 @@ async function sendMessage(t){
                     if(bubble){
                       const box=document.querySelector('.messages');
                       const shouldAutoScroll=isNearBottom(box,60);
-                      bubble.innerHTML=renderMarkdown(assistantMsg.content)+'<span class="typing-cursor"></span>';
+                      bubble.innerHTML=renderMarkdown(assistantMsg.content)+renderCitations(assistantMsg.citations)+'<span class="typing-cursor"></span>';
                       if(box&&shouldAutoScroll)box.scrollTop=box.scrollHeight;
                     }
                   }
