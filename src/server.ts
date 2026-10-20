@@ -26,7 +26,7 @@ import { clearMomInFlight, enqueue, isMomInFlight, markMomInFlight, redisConnect
 import { activeStatuses, type Meeting, type MeetingStatus, type User, type Role, type GeneratedAsset, type ImageJob } from './models.js';
 import { repository } from './repository.js';
 import { createMeetingSchema, momSchema, validateTeamsUrl } from './validation.js';
-import { retrieveKnowledgeContext, indexDocumentChunks, backfillUnindexedDocuments, extractDocumentImageOcr, extractPdfOcr } from './rag.js';
+import { retrieveKnowledgeContext, indexDocumentChunks, backfillUnindexedDocuments, extractDocumentImageOcr, extractPdfOcr, shouldQueryKnowledgeBase } from './rag.js';
 
 export function verifyCsrfOrigin(originHeader: string | undefined, hostHeader: string | undefined, customHeader: string | undefined, publicBaseUrl = config.publicBaseUrl): boolean {
   if (customHeader === 'CloudCoreAI') return true;
@@ -187,7 +187,7 @@ app.post('/api/chat',requireUser,async(req,res)=>{
 
     let docContext = '';
     let citations: any[] = [];
-    if (use_rag !== false && req.session.user) {
+    if (use_rag !== false && req.session.user && shouldQueryKnowledgeBase(cleanMessage, req.body?.rag_scope)) {
       try {
         const ragScope = req.body?.rag_scope;
         const ragRes = await retrieveKnowledgeContext(req.session.user.id, cleanMessage, { scope: ragScope });

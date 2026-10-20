@@ -153,35 +153,98 @@ export async function generateBatchEmbeddings(inputs: string[], batchSize = 3): 
 }
 
 /**
+ * Fast-path intent classifier: Determines whether a message genuinely needs
+ * Knowledge Base RAG retrieval, avoiding multi-second reranker & DB latency on
+ * basic greetings, casual chat, math, jokes, or generic questions.
+ */
+export function shouldQueryKnowledgeBase(
+  query: string,
+  scope?: { mode?: string; id?: string }
+): boolean {
+  if (!query || typeof query !== 'string') return false;
+  const trimmed = query.trim();
+  if (!trimmed) return false;
+
+  // If user explicitly scoped to a folder or document, always query
+  if (scope?.mode === 'folder' || scope?.mode === 'document') return true;
+
+  const lower = trimmed.toLowerCase();
+
+  // 1. Common greetings & pleasantries (Urdu, English, Roman Urdu) -> skip RAG
+  if (/^(hi|hello|hey|heya|howdy|salam|assalam|aoa|hola|good\s*(morning|afternoon|evening|night|day)|kese\s*ho|kia\s*hal\s*hai|kaise\s*ho|kya\s*haal\s*hai)[.!?\s]*$/i.test(lower)) {
+    return false;
+  }
+
+  // 2. Casual conversational inquiries -> skip RAG
+  if (/^(how\s+are\s+you|who\s+are\s+you|what\s+is\s+your\s+name|who\s+(made|created|built)\s+you|what\s+can\s+you\s+do|tell\s+me\s+about\s+yourself|tell\s+me\s+a\s+joke|thank\s*(you|s)|thanks|ok|okay|bye|goodbye|cool|nice|awesome|great|test|testing|ping)[.!?\s]*$/i.test(lower)) {
+    return false;
+  }
+
+  // 3. Simple math, time, jokes, coding prompts that don't reference enterprise data
+  if (/^(what\s+is\s+\d+[\s\+\-\*\/]+\d+|what\s+time\s+is\s+it|write\s+(a\s+)?(python|javascript|code|script|function|poem|story))\b/i.test(lower)) {
+    return false;
+  }
+
+  // 4. Strong enterprise / document signals -> definitely query RAG
+  const enterpriseKeywords = /\b(ptcl|smart\s*cloud|luna|datacenter|data\s*center|certifications?|standards?|iso|pci|dss|tia|tier|rated|cloud|iaas|paas|saas|backup|disaster\s*recovery|dr|sla|colocation|hosting|server|storage|vcloud|vmware|openstack|network|firewall|cybersecurity|compliance|audit|security|governance|policy|guideline|contract|proposal|agreement|specification|hardware|rack|power|ups|h9|cddt|garden\s*town|marston|misrishah|satellite\s*town|karachi|lahore|islamabad|rawalpindi|document|file|folder|upload|summary|summarize)\b/i;
+  if (enterpriseKeywords.test(lower)) {
+    return true;
+  }
+
+  // 5. Short queries (<= 2 words) without enterprise keywords -> skip RAG
+  const wordCount = lower.split(/\s+/).length;
+  if (wordCount <= 2) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * Score candidate documents using local cross-encoder Qwen3-Reranker service.
+ * Evaluates top 4 snippets (<= 350 chars each) for sub-second CPU cross-attention.
  */
 export async function rerankCandidates(
   query: string,
   documents: string[]
 ): Promise<Array<{ index: number; relevanceScore: number }>> {
   if (!documents.length) return [];
+  if (documents.length === 1) {
+    return [{ index: 0, relevanceScore: 1.0 }];
+  }
+
+  const cappedDocs = documents.slice(0, 4);
   const url = `${config.ai.rerankerUrl}/v1/rerank`;
-  const cappedDocs = documents.slice(0, 8);
+
   try {
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        query: query.slice(0, 1500),
-        documents: cappedDocs.map(d => d.slice(0, 1500))
+        query: query.slice(0, 400),
+        documents: cappedDocs.map(d => d.slice(0, 350))
       }),
-      signal: AbortSignal.timeout(30000)
+      signal: AbortSignal.timeout(8000)
     });
+
     if (!res.ok) {
       const err = await res.text().catch(() => '');
       logger.warn({ status: res.status, err }, 'Reranker request failed, falling back to initial scores');
       return documents.map((_, index) => ({ index, relevanceScore: 1 / (index + 1) }));
     }
+
     const data: any = await res.json();
     const results = data?.results ?? [];
-    return results.map((r: any) => ({
-      index: Number(r.index),
-      relevanceScore: Number(r.relevance_score ?? r.score ?? 0)
+    const scoredMap = new Map<number, number>();
+    for (const r of results) {
+      scoredMap.set(Number(r.index), Number(r.relevance_score ?? r.score ?? 0));
+    }
+
+    return documents.map((_, index) => ({
+      index,
+      relevanceScore: scoredMap.has(index)
+        ? scoredMap.get(index)!
+        : Math.max(0.1, 0.5 - index * 0.05)
     }));
   } catch (error) {
     logger.warn({ error: error instanceof Error ? error.message : String(error) }, 'Reranker service error');
