@@ -6,6 +6,27 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 export function cleanXmlEntryToText(xml: string): string {
+  if(/<(?:w|a|m):t(?:\s|>)/.test(xml)){
+    let inText=false;
+    xml=xml.replace(/<[^>]+>|[^<]+/g,token=>{
+      if(token.startsWith('<')){
+        if(/^<(?:w|a|m):t(?:\s|>)/.test(token))inText=true;
+        if(/^<\/(?:w|a|m):t>/.test(token))inText=false;
+        return token;
+      }
+      return inText?token:'';
+    });
+  }
+  // Preserve table columns, including empty responsibility cells. Joining all
+  // cell paragraphs into a flat stream changes which party a checkmark belongs to.
+  xml=xml.replace(/<w:tbl\b[^>]*>[\s\S]*?<\/w:tbl>/gi,table=>{
+    const rows=[...table.matchAll(/<w:tr\b[^>]*>([\s\S]*?)<\/w:tr>/gi)].map(row=>
+      [...row[1]!.matchAll(/<w:tc\b[^>]*>([\s\S]*?)<\/w:tc>/gi)].map(cell=>cleanXmlEntryToText(cell[1]!).replace(/\s+/g,' ').replace(/\|/g,'\\|').trim())
+    ).filter(row=>row.length);
+    if(!rows.length)return '';
+    const width=Math.max(...rows.map(row=>row.length));
+    return '\n\n'+rows.map((row,i)=>'| '+Array.from({length:width},(_,c)=>row[c]??'').join(' | ')+' |'+(i===0?'\n| '+Array(width).fill('---').join(' | ')+' |':'')).join('\n')+'\n\n';
+  });
   return xml
     .replace(/<w:(?:tab|br|cr)\b[^>]*\/?\s*>/gi, '\t')
     .replace(/<\/w:tc>/gi, ' | ')
@@ -309,14 +330,17 @@ export function extractPdfText(bytes: Buffer): string {
         timeout: 8000,
         maxBuffer: 10 * 1024 * 1024
       });
-      if (text && text.trim().length >= 10) {
+      const pages=text.split('\f');if(pages.at(-1)?.trim()==='')pages.pop();
+      // A readable first page does not prove that scanned later pages were read.
+      // Mixed image/text documents take the page-complete OCR path.
+      if (text && text.trim().length >= 10 && pages.every(page=>page.trim().length>=10)) {
         return text.trim();
       }
     } finally {
       try { unlinkSync(tempPath); } catch {}
     }
   } catch {
-    // pdftotext not present or failed, proceed to built-in fallback
+    // Missing/failed Poppler extraction must take OCR or explicit failure.
   }
 
   // Raw stream strings include font metadata and cannot decode PDF CMaps.

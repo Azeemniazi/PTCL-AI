@@ -1270,6 +1270,18 @@ export class Repository {
     await this.pool.query('UPDATE knowledge_documents SET status=$2, updated_at=now() WHERE id=$1',[id,status]);
   }
 
+  async setDocumentExtractedText(id:string,text:string):Promise<void>{
+    const count=Math.ceil(text.split(/\s+/).length*1.3);
+    if(!this.pool){const doc=this.knowledgeDocuments.get(id);if(doc){doc.extractedText=text;doc.tokenCount=count;}return;}
+    await this.pool.query('UPDATE knowledge_documents SET extracted_text=$2,token_count=$3,updated_at=now() WHERE id=$1',[id,text,count]);
+  }
+
+  async getPendingKnowledgeDocuments():Promise<KnowledgeDocument[]>{
+    if(!this.pool)return [...this.knowledgeDocuments.values()].filter(d=>d.status==='indexing');
+    const result=await this.pool.query("SELECT * FROM knowledge_documents WHERE status='indexing' ORDER BY created_at");
+    return result.rows.map(documentRow);
+  }
+
   async listKnowledgeSources(userId: string, scope?: {mode:'all'|'folder'|'document';id?:string}): Promise<KnowledgeDocument[]> {
     const documents=await this.listDocuments(userId);
     if(scope?.mode==='document')return documents.filter(d=>d.id===scope.id);

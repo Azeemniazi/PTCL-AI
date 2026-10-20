@@ -7,7 +7,7 @@ import pg from 'pg';
 import {extractDocumentText} from '../build/parsers.js';
 import {sourceTextQuality} from '../build/rag-planning.js';
 import {chunkText,assertChunkCoverage,isValidEmbedding} from '../build/rag-core.js';
-import {generateBatchEmbeddings} from '../build/rag.js';
+import {generateBatchEmbeddings,extractPdfOcr} from '../build/rag.js';
 const apply=process.argv.includes('--apply');
 if(!apply&&!process.argv.includes('--check'))throw Error('Specify --check or --apply');
 const pool=new pg.Pool({connectionString:process.env.DATABASE_URL,connectionTimeoutMillis:15000,max:2});
@@ -20,12 +20,15 @@ try{
  for(const doc of docs){
    const path=isAbsolute(doc.storage_path)?doc.storage_path:resolve('data/knowledge',doc.storage_path);
    if(!existsSync(path))throw Error(`Original is missing for ${doc.id}; repair stopped`);
-   const bytes=readFileSync(path);const text=extractDocumentText(doc.filename,bytes).replace(/\r\n/g,'\n').trim();
+   const bytes=readFileSync(path);let text=extractDocumentText(doc.filename,bytes).replace(/\r\n/g,'\n').trim();
+   if(!sourceTextQuality(text).usable&&/\.pdf$/i.test(doc.filename))text=await extractPdfOcr(bytes);
    const quality=sourceTextQuality(text);
    if(!quality.usable)throw Error(`Original ${doc.filename} requires OCR or manual review; no partial index published`);
    const chunks=chunkText(text,450,80);assertChunkCoverage(text,chunks);
-   const item={id:doc.id,filename:doc.filename,originalHash:hash(bytes),textHash:hash(text),oldCharacters:doc.extracted_text?.length??0,newCharacters:text.length,chunks:chunks.length,applied:false};
-   if(apply){
+   const existing=(await pool.query('SELECT chunk_index,content,embedding::text FROM knowledge_document_chunks WHERE document_id=$1 ORDER BY chunk_index',[doc.id])).rows;
+   const unchanged=text===doc.extracted_text&&existing.length===chunks.length&&existing.every((c,i)=>c.chunk_index===i&&c.content===chunks[i].content&&c.embedding&&isValidEmbedding(JSON.parse(c.embedding)));
+   const item={id:doc.id,filename:doc.filename,originalHash:hash(bytes),textHash:hash(text),oldCharacters:doc.extracted_text?.length??0,newCharacters:text.length,chunks:chunks.length,applied:false,unchanged};
+   if(apply&&!unchanged){
      const embeddings=await generateBatchEmbeddings(chunks.map(c=>c.content),6);
      if(embeddings.length!==chunks.length||embeddings.some(v=>!isValidEmbedding(v)))throw Error(`Invalid embeddings for ${doc.filename}; existing index retained`);
      const client=await pool.connect();

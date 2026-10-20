@@ -31,6 +31,7 @@ import { generateGroundedReply } from './rag-generation.js';
 import type { RetrievalResult } from './rag.js';
 import { sourceTextQuality } from './rag-planning.js';
 import { packEvidence, evidenceMessage } from './rag-evidence.js';
+import {enqueueKnowledgeIngestion,resumeKnowledgeIngestion} from './knowledge-ingestion.js';
 
 export function verifyCsrfOrigin(originHeader: string | undefined, hostHeader: string | undefined, customHeader: string | undefined, publicBaseUrl = config.publicBaseUrl): boolean {
   if (customHeader === 'CloudCoreAI') return true;
@@ -299,6 +300,7 @@ app.post('/api/chat',requireUser,async(req,res)=>{
         }) : {answer:retrievalFailed?'I could not retrieve the knowledge-base evidence. Please try again; I cannot verify a factual answer while retrieval is unavailable.':'The accessible knowledge base did not provide readable evidence for this question in the selected scope. I cannot verify the requested facts from these sources.',finishReason:retrievalFailed?'retrieval_failed':'no_evidence',coverage:'none',sourceIds:[]};
         const usedIds=new Set<string>(reply.sourceIds);
         const used=citations.filter(c=>usedIds.has(c.sourceId));
+        if('validationIssues' in reply)logger.warn({issues:reply.validationIssues,documentIds:used.map(c=>c.documentId)},'Grounded answer could not pass verification');
         if(streamRequested){
           res.setHeader('content-type','text/event-stream; charset=utf-8');res.setHeader('cache-control','no-cache, no-transform');res.setHeader('x-accel-buffering','no');res.flushHeaders?.();
           res.write(`data: ${JSON.stringify({citations:used,coverage:reply.coverage})}\n\n`);
@@ -696,37 +698,8 @@ app.post('/api/knowledge/upload', requireUser, async (req, res) => {
 
         writeFileSync(storagePath, fileBytes);
 
-        let extractedText = '';
-        try {
-          extractedText = extractDocumentText(cleanLeaf, fileBytes) || '';
-        } catch {
-          extractedText = '';
-        }
-
-        // If extracted text is empty or very short, run multimodal Vision OCR (for images or scanned PDFs)!
-        if (!sourceTextQuality(extractedText).usable) {
-          if (/\.(png|jpe?g|webp|bmp|tiff)$/i.test(cleanLeaf)) {
-            try {
-              const ocrText = await extractDocumentImageOcr(fileBytes, entry.type || 'image/png');
-              if (ocrText && ocrText.trim()) {
-                extractedText = ocrText.trim();
-              }
-            } catch (ocrErr) {
-              logger.warn({ error: String(ocrErr), filename: cleanLeaf }, 'Image OCR fallback failed');
-            }
-          } else if (cleanLeaf.toLowerCase().endsWith('.pdf') || (fileBytes.length >= 5 && fileBytes.subarray(0, 5).toString('ascii') === '%PDF-')) {
-            try {
-              const pdfOcrText = await extractPdfOcr(fileBytes);
-              if (pdfOcrText && pdfOcrText.trim()) {
-                extractedText = pdfOcrText.trim();
-              }
-            } catch (pdfOcrErr) {
-              logger.warn({ error: String(pdfOcrErr), filename: cleanLeaf }, 'PDF Vision OCR fallback failed');
-            }
-          }
-        }
-
-        const tokenCount = Math.round(extractedText.split(/\s+/).filter(Boolean).length * 1.3);
+        // Extraction/OCR and embeddings run after upload acknowledgement.
+        const extractedText='';const tokenCount=0;
 
         const doc = await repository.createDocument({
           userId: req.session.user!.id,
@@ -736,19 +709,13 @@ app.post('/api/knowledge/upload', requireUser, async (req, res) => {
           sizeBytes: fileBytes.length,
           storagePath: storageFilename,
           isShared,
-          status: sourceTextQuality(extractedText).usable?'indexing':'failed',
+          status: 'indexing',
           extractedText,
           tokenCount
         });
         uploadedDocs.push(doc);
 
-        // Immediately index chunks and vector embeddings asynchronously
-        setImmediate(() => {
-          indexDocumentChunks(doc).catch(err => {
-            repository.setDocumentIndexStatus(doc.id,'failed').catch(()=>{});
-            logger.warn({ error: String(err), documentId: doc.id }, 'Async chunk indexing failed');
-          });
-        });
+        setImmediate(()=>enqueueKnowledgeIngestion(doc,knowledgeStorageDir));
       } catch (fileErr: any) {
         logger.warn({ error: fileErr?.message, filename: entryRawName }, 'Failed to process single file during upload');
         failedDocs.push({ filename: entryRawName, reason: fileErr?.message || 'Processing failed' });
@@ -787,6 +754,15 @@ app.get('/api/knowledge/documents/:id', requireUser, async (req, res) => {
   } catch (err) {
     return res.status(500).json({ error: { code: 'server_error', message: 'Failed to retrieve document.' } });
   }
+});
+
+app.post('/api/knowledge/documents/:id/reindex',requireUser,async(req,res)=>{
+  const doc=await repository.getDocumentById(String(req.params.id));
+  if(!doc)return res.status(404).json({error:{code:'not_found',message:'Document not found.'}});
+  if(doc.userId!==req.session.user!.id&&!['dev','admin'].includes(req.session.user!.role))return res.status(403).json({error:{code:'forbidden',message:'Only the owner or an administrator can retry indexing.'}});
+  await repository.setDocumentIndexStatus(doc.id,'indexing');
+  setImmediate(()=>enqueueKnowledgeIngestion(doc,knowledgeStorageDir));
+  return res.status(202).json({documentId:doc.id,status:'indexing'});
 });
 
 app.get('/api/knowledge/documents/:id/download', requireUser, async (req, res) => {
@@ -2201,6 +2177,6 @@ app.use(express.static(root,{
 app.use((error:any,_req:express.Request,res:express.Response,_next:express.NextFunction)=>{logger.error({error:error?.message,stack:error?.stack},'request failed');if(error?.name==='ZodError')return res.status(400).json({error:{code:'invalid_request',message:'Check the submitted meeting details.'}});res.status(error?.message?.includes('Teams')?400:500).json({error:{code:'request_failed',message:error instanceof Error?error.message:'Unexpected server error.'}})});
 const server=app.listen(config.port,'0.0.0.0',()=>logger.info({port:config.port,authMode:config.authMode},'CloudCore AI started'));
 setImmediate(()=>processImageQueue().catch(error=>logger.warn({error:String(error)},'resuming image queue failed')));
-setImmediate(()=>backfillUnindexedDocuments().catch(error=>logger.warn({error:String(error)},'Knowledge Hub auto-indexing failed')));
+setImmediate(()=>resumeKnowledgeIngestion(knowledgeStorageDir).then(()=>backfillUnindexedDocuments()).catch(error=>logger.warn({error:String(error)},'Knowledge Hub ingestion recovery failed')));
 let synchronizing=false;const syncTimer=setInterval(async()=>{if(synchronizing)return;synchronizing=true;try{for(const meeting of await repository.listActiveMeetings())await synchronizeMeeting(meeting).catch(error=>logger.warn({meetingId:meeting.id,error:error instanceof Error?error.message:String(error)},'meeting synchronization failed'))}catch(error){logger.warn({error:error instanceof Error?error.message:String(error)},'active meeting poll failed')}finally{synchronizing=false}},5_000);syncTimer.unref();
 for(const signal of ['SIGTERM','SIGINT'] as const)process.on(signal,()=>{clearInterval(syncTimer);server.close(async()=>{await repository.close();await redisConnection?.quit();process.exit(0)})});

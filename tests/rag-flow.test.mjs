@@ -8,7 +8,7 @@ test('RAG HTTP lifecycle: readiness, private ACL, grounded SSE, source view, del
   const parts=[];for await(const part of req)parts.push(part);const body=parts.length?JSON.parse(Buffer.concat(parts)):{};
   res.setHeader('content-type','application/json');
   if(req.url.endsWith('/embeddings')){calls++;if(hold)await new Promise(r=>{release=r;});if(outage){res.statusCode=503;res.end('{}');return;}const input=Array.isArray(body.input)?body.input:[body.input];res.end(JSON.stringify({data:input.map((_,index)=>({index,embedding:Array.from({length:2560},(_,i)=>i===0?1:0)}))}));return;}
-  if(req.url.endsWith('/chat/completions')){const evidence=body.messages.find(m=>m.role==='user'&&m.content.startsWith('{"type":"untrusted_source_evidence"'));assert.ok(evidence);assert.equal(body.messages[0].content.includes('SecretFixture'),false);res.end(JSON.stringify({choices:[{message:{content:'The source states uptime is 99.87%. [S1]'},finish_reason:'stop'}]}));return;}
+  if(req.url.endsWith('/chat/completions')){const evidence=body.messages.find(m=>m.role==='user'&&m.content.startsWith('{"type":"untrusted_source_evidence"'));assert.ok(evidence);assert.equal(body.messages[0].content.includes('SecretFixture'),false);res.end(JSON.stringify({choices:[{message:{content:body.response_format?'{"verdict":"supported","issues":[]}':'The source states uptime is 99.87%. [S1]'},finish_reason:'stop'}]}));return;}
   res.statusCode=404;res.end('{}');
  });engine.listen(0,'127.0.0.1');await once(engine,'listening');
  const listener=createServer();listener.listen(0,'127.0.0.1');await once(listener,'listening');const port=listener.address().port;await new Promise(r=>listener.close(r));
@@ -36,6 +36,10 @@ test('RAG HTTP lifecycle: readiness, private ACL, grounded SSE, source view, del
   assert.equal((await (await api('/api/chat',cookie,request)).json()).finishReason,'no_evidence');
   outage=true;const prior=calls;const failed=await upload(cookie,'OutageFixture.txt');let status;
   for(let n=0;n<100;n++){status=(await (await api('/api/knowledge/documents/'+failed.id,cookie)).json()).document.status;if(status==='failed')break;await pause(20);}assert.equal(status,'failed');assert.equal(calls-prior,1);
+  assert.equal((await api('/api/knowledge/documents/'+failed.id+'/reindex',other,{},'POST')).status,403);
+  outage=false;
+  assert.equal((await api('/api/knowledge/documents/'+failed.id+'/reindex',cookie,{},'POST')).status,202);
+  for(let n=0;n<100;n++){status=(await (await api('/api/knowledge/documents/'+failed.id,cookie)).json()).document.status;if(status==='ready')break;await pause(20);}assert.equal(status,'ready');
  }finally{
   release?.();if(child.exitCode===null){const done=once(child,'exit');child.kill();await done;}await new Promise(r=>{engine.close(r);engine.closeAllConnections();});
   assert.ok(resolve(temp).startsWith(resolve(tmpdir(),'cloudcore-rag-')));rmSync(temp,{recursive:true,force:true,maxRetries:10,retryDelay:100});

@@ -114,6 +114,16 @@ export function certificateAnswer(documents: KnowledgeDocument[], query: string,
   const statusText=(fact:CertificateFact)=>({expired:'Expired stated period','not-yet-valid':'Stated period has not started','within-stated-period':'Within stated validity dates',unknown:'Dates not established'})[statedValidity(fact,asOf)];
   const broad=/\b(all|every|list|which|compare|three|distinct|certifications|certificates)\b/i.test(query)||facts.length>1;
   const lines:string[]=[];
+  const simpleExpiry=facts.length===1&&/expir|میعاد|ختم/i.test(query)&&!/\b(issued|category|scope|standard|number|edition|period|validity|compare|list|all|every|as of|currently)\b/i.test(query);
+  if(simpleExpiry&&facts[0]!.validUntil){
+    const fact=facts[0]!;const ref=source(fact);
+    lines.push(`The certificate states an expiry date of **${humanEvidenceDate(fact.validUntil)}**. ${ref}`);
+    if(/\b(assess\w*|company|issuer)\b/i.test(query)){
+      const assessor=/assessed by\s+(.+?)\s+and has been/i.exec(fact.document.extractedText?.replace(/\s+/g,' ')??'')?.[1];
+      if(assessor)lines.push(`The assessment company is **${assessor}**. ${ref}`);else return undefined;
+    }
+    return {answer:lines.join('\n\n'),documents:sourceDocs,kind:'certificate',complete:true};
+  }
   if (broad) {
     lines.push(`Found **${identifiers.size} distinct certificate record${identifiers.size===1?'':'s'}** in the authorized source documents examined. Duplicate copies with identical fields are counted once.`, '', '| Site / certificate | Standard / scope | Certificate number | Valid from | Valid until | Stated-date status | Source |', '|---|---|---|---|---|---|---|');
     for(const fact of facts) lines.push(`| ${cell(fact.site??fact.document.filename)} | ${cell(fact.standard)}; ${cell(fact.scope)} | ${cell(fact.identifier)} | ${humanEvidenceDate(fact.validFrom??fact.issued)} | ${humanEvidenceDate(fact.validUntil)} | ${statusText(fact)} | ${source(fact)} |`);

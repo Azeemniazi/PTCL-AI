@@ -286,6 +286,7 @@ function refKnowledge() {
                     <div style="display:flex;align-items:center;gap:10px;">
                       <span class="ref-ext-badge ext-${esc(ext.toLowerCase())}">${esc(ext)}</span>
                       <a href="#view" class="ref-doc-name-cell ref-doc-name-link" data-action="view-doc" data-id="${esc(d.id)}" title="Click to view online without downloading">${esc(d.filename)}</a>
+                      <small role="status">${d.status==='indexing'?'Processing…':d.status==='failed'?'Processing failed':'Ready'}</small>
                     </div>
                   </td>
                   <td><span class="ref-crumb-pill">${esc(d.folderName || 'Unfiled')}</span></td>
@@ -296,6 +297,7 @@ function refKnowledge() {
                   <td>
                     <div class="ref-row-actions">
                       <button type="button" class="ref-view-btn" data-action="view-doc" data-id="${esc(d.id)}" title="View file online without downloading">${icon('eye')} View</button>
+                      ${d.status==='failed'&&(d.userId===appUser?.id||['dev','admin'].includes(appUser?.role))?`<button type="button" class="outline small" data-action="retry-doc" data-id="${esc(d.id)}">Retry processing</button>`:''}
                       <button type="button" class="icon-button" data-action="move-doc" data-id="${esc(d.id)}" title="Move to folder">${icon('folder')}</button>
                       <a class="icon-button" href="/api/knowledge/documents/${encodeURIComponent(d.id)}/download" download="${esc(d.filename)}" title="Download file">${icon('download')}</a>
                       <button type="button" class="icon-button danger" data-action="delete-doc" data-id="${esc(d.id)}" data-filename="${esc(d.filename)}" title="Delete document">${icon('trash')}</button>
@@ -957,6 +959,10 @@ function refSettings() {
     </section>`;
 }
 function refHandleAction(a,el) {
+  if(a==='retry-doc'){
+    (async()=>{try{const r=await fetch(`/api/knowledge/documents/${encodeURIComponent(el.dataset.id)}/reindex`,{method:'POST',headers:{'x-requested-with':'CloudCoreAI'}});if(!r.ok)throw Error('Could not retry processing.');toast('Document queued for processing.');loadKnowledge();}catch(error){toast(error.message);}})();
+    return true;
+  }
   if(a==='ref-preview-tab'){meetingTab=el.dataset.tab;meetingsState.detail=null;location.hash=`meetings/${el.dataset.id}`;refreshMeetings(true);return true;}
   if(a==='ref-new-meeting'){modal(refLaunchForm());bind();return true;}
   if(a==='ref-document-route'){location.hash='documents';return true;}

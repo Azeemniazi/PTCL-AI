@@ -282,6 +282,7 @@ function bindSettingsForms(){
 // ==========================================
 let knowledgeScope='shared',knowledgeFolders=[],knowledgeDocs=[],activeKnowledgeFolderId=null;
 let knowledgeSearch='',knowledgeTypeFilter='all',selectedKnowledgeDocIds=new Set(),knowledgeLoading=false,knowledgeLoaded=false;
+let knowledgeStatusTimer;
 
 async function loadKnowledge(showToast=false){
   if(typeof fetch!=='function')return;
@@ -311,6 +312,8 @@ async function loadKnowledge(showToast=false){
   }finally{
     knowledgeLoading=false;
     route({preserveScroll:true});
+    clearTimeout(knowledgeStatusTimer);
+    if(knowledgeDocs.some(d=>d.status==='indexing'))knowledgeStatusTimer=setTimeout(()=>{if(/^#(?:documents|knowledge)/.test(location.hash))loadKnowledge();},5000);
   }
 }
 
