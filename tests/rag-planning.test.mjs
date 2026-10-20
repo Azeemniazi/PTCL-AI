@@ -11,6 +11,10 @@ test('multi-entity comparison preserves both requested entities',()=>{
   const docs=[tia('a','Lahore Certificate.pdf','Wafaqi Colony Lahore'),tia('b','Karachi Certificate.pdf','I.I. Chundrigar Road Karachi'),tia('c','Marston Certificate.pdf','Marston Road Karachi')];
   assert.deepEqual(selectKnowledgeDocuments(docs,'Compare Wafaqi Colony Lahore and I.I. Chundrigar Road Karachi certificates').documents.map(d=>d.id).sort(),['a','b']);
 });
+test('entity comparisons retain groups with unequal version counts',()=>{
+ const docs=[tia('a','CDDT H9 Design Certificate.pdf','CDDT H9'),tia('b','CDDT H9 Facility Certificate.pdf','CDDT H9'),tia('c','Satellite Town Certificate.pdf','Satellite Town Rawalpindi'),tia('d','Garden Town Certificate.pdf','Garden Town')];
+ assert.deepEqual(selectKnowledgeDocuments(docs,'Compare CDDT H9 and Satellite Town Rawalpindi certificates').documents.map(d=>d.id).sort(),['a','b','c']);
+});
 test('bad extraction is identified before it becomes model evidence',()=>{
   assert.equal(sourceTextQuality('en-US '.repeat(100)+'Adobe UCS MIT_License').usable,false);
   assert.equal(sourceTextQuality('Red Hat Partner Program\nTier: Ready').usable,true);

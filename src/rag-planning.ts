@@ -61,13 +61,25 @@ export function selectKnowledgeDocuments(documents: KnowledgeDocument[], query: 
   const frequencies=new Map<string,number>();
   for(const token of qTerms)frequencies.set(token,new Set(records.filter(r=>r.terms.has(token)||r.title.includes(token)).map(r=>r.title)).size);
   const present=qTerms.filter(t=>(frequencies.get(t)??0)>0);
-  const minFrequency=Math.min(...present.map(t=>frequencies.get(t)!));
-  const anchors=present.filter(t=>(frequencies.get(t)??0)===minFrequency);
+  const matches=new Map(present.map(t=>[t,new Set(records.filter(r=>r.terms.has(t)||r.title.includes(t)).map(r=>r.document.id))]));
+  // Retain disjoint entity groups even if one has more versions. A broad city
+  // or standard term cannot pull in extra sites when a narrower identity exists.
+  const anchors=present.filter(t=>!present.some(other=>{
+    const own=matches.get(t)!,specific=matches.get(other)!;
+    return specific.size<own.size&&[...specific].every(id=>own.has(id));
+  }));
   const scored=records.map(record=>({ ...record, score:qTerms.reduce((sum,t)=>sum+(record.terms.has(t)||record.title.includes(t)?1+Math.log((records.length+1)/(1+(frequencies.get(t)??0))):0),0), anchor:anchors.some(t=>record.terms.has(t)||record.title.includes(t)) }));
   let selected=scored.filter(r=>r.anchor).sort((a,b)=>b.score-a.score||b.document.extractedText!.length-a.document.extractedText!.length);
   // Family-wide inventories must enumerate the entire filtered catalog.
   if(exhaustive&&certificateIntent&&family&&!anchors.length)selected=scored;
   if(!selected.length&&certificateIntent&&family)selected=scored;
+  if(certificateIntent&&/\b(constructed|facility)\b/i.test(query)&&!/\bdesign\b/i.test(query)){
+    const constructed=selected.filter(r=>extractCertificateFact(r.document)?.scope==='Constructed facility');
+    if(constructed.length)selected=constructed;
+  }else if(certificateIntent&&/\bdesign\b/i.test(query)&&!/\b(constructed|facility)\b/i.test(query)){
+    const design=selected.filter(r=>extractCertificateFact(r.document)?.scope==='Design documents');
+    if(design.length)selected=design;
+  }
   const exactEntities=selected.length>0;
   if(!selected.length)return {documents:[],exhaustive,exactEntities:false,unusable,query};
   // Equivalent filename formats are alternative renditions. Prefer the readable
