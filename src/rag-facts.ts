@@ -95,6 +95,9 @@ export function certificateAnswer(documents: KnowledgeDocument[], query: string,
   if (isoNumber) facts = facts.filter(x=>x.standard?.includes(isoNumber));
   if (!facts.length) return undefined;
   const explicitDate = new RegExp(datePattern,'i').exec(query)?.[0];
+  if(explicitDate&&!parseEvidenceDate(explicitDate)&&/\bas\s+of\b|\bvalid(?:ity)?\s+on\b/i.test(query)){
+    return {answer:`“${explicitDate}” is not a valid calendar date. Please provide a valid date for the certificate-status comparison. [S1]`,documents:[facts[0]!.document],kind:'certificate',complete:false};
+  }
   const asOf = explicitDate ? parseEvidenceDate(explicitDate) ?? asOfDay : asOfDay;
   const unique = new Map<string,CertificateFact>();
   const identifiers = new Map<string,Set<string>>();

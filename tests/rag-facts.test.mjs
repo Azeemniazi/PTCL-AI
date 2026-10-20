@@ -10,6 +10,8 @@ test('evidence dates validate calendar values and compare future dates determini
   assert.equal(statedValidity({validUntil:'2027-05-25'},'2026-10-20'),'within-stated-period');
   assert.equal(statedValidity({validUntil:'2025-12-22'},'2026-10-20'),'expired');
   assert.equal(statedValidity({validUntil:'2030-04-09'},'2030-04-09'),'within-stated-period');
+  const invalid=certificateAnswer([cert('invalid-date')],'As of 31 February 2027, is the TIA-942 certificate valid?','2026-10-20');
+  assert.match(invalid.answer,/not a valid calendar date/);assert.equal(invalid.complete,false);
 });
 test('certificate fields come from the body rather than filename',()=>{
   const source={...cert('a'),filename:'Design Certificate.pdf'};const fact=extractCertificateFact(source);
