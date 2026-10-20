@@ -493,7 +493,7 @@ app.post('/api/documents/upload',requireUser,async(req,res)=>{
     const jobId=randomUUID();
     userDocuments.set(req.session.user!.id,{
       filename,
-      content:extracted||`Document "${filename}" (${Math.max(1,Math.round(fileBytes.length/1024))} KB) uploaded by user.`,
+      content:sourceTextQuality(extracted).usable?extracted:'',
       uploadedAt:new Date().toISOString()
     });
     ingestJobs.set(jobId,{job_id:jobId,filename,status:'finished'});
@@ -502,6 +502,11 @@ app.post('/api/documents/upload',requireUser,async(req,res)=>{
     logger.warn({error:error instanceof Error?error.message:String(error)},'AI document upload failed');
     return res.status(502).json({error:{code:'ai_unavailable',message:error instanceof Error?error.message:'Document upload failed.'}});
   }
+});
+app.get('/api/chat/document',requireUser,(req,res)=>{
+  const doc=userDocuments.get(req.session.user!.id);
+  if(!doc?.content)return res.status(404).json({error:{code:'not_found',message:'No readable chat document is available.'}});
+  res.type('text/plain').send(doc.content);
 });
 
 // ==========================================

@@ -158,7 +158,7 @@ export function shouldQueryKnowledgeBase(
 
 /**
  * Score candidate documents using local cross-encoder Qwen3-Reranker service.
- * Evaluates top 4 snippets (<= 350 chars each) for sub-second CPU cross-attention.
+ * Ranks bounded evidence windows; malformed or unavailable scores fall back to hybrid order.
  */
 export async function rerankCandidates(
   query: string,
@@ -167,7 +167,13 @@ export async function rerankCandidates(
   if (!documents.length) return [];
 
   const cappedDocs = documents.slice(0, 16);
-  const url = `${config.ai.rerankerUrl}/v1/rerank`;
+  const url = `${config.ai.rerankerUrl.replace(/\/v1$/,'')}/v1/rerank`;
+  const words=query.toLowerCase().match(/[\p{L}\p{N}_-]{4,}/gu)??[];
+  const window=(text:string)=>{
+    if(text.length<=1400)return text;
+    const windows=chunkText(text,180,30).map(c=>c.content);
+    return windows.sort((a,b)=>words.filter(w=>b.toLowerCase().includes(w)).length-words.filter(w=>a.toLowerCase().includes(w)).length)[0]!.slice(0,1400);
+  };
 
   try {
     const res = await fetch(url, {
@@ -175,7 +181,7 @@ export async function rerankCandidates(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         query: query.slice(0, 400),
-        documents: cappedDocs.map(d => d.slice(0, 2500))
+        documents: cappedDocs.map(window)
       }),
       signal: AbortSignal.timeout(8000)
     });
@@ -194,8 +200,11 @@ export async function rerankCandidates(
 
     const scoredMap = new Map<number, number>();
     for (const r of results) {
-      scoredMap.set(Number(r.index), Number(r.relevance_score ?? r.score ?? 0));
+      const index=Number(r.index),score=Number(r.relevance_score??r.score);
+      if(!Number.isInteger(index)||index<0||index>=cappedDocs.length||!Number.isFinite(score)||score<0||score>1||scoredMap.has(index))return documents.map((_,index)=>({index,relevanceScore:0,serviceFailed:true}));
+      scoredMap.set(index,score);
     }
+    if(scoredMap.size!==cappedDocs.length)return documents.map((_,index)=>({index,relevanceScore:0,serviceFailed:true}));
 
     return documents.map((_, index) => ({
       index,
@@ -349,7 +358,7 @@ async function retrieveHybridKnowledgeContext(
   const effectiveTopK = isBroadQuery ? Math.max(options?.topK ?? 4, 6) : (options?.topK ?? 4);
   const threshold = options?.minScoreThreshold ?? 0.05;
 
-  const queryEmbedding = await generateEmbedding(query);
+  const queryEmbedding = await generateEmbedding(`Instruct: Given a question about enterprise documents, retrieve passages that answer the question.\nQuery: ${query}`);
   const candidates: RetrievedChunk[] = await repository.searchChunksHybrid(
     userId,
     query,

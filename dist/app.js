@@ -1870,7 +1870,7 @@ function previewMomPdf(m){
 }
 function renderCitations(citations){
   if(!citations||!citations.length)return '';
-  return `<details class="chat-citations-details" open><summary class="chat-citations-summary">${icon('folder')} <span>Source documents (${citations.length})</span></summary><div class="chat-citations-list">${citations.map((c,i)=>`<a class="citation-chip" target="_blank" rel="noopener" href="/api/knowledge/documents/${encodeURIComponent(c.documentId)}/view" title="${esc(c.preview||'')}"><span class="citation-num">${esc(c.sourceId||String(i+1))}</span><span class="citation-name">${esc(c.filename)}</span></a>`).join('')}</div></details>`;
+  return `<details class="chat-citations-details" open><summary class="chat-citations-summary">${icon('folder')} <span>Source documents (${citations.length})</span></summary><div class="chat-citations-list">${citations.map((c,i)=>`<a class="citation-chip" target="_blank" rel="noopener" href="${c.documentId === 'chat-upload' ? '/api/chat/document' : '/api/knowledge/documents/'+encodeURIComponent(c.documentId)+'/view'}" title="${esc(c.preview||'')}"><span class="citation-num">${esc(c.sourceId||String(i+1))}</span><span class="citation-name">${esc(c.filename)}</span></a>`).join('')}</div></details>`;
 }
 function assistant(){return refAssistant();}
 function chatHistoryView(){return refHistory();}

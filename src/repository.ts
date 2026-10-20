@@ -1377,19 +1377,7 @@ export class Repository {
         client.release();
       }
     } else {
-      // For mock pools without connection checkout (e.g. unit test mocks),
-      // probe insertion in reverse order before mutating existing rows so that errors abort safely
-      for (let i = chunks.length - 1; i >= 0; i--) {
-        const chunk = chunks[i]!;
-        const vecString = chunk.embedding && chunk.embedding.length > 0
-          ? `[${chunk.embedding.join(',')}]`
-          : null;
-        await this.pool.query(
-          `INSERT INTO knowledge_document_chunks (id, document_id, chunk_index, content, token_count, embedding, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6::vector, now())`,
-          [randomUUID(), documentId, chunk.chunkIndex, chunk.content, chunk.tokenCount, vecString]
-        );
-      }
+      throw new Error('Atomic indexing requires a transactional database connection.');
     }
   }
 
@@ -1483,119 +1471,35 @@ export class Repository {
       return results.slice(0, limit);
     }
 
-    const conditions: string[] = ['(d.is_shared = true OR d.user_id = $1)'];
-    const params: any[] = [userId];
-
-    if (scope?.mode === 'folder' && scope.id) {
+    const conditions = ['(d.is_shared = true OR d.user_id = $1)', "d.status = 'ready'"];
+    const params: unknown[] = [userId];
+    if(scope?.mode==='document'&&scope.id){params.push(scope.id);conditions.push('d.id=$'+params.length);}
+    if(scope?.mode==='folder'&&scope.id){
       params.push(scope.id);
-      conditions.push(`d.folder_id IN (
-        WITH RECURSIVE folder_tree AS (
-          SELECT id FROM knowledge_folders WHERE id = $${params.length}
-          UNION ALL
-          SELECT kf.id FROM knowledge_folders kf JOIN folder_tree ft ON kf.parent_id = ft.id
-        )
-        SELECT id FROM folder_tree
-      )`);
-    } else if (scope?.mode === 'document' && scope.id) {
-      params.push(scope.id);
-      conditions.push(`d.id = $${params.length}`);
+      conditions.push(`d.folder_id IN (WITH RECURSIVE tree AS (SELECT id FROM knowledge_folders WHERE id=$${params.length} UNION SELECT f.id FROM knowledge_folders f JOIN tree t ON f.parent_id=t.id) SELECT id FROM tree)`);
     }
-
-    const whereClause = conditions.join(' AND ');
-
-    if (queryEmbedding && Array.isArray(queryEmbedding) && queryEmbedding.length > 0) {
-      const vecString = `[${queryEmbedding.join(',')}]`;
-      params.push(vecString);
-      const vecIdx = params.length;
-
-      params.push(query.trim());
-      const queryIdx = params.length;
-
-      params.push(limit);
-      const limitIdx = params.length;
-
-      const sql = `
-        SELECT 
-          c.id,
-          c.document_id,
-          c.chunk_index,
-          c.content,
-          d.filename,
-          f.name AS folder_name,
-          CASE 
-            WHEN c.embedding IS NOT NULL 
-              THEN (1 - (c.embedding <=> $${vecIdx}::vector))
-            ELSE 0 
-          END AS vector_score,
-          GREATEST(
-            similarity(c.content, $${queryIdx}),
-            similarity(d.filename, $${queryIdx}) * 0.9,
-            similarity(COALESCE(f.name, ''), $${queryIdx}) * 0.5
-          ) AS text_score,
-          CASE 
-            WHEN c.embedding IS NOT NULL 
-              THEN ((1 - (c.embedding <=> $${vecIdx}::vector)) * 0.70) + (GREATEST(similarity(c.content, $${queryIdx}), similarity(d.filename, $${queryIdx}) * 0.9, similarity(COALESCE(f.name, ''), $${queryIdx}) * 0.5) * 0.30)
-            ELSE GREATEST(similarity(c.content, $${queryIdx}), similarity(d.filename, $${queryIdx}) * 0.9, similarity(COALESCE(f.name, ''), $${queryIdx}) * 0.5)
-          END AS final_score
-        FROM knowledge_document_chunks c
-        JOIN knowledge_documents d ON c.document_id = d.id
-        LEFT JOIN knowledge_folders f ON d.folder_id = f.id
-        WHERE ${whereClause}
-        ORDER BY final_score DESC
-        LIMIT $${limitIdx}
-      `;
-
-      const res = await this.pool.query(sql, params);
-      return res.rows.map((r: any) => ({
-        id: r.id,
-        documentId: r.document_id,
-        filename: r.filename,
-        folderName: r.folder_name ?? undefined,
-        chunkIndex: r.chunk_index,
-        content: r.content,
-        score: Number(r.final_score ?? 0),
-        retrievalType: (r.vector_score > 0 ? 'hybrid' : 'keyword') as 'hybrid' | 'keyword'
-      }));
-    } else {
-      params.push(query.trim());
-      const queryIdx = params.length;
-
-      params.push(limit);
-      const limitIdx = params.length;
-
-      const sql = `
-        SELECT 
-          c.id,
-          c.document_id,
-          c.chunk_index,
-          c.content,
-          d.filename,
-          f.name AS folder_name,
-          GREATEST(
-            similarity(c.content, $${queryIdx}),
-            similarity(d.filename, $${queryIdx}) * 0.9,
-            similarity(COALESCE(f.name, ''), $${queryIdx}) * 0.5
-          ) AS final_score
-        FROM knowledge_document_chunks c
-        JOIN knowledge_documents d ON c.document_id = d.id
-        LEFT JOIN knowledge_folders f ON d.folder_id = f.id
-        WHERE ${whereClause}
-        ORDER BY final_score DESC
-        LIMIT $${limitIdx}
-      `;
-
-      const res = await this.pool.query(sql, params);
-      return res.rows.map((r: any) => ({
-        id: r.id,
-        documentId: r.document_id,
-        filename: r.filename,
-        folderName: r.folder_name ?? undefined,
-        chunkIndex: r.chunk_index,
-        content: r.content,
-        score: Number(r.final_score ?? 0),
-        retrievalType: 'keyword' as const
-      }));
-    }
+    params.push(query.trim());const qi=params.length;
+    const terms=query.match(/[\p{L}\p{N}_-]{3,}/gu)??[];
+    params.push(terms.map(t=>t.replace(/[^\p{L}\p{N}_-]/gu,'')).join(' OR '));const ti=params.length;
+    params.push(queryEmbedding?JSON.stringify(queryEmbedding):null);const vi=params.length;
+    params.push(Math.max(1,Math.min(64,limit)));const li=params.length;
+    const sql=`
+      WITH candidates AS (
+        SELECT c.id,c.document_id,c.chunk_index,c.content,d.filename,f.name AS folder_name,
+          CASE WHEN c.embedding IS NOT NULL AND $${vi}::vector IS NOT NULL THEN 1-(c.embedding <=> $${vi}::vector) ELSE 0 END AS vector_score,
+          ts_rank_cd(to_tsvector('english',c.content),websearch_to_tsquery('english',$${ti}))+
+          GREATEST(similarity(c.content,$${qi}),similarity(d.filename,$${qi})) AS text_score
+        FROM knowledge_document_chunks c JOIN knowledge_documents d ON d.id=c.document_id
+        LEFT JOIN knowledge_folders f ON f.id=d.folder_id WHERE ${conditions.join(' AND ')}
+      ), ranked AS (
+        SELECT *,row_number() OVER(ORDER BY vector_score DESC,id) AS vr,
+          row_number() OVER(ORDER BY text_score DESC,id) AS tr FROM candidates
+      )
+      SELECT *,CASE WHEN $${vi}::vector IS NULL THEN 61.0/(60+tr)
+        ELSE 30.5*((CASE WHEN vector_score>0 THEN 1.0/(60+vr) ELSE 0 END)+(CASE WHEN text_score>0 THEN 1.0/(60+tr) ELSE 0 END)) END AS final_score
+      FROM ranked WHERE vector_score>0 OR text_score>0 ORDER BY final_score DESC LIMIT $${li}`;
+    const result=await this.pool.query(sql,params);
+    return result.rows.map((r:any)=>({id:r.id,documentId:r.document_id,filename:r.filename,folderName:r.folder_name??undefined,chunkIndex:r.chunk_index,content:r.content,score:Number(r.final_score),retrievalType:queryEmbedding?'hybrid' as const:'keyword' as const}));
   }
 
   async saveGeneratedAsset(asset: GeneratedAsset): Promise<GeneratedAsset> {
