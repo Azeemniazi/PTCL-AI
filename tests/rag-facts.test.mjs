@@ -21,6 +21,9 @@ test('inventory deduplicates copies but preserves conflicting versions',()=>{
   const answer=certificateAnswer([cert('a'),cert('b'),cert('c','9-Apr-2031')],'List every distinct TIA-942 certificate and expiry as of 20 October 2028','2026-10-20');
   assert.ok(answer.answer.includes('1 distinct certificate record'));assert.equal(answer.documents.length,2);assert.match(answer.answer,/Source conflict/);
   assert.ok(answer.answer.includes('9 April 2030'));assert.ok(answer.answer.includes('9 April 2031'));assert.ok(!answer.answer.includes('Expired stated period'));
+  const changedStandard={...cert('different-standard'),extractedText:cert('a').extractedText.replace('TIA-942-C-2024','TIA-942-B-2017')};
+  const conflict=certificateAnswer([cert('a'),changedStandard],'List all distinct TIA-942 certificates and validity','2028-10-20');
+  assert.match(conflict.answer,/Source conflict/);assert.equal(conflict.documents.length,2);
 });
 test('unprovided price cannot become an invented numeric quote',()=>{
   const answer=missingAmountAnswer([doc('p','Object storage is billed by capacity used. SLA 99.95%.')],'What exact monthly PKR price is charged per TB?');

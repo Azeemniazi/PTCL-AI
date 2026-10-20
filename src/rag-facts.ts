@@ -103,7 +103,7 @@ export function certificateAnswer(documents: KnowledgeDocument[], query: string,
   const identifiers = new Map<string,Set<string>>();
   for (const fact of facts) {
     const id = `${fact.family}:${fact.identifier??fact.standard??fact.document.id}`;
-    const version = `${fact.scope}:${fact.validFrom}:${fact.validUntil}:${fact.partnerLevel}`;
+    const version = JSON.stringify([fact.standard,fact.scope,fact.site,fact.validFrom,fact.validUntil,fact.issued,fact.partnerLevel]);
     identifiers.set(id,(identifiers.get(id)??new Set()).add(version));
     unique.set(id+':'+version,unique.get(id+':'+version)??fact);
   }
