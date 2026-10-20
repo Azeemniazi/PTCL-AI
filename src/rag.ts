@@ -369,8 +369,8 @@ export async function retrieveKnowledgeContext(
   options?: RetrievalOptions
 ): Promise<RetrievalResult> {
   const isBroadQuery = /\b(all|every|list|certifications?|standards?|audit|facilities|datacenter|data\s*center|overview|summary|what\s+are)\b/i.test(query) || options?.scope?.mode === 'folder';
-  const candidatePoolSize = isBroadQuery ? 30 : 12;
-  const effectiveTopK = isBroadQuery ? Math.max(options?.topK ?? 4, 12) : (options?.topK ?? 4);
+  const candidatePoolSize = isBroadQuery ? 16 : 8;
+  const effectiveTopK = isBroadQuery ? Math.max(options?.topK ?? 4, 6) : (options?.topK ?? 4);
   const threshold = options?.minScoreThreshold ?? 0.05;
 
   const queryEmbedding = await generateEmbedding(query);
@@ -444,7 +444,7 @@ export async function retrieveKnowledgeContext(
       : chunk.filename;
 
     contextParts.push(
-      `[Source ${i + 1}: "${sourceLabel}" | Relevance: ${(chunk.score * 100).toFixed(1)}%]\n"""\n${chunk.content}\n"""`
+      `[Source ${i + 1}: "${sourceLabel}" | Relevance: ${(chunk.score * 100).toFixed(1)}%]\n"""\n${chunk.content.slice(0, 850)}\n"""`
     );
 
     citations.push({
