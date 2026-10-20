@@ -1,9 +1,13 @@
+import { chunkText, isValidEmbedding, assertChunkCoverage } from './rag-core.js';
 import { config } from './config.js';
+import { selectKnowledgeDocuments, sourceTextQuality } from './rag-planning.js';
+import { certificateAnswer, missingAmountAnswer } from './rag-facts.js';
+import { packEvidence, evidenceMessage, type EvidenceSource } from './rag-evidence.js';
 import type { KnowledgeChunk, RetrievedChunk } from './models.js';
 import { repository } from './repository.js';
 import pino from 'pino';
-import { execSync } from 'node:child_process';
-import { writeFileSync, readFileSync, unlinkSync, existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { writeFileSync, readFileSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -21,112 +25,19 @@ export interface ChunkSplit {
  * respecting paragraph breaks, markdown sections, and sentence boundaries.
  * Preserves exact decimals, IPs, versions, and markdown tables.
  */
-export function chunkText(text: string, maxWords = 400, overlap = 80): ChunkSplit[] {
-  const clean = text.replace(/\r\n/g, '\n').trim();
-  if (!clean) return [];
-
-  const safeOverlap = Math.max(0, Math.min(overlap, maxWords - 1));
-  const rawParagraphs = clean.split(/\n{2,}/);
-  const pieces: Array<{ text: string; words: string[]; isParagraph: boolean }> = [];
-
-  for (const p of rawParagraphs) {
-    const trimmed = p.trim();
-    if (!trimmed) continue;
-    const words = trimmed.split(/\s+/).filter(Boolean);
-    if (words.length <= maxWords) {
-      pieces.push({ text: trimmed, words, isParagraph: true });
-    } else {
-      // Split large paragraph by sentence boundaries, respecting numbers/versions
-      const sentences = trimmed.split(/(?<=[.!?])\s+|\n+/).map(s => s.trim()).filter(Boolean);
-      for (const s of sentences) {
-        const sWords = s.split(/\s+/).filter(Boolean);
-        if (sWords.length <= maxWords) {
-          pieces.push({ text: s, words: sWords, isParagraph: false });
-        } else {
-          // Hard word split for sentences longer than maxWords
-          const step = Math.max(1, maxWords - safeOverlap);
-          for (let w = 0; w < sWords.length; w += step) {
-            const slice = sWords.slice(w, w + maxWords);
-            pieces.push({ text: slice.join(' '), words: slice, isParagraph: false });
-            if (w + maxWords >= sWords.length) break;
-          }
-        }
-      }
-    }
-  }
-
-  if (pieces.length === 0) return [];
-
-  const chunks: ChunkSplit[] = [];
-  let currentWords: string[] = [];
-  let currentParts: string[] = [];
-
-  const emitChunk = () => {
-    if (currentWords.length === 0) return;
-    const content = currentParts.join('\n\n').trim();
-    chunks.push({
-      chunkIndex: chunks.length,
-      content,
-      tokenCount: Math.ceil(currentWords.length * 1.3)
-    });
-    currentWords = [];
-    currentParts = [];
-  };
-
-  for (let i = 0; i < pieces.length; i++) {
-    const piece = pieces[i]!;
-    if (currentWords.length + piece.words.length <= maxWords) {
-      currentWords.push(...piece.words);
-      currentParts.push(piece.text);
-    } else {
-      if (currentWords.length > 0) {
-        const overlapWords = safeOverlap > 0 ? currentWords.slice(-safeOverlap) : [];
-        emitChunk();
-        if (overlapWords.length > 0) {
-          currentWords.push(...overlapWords);
-          currentParts.push(overlapWords.join(' '));
-        }
-      }
-
-      if (currentWords.length + piece.words.length <= maxWords) {
-        currentWords.push(...piece.words);
-        currentParts.push(piece.text);
-      } else {
-        const room = maxWords - currentWords.length;
-        if (room > 0) {
-          const take = piece.words.slice(0, room);
-          currentWords.push(...take);
-          currentParts.push(take.join(' '));
-          const rem = piece.words.slice(room);
-          const overlapWords = safeOverlap > 0 ? currentWords.slice(-safeOverlap) : [];
-          emitChunk();
-          if (overlapWords.length > 0) {
-            currentWords.push(...overlapWords);
-            currentParts.push(overlapWords.join(' '));
-          }
-          if (rem.length > 0) {
-            currentWords.push(...rem);
-            currentParts.push(rem.join(' '));
-          }
-        }
-      }
-    }
-  }
-
-  emitChunk();
-  return chunks;
-}
+export { chunkText } from './rag-core.js';
 
 /**
  * Fetch dense embedding vector (2560 dimensions) from local Qwen3-Embedding service.
  */
 export async function generateEmbedding(input: string): Promise<number[] | null> {
-  const url = `${config.ai.embeddingUrl}/v1/embeddings`;
+  if (!input.trim() || input.length > 16000) return null;
+  const url = `${config.ai.embeddingUrl.replace(/\/v1$/, '')}/v1/embeddings`;
   try {
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ input: input.slice(0, 16000) }),
+      body: JSON.stringify({ input }),
       signal: AbortSignal.timeout(60000)
     });
     if (!res.ok) {
@@ -136,14 +47,7 @@ export async function generateEmbedding(input: string): Promise<number[] | null>
     }
     const data: any = await res.json();
     const vec = data?.data?.[0]?.embedding;
-    if (!Array.isArray(vec) || vec.length !== 2560 || !vec.every((n: any) => typeof n === 'number' && Number.isFinite(n))) {
-      return null;
-    }
-    const normSq = vec.reduce((sum: number, n: number) => sum + n * n, 0);
-    if (normSq <= 0 || !Number.isFinite(normSq)) {
-      return null;
-    }
-    return vec;
+    return isValidEmbedding(vec) ? vec : null;
   } catch (error) {
     logger.warn({ error: error instanceof Error ? error.message : String(error) }, 'Embedding request error');
     return null;
@@ -154,46 +58,45 @@ export async function generateEmbedding(input: string): Promise<number[] | null>
  * Batch generate embeddings for document chunks using native array batching.
  */
 export async function generateBatchEmbeddings(inputs: string[], batchSize = 3): Promise<Array<number[] | null>> {
-  const results: Array<number[] | null> = [];
-  const url = `${config.ai.embeddingUrl}/v1/embeddings`;
-
-  const isValidVector = (v: any) => {
-    if (!Array.isArray(v)) return false;
-    if (!v.every((n: any) => typeof n === 'number' && Number.isFinite(n))) return false;
-    return v.length === 2560 || (v.length === 1 && !process.env.DATABASE_URL);
-  };
-
+  if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 64) throw new RangeError('batchSize must be between 1 and 64.');
+  const results: Array<number[] | null> = new Array(inputs.length).fill(null);
+  const url = `${config.ai.embeddingUrl.replace(/\/v1$/, '')}/v1/embeddings`;
   for (let i = 0; i < inputs.length; i += batchSize) {
-    const batch = inputs.slice(i, i + batchSize).map(t => t.slice(0, 16000));
-    const batchVectors: Array<number[] | null> = new Array(batch.length).fill(null);
+    const batch = inputs.slice(i, i + batchSize);
+    const positions = batch.map((text, index) => ({ text, index })).filter(item => item.text.trim() && item.text.length <= 16000);
+    if (!positions.length) continue;
+    let canRetrySingles = false;
     try {
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: batch }),
+        body: JSON.stringify({ input: positions.map(item => item.text) }),
         signal: AbortSignal.timeout(90000)
       });
       if (res.ok) {
         const data: any = await res.json();
         const rawItems = Array.isArray(data?.data) ? data.data : [];
+        const seen = new Set<number>();
         for (const item of rawItems) {
-          const idx = typeof item?.index === 'number' ? item.index : -1;
-          if (idx >= 0 && idx < batch.length) {
-            const emb = item?.embedding;
-            if (isValidVector(emb)) {
-              batchVectors[idx] = emb;
-            }
-          }
+          const idx = item?.index;
+          if (!Number.isInteger(idx) || idx < 0 || idx >= positions.length) continue;
+          const target = i + positions[idx]!.index;
+          if (seen.has(idx)) { results[target] = null; continue; }
+          seen.add(idx);
+          results[target] = isValidEmbedding(item.embedding) ? item.embedding : null;
         }
-        results.push(...batchVectors);
-      } else {
-        for (const singleText of batch) {
-          results.push(await generateEmbedding(singleText));
-        }
+        canRetrySingles = true;
+      } else if (res.status === 400 || res.status === 413) {
+        // Some compatible services accept only scalar input. Do not multiply
+        // requests during outages, rate limiting, or timeouts.
+        canRetrySingles = true;
       }
-    } catch {
-      for (const singleText of batch) {
-        results.push(await generateEmbedding(singleText));
+    } catch (error) {
+      logger.warn({ error: error instanceof Error ? error.message : String(error) }, 'Batch embedding request failed');
+    }
+    if (canRetrySingles) {
+      for (const item of positions) {
+        if (results[i + item.index] === null) results[i + item.index] = await generateEmbedding(item.text);
       }
     }
   }
@@ -342,6 +245,7 @@ export async function extractDocumentImageOcr(
       return '';
     }
     const data: any = await res.json();
+    if(data?.choices?.[0]?.finish_reason==='length')throw new Error('OCR output was truncated');
     return data?.choices?.[0]?.message?.content?.trim() || '';
   } catch (error) {
     logger.warn({ error: error instanceof Error ? error.message : String(error) }, 'Vision OCR error');
@@ -352,36 +256,32 @@ export async function extractDocumentImageOcr(
 /**
  * Render PDF pages to high-resolution PNGs and transcribe via Qwen3-VL 30B multimodal vision.
  */
-export async function extractPdfOcr(pdfBuffer: Buffer, maxPages = 3): Promise<string> {
-  const tempId = randomUUID();
-  const tempPdf = join(tmpdir(), `ocr_${tempId}.pdf`);
-  const tempPrefix = join(tmpdir(), `page_${tempId}`);
+export async function extractPdfOcr(pdfBuffer: Buffer, maxPages = 50): Promise<string> {
+  const workdir=mkdtempSync(join(tmpdir(),'cloudcore-ocr-'));
+  const tempPdf = join(workdir,'source.pdf');
+  const tempPrefix = join(workdir,'page');
   try {
     writeFileSync(tempPdf, pdfBuffer);
-    execSync(`pdftoppm -png -r 150 -f 1 -l ${maxPages} "${tempPdf}" "${tempPrefix}"`, {
-      timeout: 25000
-    });
+    const info=execFileSync('pdfinfo',[tempPdf],{encoding:'utf8',timeout:10000});
+    const pages=Number(/^Pages:\s+(\d+)/m.exec(info)?.[1]);
+    if(!Number.isInteger(pages)||pages<1||pages>maxPages)throw new Error(`OCR requires 1-${maxPages} pages; no partial index will be published`);
+    execFileSync('pdftoppm',['-png','-r','120',tempPdf,tempPrefix],{timeout:60000});
+    const rendered=readdirSync(workdir).filter(name=>/^page-\d+\.png$/.test(name)).sort((a,b)=>Number(a.match(/\d+/)![0])-Number(b.match(/\d+/)![0]));
+    if(rendered.length!==pages)throw new Error('PDF rendering did not produce every page');
     const ocrPages: string[] = [];
-    for (let p = 1; p <= maxPages; p++) {
-      const pagePath = `${tempPrefix}-${p}.png`;
-      if (existsSync(pagePath)) {
-        try {
+    for (const [index,name] of rendered.entries()) {
+      const pagePath=join(workdir,name);
           const pageBuffer = readFileSync(pagePath);
           const pageText = await extractDocumentImageOcr(pageBuffer, 'image/png');
-          if (pageText && pageText.trim()) {
-            ocrPages.push(`--- Page ${p} ---\n${pageText.trim()}`);
-          }
-        } finally {
-          try { unlinkSync(pagePath); } catch {}
-        }
-      }
+          if(!sourceTextQuality(pageText).usable)throw new Error(`OCR failed for page ${index+1}`);
+          ocrPages.push(`--- Page ${index+1} ---\n${pageText.trim()}`);
     }
     return ocrPages.join('\n\n');
   } catch (err) {
     logger.warn({ error: String(err) }, 'PDF OCR rendering failed');
     return '';
   } finally {
-    try { unlinkSync(tempPdf); } catch {}
+    rmSync(workdir,{recursive:true,force:true});
   }
 }
 
@@ -395,6 +295,7 @@ export interface RetrievalOptions {
 }
 
 export interface CitationItem {
+  sourceId?: string;
   documentId: string;
   filename: string;
   folderName?: string;
@@ -406,6 +307,27 @@ export interface CitationItem {
 export interface RetrievalResult {
   contextBlock: string;
   citations: CitationItem[];
+  sources?: EvidenceSource[];
+  directAnswer?: string;
+  coverage?: 'complete'|'excerpts'|'none';
+}
+
+export async function retrieveKnowledgeContext(userId:string,query:string,options?:RetrievalOptions):Promise<RetrievalResult>{
+  const catalog=await repository.listKnowledgeSources(userId,options?.scope);
+  const ready=catalog.filter(d=>d.status==='ready');
+  const selection=selectKnowledgeDocuments(ready,query,Boolean(options?.scope&&options.scope.mode!=='all'));
+  let documents=selection.documents;
+  if(!documents.length){
+    const legacy=await retrieveHybridKnowledgeContext(userId,query,options);
+    const ids=new Set(legacy.citations.map(c=>c.documentId));
+    documents=ready.filter(d=>ids.has(d.id)&&sourceTextQuality(d.extractedText??'').usable);
+  }
+  if(!documents.length)return {contextBlock:'',citations:[],sources:[],coverage:'none'};
+  const factual=certificateAnswer(documents,query,new Date().toISOString().slice(0,10))??missingAmountAnswer(documents,query);
+  if(factual)documents=factual.documents;
+  const sources=packEvidence(documents,query);
+  const citations=sources.map(s=>({sourceId:s.sourceId,documentId:s.documentId,filename:s.filename,chunkIndex:0,score:0,preview:s.text.slice(0,240)}));
+  return {contextBlock:evidenceMessage(sources),sources,citations,directAnswer:factual?.answer,coverage:sources.every(s=>s.complete)?'complete':'excerpts'};
 }
 
 /**
@@ -416,7 +338,7 @@ export interface RetrievalResult {
  * 4. Filters out irrelevant chunks (< minScoreThreshold).
  * 5. Constructs grounded context block with exact document citations.
  */
-export async function retrieveKnowledgeContext(
+async function retrieveHybridKnowledgeContext(
   userId: string,
   query: string,
   options?: RetrievalOptions
@@ -536,11 +458,25 @@ export async function retrieveKnowledgeContext(
  * Chunks a knowledge document, generates embeddings via Qwen3-Embedding,
  * and saves chunks into the database.
  */
-export async function indexDocumentChunks(doc: { id: string; extractedText?: string; filename: string }): Promise<number> {
+const indexJobs=new Map<string,Promise<number>>();
+let indexQueue:Promise<unknown>=Promise.resolve();
+export function indexDocumentChunks(doc: { id: string; extractedText?: string; filename: string }): Promise<number> {
+  const existing=indexJobs.get(doc.id);if(existing)return existing;
+  const job=indexQueue.catch(()=>{}).then(async()=>{
+    await repository.setDocumentIndexStatus(doc.id,'indexing');
+    try{return await performDocumentIndex(doc);}catch(error){await repository.setDocumentIndexStatus(doc.id,'failed');throw error;}
+  }).finally(()=>indexJobs.delete(doc.id));
+  indexJobs.set(doc.id,job);indexQueue=job;return job;
+}
+async function performDocumentIndex(doc: { id: string; extractedText?: string; filename: string }): Promise<number> {
   const text = doc.extractedText?.trim();
-  if (!text) return 0;
+  if (!text || !sourceTextQuality(text).usable) {
+    await repository.setDocumentIndexStatus(doc.id,'failed');
+    throw new Error('Document has no usable extracted text');
+  }
 
   const splits = chunkText(text, 450, 80);
+  assertChunkCoverage(text, splits);
   if (!splits.length) return 0;
 
   logger.info({ documentId: doc.id, filename: doc.filename, chunkCount: splits.length }, 'Indexing document chunks...');
@@ -561,6 +497,7 @@ export async function indexDocumentChunks(doc: { id: string; extractedText?: str
   }));
 
   await repository.insertDocumentChunks(doc.id, chunksToInsert);
+  await repository.setDocumentIndexStatus(doc.id,'ready');
   logger.info({ documentId: doc.id, filename: doc.filename, chunkCount: chunksToInsert.length }, 'Successfully indexed document chunks');
   return chunksToInsert.length;
 }
@@ -571,16 +508,20 @@ export async function indexDocumentChunks(doc: { id: string; extractedText?: str
 export async function backfillUnindexedDocuments(): Promise<number> {
   try {
     let totalIndexed = 0;
+    const attempted=new Set<string>();
     while (true) {
       const unindexed = await repository.getUnindexedDocuments(50);
-      if (!unindexed.length) break;
+      const pending=unindexed.filter(d=>!attempted.has(d.id));
+      if (!pending.length) break;
 
       logger.info({ count: unindexed.length }, 'Found unindexed knowledge documents, starting background indexing...');
-      for (const doc of unindexed) {
+      for (const doc of pending) {
+        attempted.add(doc.id);
         try {
           const count = await indexDocumentChunks(doc);
           totalIndexed += count;
         } catch (err) {
+          await repository.setDocumentIndexStatus(doc.id,'failed');
           logger.warn({ documentId: doc.id, error: err instanceof Error ? err.message : String(err) }, 'Failed to index document');
         }
       }

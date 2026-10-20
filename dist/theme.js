@@ -81,7 +81,7 @@ function refHome() {
 }
 function renderCitations(citations){
   if(!citations||!citations.length)return '';
-  return `<details class="chat-citations-details" open><summary class="chat-citations-summary">${icon('folder')} <span>Sources Cited (${citations.length})</span></summary><div class="chat-citations-list">${citations.map((c,i)=>`<div class="citation-chip" title="${esc(c.preview||'')}"><span class="citation-num">${i+1}</span><span class="citation-name">${esc(c.filename)}</span>${c.score?`<span class="citation-score">${Math.round(c.score*100)}%</span>`:''}</div>`).join('')}</div></details>`;
+  return `<details class="chat-citations-details" open><summary class="chat-citations-summary">${icon('folder')} <span>Source documents (${citations.length})</span></summary><div class="chat-citations-list">${citations.map((c,i)=>`<a class="citation-chip" target="_blank" rel="noopener" href="/api/knowledge/documents/${encodeURIComponent(c.documentId)}/view" title="${esc(c.preview||'')}"><span class="citation-num">${esc(c.sourceId||String(i+1))}</span><span class="citation-name">${esc(c.filename)}</span></a>`).join('')}</div></details>`;
 }
 if(typeof window!=='undefined')window.renderCitations=renderCitations;
 function refAssistant() {

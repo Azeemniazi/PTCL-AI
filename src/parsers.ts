@@ -1,5 +1,5 @@
 import { inflateRawSync, inflateSync } from 'node:zlib';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { writeFileSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,9 +7,11 @@ import { randomUUID } from 'node:crypto';
 
 export function cleanXmlEntryToText(xml: string): string {
   return xml
+    .replace(/<w:(?:tab|br|cr)\b[^>]*\/?\s*>/gi, '\t')
+    .replace(/<\/w:tc>/gi, ' | ')
     .replace(/<\/(w:p|p|div|tr|li|a:p|si|row)>/gi, '\n')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x[0-9a-fA-F]+;/g, ' ').replace(/&#\d+;/g, ' ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x([0-9a-fA-F]+);/g, (_,n)=>String.fromCodePoint(parseInt(n,16))).replace(/&#(\d+);/g, (_,n)=>String.fromCodePoint(Number(n)))
     .replace(/[ \t]+/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
@@ -302,12 +304,12 @@ export function extractPdfText(bytes: Buffer): string {
     const tempPath = join(tmpdir(), `pdf_${randomUUID()}.pdf`);
     writeFileSync(tempPath, bytes);
     try {
-      const text = execSync(`pdftotext "${tempPath}" -`, {
+      const text = execFileSync('pdftotext', ['-layout','-enc','UTF-8',tempPath,'-'], {
         encoding: 'utf8',
         timeout: 8000,
         maxBuffer: 10 * 1024 * 1024
       });
-      if (text && text.trim().length >= 40) {
+      if (text && text.trim().length >= 10) {
         return text.trim();
       }
     } finally {
@@ -317,38 +319,9 @@ export function extractPdfText(bytes: Buffer): string {
     // pdftotext not present or failed, proceed to built-in fallback
   }
 
-  // 2. Built-in Flate stream decompressor fallback
-  try {
-    const rawLatin = bytes.toString('latin1');
-    const chunks: string[] = [];
-    const streamRegex = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
-    let match: RegExpExecArray | null;
-    let streamCount = 0;
-    while ((match = streamRegex.exec(rawLatin)) !== null && chunks.length < 200 && streamCount++ < 300) {
-      const rawStream = match[1] ?? '';
-      const streamBytes = Buffer.from(rawStream, 'latin1');
-      let decoded = '';
-      try {
-        decoded = inflateSync(streamBytes).toString('latin1');
-      } catch {
-        decoded = rawStream;
-      }
-      const strMatches = decoded.match(/\(([^()\\]|\\.)*\)/g);
-      if (strMatches) {
-        const line = strMatches
-          .map(s => s.slice(1, -1).replace(/\\([()\\])/g, '$1').replace(/\\n/g, '\n'))
-          .filter(s => /[a-zA-Z]{2,}/.test(s) && !/[^\x20-\x7E\n\r\t]/.test(s))
-          .join(' ');
-        if (line.trim()) chunks.push(line.trim());
-      }
-    }
-    if (chunks.length > 0) return chunks.join('\n');
-    const readablePhrases = rawLatin.match(/\b[A-Za-z][A-Za-z0-9,.;:'"?!()\- ]{12,}\b/g) ?? [];
-    const filtered = readablePhrases.filter(p => !/\b(obj|endobj|stream|endstream|xref|FlateDecode|Filter|Length|Type|Font|Page|Parent|Resources)\b/.test(p));
-    return filtered.join('\n').trim();
-  } catch {
-    return '';
-  }
+  // Raw stream strings include font metadata and cannot decode PDF CMaps.
+  // Return no evidence when Poppler cannot read it so OCR/failed status is used.
+  return '';
 }
 
 export function extractDocumentText(filename: string, bytes: Buffer): string {
@@ -362,19 +335,19 @@ export function extractDocumentText(filename: string, bytes: Buffer): string {
         const zipText = extractZipXmlText(bytes);
         if (zipText) return zipText;
       } catch {}
-      return `Uploaded Office document "${filename}" (${Math.max(1, Math.round(bytes.length / 1024))} KB).`;
+      return '';
     }
     if (lower.endsWith('.pdf') || (bytes.length >= 5 && bytes.subarray(0, 5).toString('ascii') === '%PDF-')) {
       try {
         const pdfText = extractPdfText(bytes);
         if (pdfText) return pdfText;
       } catch {}
-      return `Uploaded PDF document "${filename}" (${Math.max(1, Math.round(bytes.length / 1024))} KB).`;
+      return '';
     }
     const readablePhrases = bytes.toString('utf8').match(/\b[A-Za-z][A-Za-z0-9,.;:'"?!()\- ]{10,}\b/g) ?? [];
     return readablePhrases.join('\n').trim();
   } catch {
-    return `Uploaded document "${filename}" (${Math.max(1, Math.round(bytes.length / 1024))} KB).`;
+    return '';
   }
 }
 

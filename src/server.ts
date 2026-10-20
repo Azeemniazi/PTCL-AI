@@ -27,6 +27,9 @@ import { activeStatuses, type Meeting, type MeetingStatus, type User, type Role,
 import { repository } from './repository.js';
 import { createMeetingSchema, momSchema, validateTeamsUrl } from './validation.js';
 import { retrieveKnowledgeContext, indexDocumentChunks, backfillUnindexedDocuments, extractDocumentImageOcr, extractPdfOcr, shouldQueryKnowledgeBase } from './rag.js';
+import { generateGroundedReply } from './rag-generation.js';
+import type { RetrievalResult } from './rag.js';
+import { sourceTextQuality } from './rag-planning.js';
 
 export function verifyCsrfOrigin(originHeader: string | undefined, hostHeader: string | undefined, customHeader: string | undefined, publicBaseUrl = config.publicBaseUrl): boolean {
   if (customHeader === 'CloudCoreAI') return true;
@@ -42,7 +45,7 @@ export function verifyCsrfOrigin(originHeader: string | undefined, hostHeader: s
 }
 
 validateProductionConfig();await repository.init();
-const app=express(),logger=pino({level:process.env.LOG_LEVEL??'info'}),root=resolve(dirname(fileURLToPath(import.meta.url)),'../dist');
+const app=express(),logger=pino({level:process.env.LOG_LEVEL??'info',redact:['req.headers.cookie','req.headers.authorization','res.headers["set-cookie"]']}),root=resolve(dirname(fileURLToPath(import.meta.url)),'../dist');
 const knowledgeStorageDir=resolve(process.cwd(),'data/knowledge');
 try { mkdirSync(knowledgeStorageDir, { recursive: true }); } catch {}
 const imageStorageDir=resolve(process.cwd(),'data/images/generated');
@@ -249,16 +252,20 @@ app.post('/api/chat',requireUser,async(req,res)=>{
 
     let docContext = '';
     let citations: any[] = [];
+    let retrieved: RetrievalResult|undefined;
+    let retrievalFailed=false;
     if (use_rag !== false && req.session.user && shouldQueryKnowledgeBase(cleanMessage, req.body?.rag_scope)) {
       try {
         const ragScope = req.body?.rag_scope;
         const ragQuery = augmentConversationalQuery(cleanMessage, contextHistory);
         const ragRes = await retrieveKnowledgeContext(req.session.user.id, ragQuery, { scope: ragScope });
+        retrieved=ragRes;
         if (ragRes.contextBlock) {
           docContext = `\n\n${ragRes.contextBlock}`;
           citations = ragRes.citations;
         }
       } catch (err) {
+        retrievalFailed=true;
         logger.warn({ error: err instanceof Error ? err.message : String(err) }, 'Knowledge Hub RAG retrieval failed');
       }
 
@@ -278,6 +285,24 @@ app.post('/api/chat',requireUser,async(req,res)=>{
           }
         }
       }
+    }
+
+    if(retrieved?.sources?.length || retrievalFailed || (use_rag!==false && (rag_scope || shouldQueryKnowledgeBase(cleanMessage,rag_scope)) && !docContext)){
+      beginLiveChat();
+      try{
+        const reply=retrieved?.directAnswer ? {answer:retrieved.directAnswer,finishReason:'stop',coverage:retrieved.coverage,sourceIds:citations.map(c=>c.sourceId)} : retrieved?.sources?.length ? await generateGroundedReply({
+          url:cleanUrl,headers:buildAiHeaders({'content-type':'application/json'}),model:config.ai.momModel||'qwen-30b',question:cleanMessage,history:contextHistory,sources:retrieved.sources,maxTokens:typeof max_tokens==='number'?max_tokens:1200
+        }) : {answer:retrievalFailed?'I could not retrieve the knowledge-base evidence. Please try again; I cannot verify a factual answer while retrieval is unavailable.':'The accessible knowledge base did not provide readable evidence for this question in the selected scope. I cannot verify the requested facts from these sources.',finishReason:retrievalFailed?'retrieval_failed':'no_evidence',coverage:'none',sourceIds:[]};
+        const usedIds=new Set<string>(reply.sourceIds);
+        const used=citations.filter(c=>usedIds.has(c.sourceId));
+        if(streamRequested){
+          res.setHeader('content-type','text/event-stream; charset=utf-8');res.setHeader('cache-control','no-cache, no-transform');res.setHeader('x-accel-buffering','no');res.flushHeaders?.();
+          res.write(`data: ${JSON.stringify({citations:used,coverage:reply.coverage})}\n\n`);
+          res.write(`data: ${JSON.stringify({choices:[{delta:{content:reply.answer},finish_reason:reply.finishReason}]})}\n\n`);
+          res.write('data: [DONE]\n\n');res.end();return;
+        }
+        return res.json({answer:reply.answer,model:config.ai.momModel,citations:used,finishReason:reply.finishReason,coverage:reply.coverage});
+      }finally{endLiveChat();}
     }
 
     if (rag_scope && !docContext) {
@@ -666,11 +691,11 @@ app.post('/api/knowledge/upload', requireUser, async (req, res) => {
         try {
           extractedText = extractDocumentText(cleanLeaf, fileBytes) || '';
         } catch {
-          extractedText = `Uploaded document "${cleanLeaf}" (${Math.max(1, Math.round(fileBytes.length / 1024))} KB).`;
+          extractedText = '';
         }
 
         // If extracted text is empty or very short, run multimodal Vision OCR (for images or scanned PDFs)!
-        if (!extractedText || extractedText.trim().length < 50) {
+        if (!sourceTextQuality(extractedText).usable) {
           if (/\.(png|jpe?g|webp|bmp|tiff)$/i.test(cleanLeaf)) {
             try {
               const ocrText = await extractDocumentImageOcr(fileBytes, entry.type || 'image/png');
@@ -682,7 +707,7 @@ app.post('/api/knowledge/upload', requireUser, async (req, res) => {
             }
           } else if (cleanLeaf.toLowerCase().endsWith('.pdf') || (fileBytes.length >= 5 && fileBytes.subarray(0, 5).toString('ascii') === '%PDF-')) {
             try {
-              const pdfOcrText = await extractPdfOcr(fileBytes, 3);
+              const pdfOcrText = await extractPdfOcr(fileBytes);
               if (pdfOcrText && pdfOcrText.trim()) {
                 extractedText = pdfOcrText.trim();
               }
@@ -702,7 +727,7 @@ app.post('/api/knowledge/upload', requireUser, async (req, res) => {
           sizeBytes: fileBytes.length,
           storagePath: storageFilename,
           isShared,
-          status: 'ready',
+          status: sourceTextQuality(extractedText).usable?'indexing':'failed',
           extractedText,
           tokenCount
         });
@@ -711,6 +736,7 @@ app.post('/api/knowledge/upload', requireUser, async (req, res) => {
         // Immediately index chunks and vector embeddings asynchronously
         setImmediate(() => {
           indexDocumentChunks(doc).catch(err => {
+            repository.setDocumentIndexStatus(doc.id,'failed').catch(()=>{});
             logger.warn({ error: String(err), documentId: doc.id }, 'Async chunk indexing failed');
           });
         });

@@ -1265,6 +1265,23 @@ export class Repository {
     return q.rows[0] ? documentRow(q.rows[0]) : undefined;
   }
 
+  async setDocumentIndexStatus(id: string, status: 'ready'|'indexing'|'failed'): Promise<void> {
+    if(!this.pool){const doc=this.knowledgeDocuments.get(id);if(doc)doc.status=status;return;}
+    await this.pool.query('UPDATE knowledge_documents SET status=$2, updated_at=now() WHERE id=$1',[id,status]);
+  }
+
+  async listKnowledgeSources(userId: string, scope?: {mode:'all'|'folder'|'document';id?:string}): Promise<KnowledgeDocument[]> {
+    const documents=await this.listDocuments(userId);
+    if(scope?.mode==='document')return documents.filter(d=>d.id===scope.id);
+    if(scope?.mode!=='folder')return documents;
+    const folders=await this.listFolders(userId);
+    if(!folders.some(f=>f.id===scope.id))return [];
+    const ids=new Set([scope.id]);
+    let changed=true;
+    while(changed){changed=false;for(const folder of folders)if(folder.parentId&&ids.has(folder.parentId)&&!ids.has(folder.id)){ids.add(folder.id);changed=true;}}
+    return documents.filter(d=>d.folderId&&ids.has(d.folderId));
+  }
+
   async updateDocument(id: string, userId: string, input: { filename?: string; folderId?: string | null; isShared?: boolean }, isPrivileged = false): Promise<KnowledgeDocument | undefined> {
     const existing = await this.getDocumentById(id);
     if (!existing) return undefined;
