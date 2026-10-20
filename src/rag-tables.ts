@@ -1,6 +1,6 @@
 import type {KnowledgeDocument} from './models.js';
 import type {FactualAnswer} from './rag-facts.js';
-const stop=new Set('the and for from with that this these those which what who does include including service services customer provider ptcl cloud responsibility responsibilities model backup data option options fully managed'.split(' '));
+const stop=new Set('the and for from with that this these those which what who does include including all every tenant tenants portal api service services customer provider ptcl cloud responsibility responsibilities model backup data option options fully managed'.split(' '));
 const stem=(s:string)=>{const lower=s.toLowerCase();return lower.length<=4?lower:lower.replace(/(?:ing|ed|es|s)$/,'').slice(0,6);};
 const tokens=(s:string)=>[...new Set((s.match(/[\p{L}\p{N}]{3,}/gu)??[]).map(w=>w.toLowerCase()).filter(w=>!stop.has(w)).map(stem))];
 const cells=(row:string)=>row.trim().replace(/^\||\|$/g,'').split(/(?<!\\)\|/).map(c=>c.trim());
@@ -43,8 +43,9 @@ export function responsibilityAnswer(documents:KnowledgeDocument[],query:string)
 /** For confirmation questions, preserve the exact feature qualification rather
  * than generating an unrelated list of supposedly confirmed capabilities. */
 export function qualifiedFeatureAnswer(documents:KnowledgeDocument[],query:string):FactualAnswer|undefined{
- if(!/^\s*(does|do|is|are|can|could|has|have)\b/i.test(query)||!/\b(confirm\w*|placeholder\w*|enforc\w*|unconditional\w*)\b/i.test(query))return undefined;
- const ignored=new Set(['confirm','uncond','placeh','docume','featur','enforc','separa']);
+ const question=/^\s*(does|do|is|are|can|could|has|have)\b/i.test(query)||/\b(check|verify|confirm)\b.*\b(qualifications?|placeholders?|enforcement)\b/i.test(query);
+ if(!question||!/\b(confirm\w*|placeholder\w*|enforc\w*|unconditional\w*)\b/i.test(query))return undefined;
+ const ignored=new Set(['confir','uncond','placeh','docume','featur','enforc','separa']);
  const requested=tokens(query).filter(t=>!ignored.has(t));const used:KnowledgeDocument[]=[];const parts:string[]=[];
  for(const document of documents){
   const text=document.extractedText??'';if(!/^\|.*\|$/m.test(text))continue;
