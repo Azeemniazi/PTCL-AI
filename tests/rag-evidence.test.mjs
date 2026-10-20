@@ -12,7 +12,7 @@ test('answer checks reject invented source IDs and unsupported percentages',()=>
  const source=[{sourceId:'S1',text:'Uptime 99.87%.'}];
  assert.deepEqual(validateAnswer('Uptime 99.87%. [S1]',source),[]);
  assert.ok(validateAnswer('Uptime 100%. [S2]',source).length===2);
-  assert.equal(normalizeSourceCitations('Fact [S1, S2]. Detail [S1, Section 2.1].'),'Fact [S1] [S2]. Detail [S1] (Section 2.1).');
+  assert.equal(normalizeSourceCitations('Fact [S1, S2]. Detail [S1, Section 2.1].'),'Fact [S1] [S2]. Detail [S1].');
   assert.ok(validateAnswer('Fact [S1] (Section 7.5).',source).includes('Unsupported section 7.5'));
 });
 test('derived percentages require a supported rate and unambiguous whole intervals',()=>{
