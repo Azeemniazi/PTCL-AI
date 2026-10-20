@@ -30,6 +30,7 @@ import { retrieveKnowledgeContext, indexDocumentChunks, backfillUnindexedDocumen
 import { generateGroundedReply } from './rag-generation.js';
 import type { RetrievalResult } from './rag.js';
 import { sourceTextQuality } from './rag-planning.js';
+import { packEvidence, evidenceMessage } from './rag-evidence.js';
 
 export function verifyCsrfOrigin(originHeader: string | undefined, hostHeader: string | undefined, customHeader: string | undefined, publicBaseUrl = config.publicBaseUrl): boolean {
   if (customHeader === 'CloudCoreAI') return true;
@@ -274,14 +275,17 @@ app.post('/api/chat',requireUser,async(req,res)=>{
         if (userDoc) {
           const snippet = selectRelevantDocContext(userDoc.content, cleanMessage, 4200);
           if (snippet) {
-            docContext = `\n\nUSER UPLOADED DOCUMENT ("${userDoc.filename}"):\n"""\n${snippet}\n"""\nAnswer questions about this document accurately and concisely, citing relevant sections directly without unnecessary boilerplate.`;
+            const sources=packEvidence([{id:'chat-upload',filename:userDoc.filename,extractedText:userDoc.content} as any],cleanMessage);
+            docContext=evidenceMessage(sources);
             citations = [{
               documentId: 'chat-upload',
+              sourceId:'S1',
               filename: userDoc.filename,
               chunkIndex: 0,
               score: 1.0,
               preview: snippet.slice(0, 200)
             }];
+            retrieved={contextBlock:docContext,sources,citations,coverage:sources.every(s=>s.complete)?'complete':'excerpts'};
           }
         }
       }

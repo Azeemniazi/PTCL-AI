@@ -315,6 +315,7 @@ export interface RetrievalResult {
 export async function retrieveKnowledgeContext(userId:string,query:string,options?:RetrievalOptions):Promise<RetrievalResult>{
   const catalog=await repository.listKnowledgeSources(userId,options?.scope);
   const ready=catalog.filter(d=>d.status==='ready');
+  if(!ready.length)return {contextBlock:'',citations:[],sources:[],coverage:'none'};
   const selection=selectKnowledgeDocuments(ready,query,Boolean(options?.scope&&options.scope.mode!=='all'));
   let documents=selection.documents;
   if(!documents.length){
