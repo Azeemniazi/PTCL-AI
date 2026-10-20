@@ -24,3 +24,13 @@ test('readable source rendition is chosen over corrupted PDF metadata',()=>{
   const plan=selectKnowledgeDocuments(docs,'What is BaaS retention?');
   assert.deepEqual(plan.documents.map(d=>d.id),['w']);assert.equal(plan.unusable.length,1);
 });
+
+test('broad certification requests are complete across colloquial and polite phrasing',()=>{
+ const docs=[tia('a','Pakistan_PTCL_CDDT_H9_Certificate.pdf','CDDT H9'),tia('b','Garden_Town_Certificate.pdf','Garden Town'),tia('c','Satellite Town Certificate.pdf','Satellite Town Rawalpindi'),doc('iso','ISO 27001.pdf','Certificate PK25/123\nThis is to certify ISO/IEC 27001:2022'),doc('pci','PCI.pdf','CERTIFICATE OF COMPLIANCE\nThis is to certify PCI DSS v4.0.1'),doc('partner','Partner.pdf','Partner Program\nTier: Ready')];
+ for(const q of ['can u tell me the datacenter certifications','can u tell me the datacenter certifications all please','can u tell me all data center certifications?','data center certifications','please list data centre certifications','what certifications do you have for data centers?']){
+  const plan=selectKnowledgeDocuments(docs,q);
+  assert.deepEqual(plan.documents.map(d=>d.id).sort(),['a','b','c','iso','pci'],q);assert.equal(plan.exhaustive,true,q);
+ }
+ assert.deepEqual(selectKnowledgeDocuments(docs,'Tell me the Garden Town certifications please').documents.map(d=>d.id),['b']);
+ assert.deepEqual(selectKnowledgeDocuments(docs,'What certifications does Atlantis hold?').documents,[]);
+});

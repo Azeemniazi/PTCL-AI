@@ -11,6 +11,7 @@ export interface CertificateFact {
   validUntil?: string;
   issued?: string;
   partnerLevel?: string;
+  rating?: string;
 }
 
 const months = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
@@ -51,6 +52,7 @@ export function extractCertificateFact(document: KnowledgeDocument): Certificate
   const family = tia ? 'TIA' : iso ? 'ISO' : pci ? 'PCI' : level ? 'partner' : undefined;
   if (!family) return undefined;
   const fact: CertificateFact = { document, family, standard: tia ?? iso ?? pci, partnerLevel: level };
+  if(tia)fact.rating=/\bRated[-\s]+[1-4]\b/i.exec(flat)?.[0].replace(/\s+/g,'-');
   fact.identifier = /Certificate\s+Number\s*:\s*([A-Z0-9/._-]+)/i.exec(flat)?.[1]
     ?? /\bCertificate\s+(PK\d{2}\/\d+(?:\.\d+)?)/i.exec(flat)?.[1];
   fact.scope = /\bDESIGN DOCUMENTS\b/i.test(flat) ? 'Design documents'
@@ -103,7 +105,7 @@ export function certificateAnswer(documents: KnowledgeDocument[], query: string,
   const identifiers = new Map<string,Set<string>>();
   for (const fact of facts) {
     const id = `${fact.family}:${fact.identifier??fact.standard??fact.document.id}`;
-    const version = JSON.stringify([fact.standard,fact.scope,fact.site,fact.validFrom,fact.validUntil,fact.issued,fact.partnerLevel]);
+    const version = JSON.stringify([fact.standard,fact.scope,fact.site,fact.validFrom,fact.validUntil,fact.issued,fact.partnerLevel,fact.rating]);
     identifiers.set(id,(identifiers.get(id)??new Set()).add(version));
     unique.set(id+':'+version,unique.get(id+':'+version)??fact);
   }
@@ -127,7 +129,21 @@ export function certificateAnswer(documents: KnowledgeDocument[], query: string,
     }
     return {answer:lines.join('\n\n'),documents:sourceDocs,kind:'certificate',complete:true};
   }
-  if (broad) {
+  const overview=broad&&!/\b(number|identifier|dates?|from|expir\w*|valid\w*|issued|edition|period|details?|compare|as\s+of)\b/i.test(query);
+  if(overview){
+    lines.push(`The uploaded documents cover **${identifiers.size} certification${identifiers.size===1?'':'s'}**:`, '');
+    const tia=facts.filter(f=>f.family==='TIA');
+    if(tia.length){
+      lines.push('**Data center design and facility certificates**', '', '| Site | Certification / scope | Valid until | Source |', '|---|---|---|---|');
+      for(const fact of tia)lines.push(`| ${cell(fact.site??fact.document.filename)} | ${cell(fact.standard)}${fact.rating?`, ${cell(fact.rating)}`:''} — ${cell(fact.scope)} | ${humanEvidenceDate(fact.validUntil)}${statedValidity(fact,asOf)==='expired'?' **(expired)**':''} | ${source(fact)} |`);
+    }
+    const related=facts.filter(f=>f.family!=='TIA');
+    if(related.length){
+      lines.push('', related.some(f=>f.family==='partner')?'**Related compliance and partner certificates**':'**Related security and compliance certificates**', '');
+      for(const fact of related)lines.push(`- **${cell(fact.standard??fact.partnerLevel??fact.document.filename)}** — ${cell(fact.scope)}${fact.validUntil?`; valid until ${humanEvidenceDate(fact.validUntil)}${statedValidity(fact,asOf)==='expired'?' **(expired)**':''}`:''}. ${source(fact)}`);
+      if(tia.length)lines.push('', 'The ISO and PCI records have their own stated activities and sites; they do not establish a TIA facility rating for every location.');
+    }
+  } else if (broad) {
     lines.push(`Found **${identifiers.size} distinct certificate record${identifiers.size===1?'':'s'}** in the authorized source documents examined. Duplicate copies with identical fields are counted once.`, '', '| Site / certificate | Standard / scope | Certificate number | Valid from | Valid until | Stated-date status | Source |', '|---|---|---|---|---|---|---|');
     for(const fact of facts) lines.push(`| ${cell(fact.site??fact.document.filename)} | ${cell(fact.standard)}; ${cell(fact.scope)} | ${cell(fact.identifier)} | ${humanEvidenceDate(fact.validFrom??fact.issued)} | ${humanEvidenceDate(fact.validUntil)} | ${statusText(fact)} | ${source(fact)} |`);
   } else {
@@ -140,6 +156,7 @@ export function certificateAnswer(documents: KnowledgeDocument[], query: string,
       if(fact.standard)lines.push(`- **Standard:** ${fact.standard}`);
       if(fact.identifier)lines.push(`- **Certificate number:** ${fact.identifier}`);
       if(fact.scope)lines.push(`- **Scope / category:** ${fact.scope}`);
+      if(fact.rating)lines.push(`- **Rating:** ${fact.rating}`);
       if(fact.validFrom)lines.push(`- **Valid from:** ${humanEvidenceDate(fact.validFrom)}`);
       if(fact.issued)lines.push(`- **Certificate date:** ${humanEvidenceDate(fact.issued)}`);
       if(fact.validUntil)lines.push(`- **Expiry:** ${humanEvidenceDate(fact.validUntil)}`);
@@ -151,7 +168,7 @@ export function certificateAnswer(documents: KnowledgeDocument[], query: string,
     }
   }
   if(/\b(constructed|facility)\b/i.test(query)&&facts.every(f=>f.scope==='Design documents'))lines.push('', 'These sources certify **design documents**. They do not establish a constructed-facility certificate for this site or an unprovided renewal.');
-  if(facts.some(f=>f.validUntil))lines.push('', `Date status is computed as of **${humanEvidenceDate(asOf)}** from the stated dates only. Surveillance conditions, issuer validity and any unprovided renewal are not independently established.`);
+  if(facts.some(f=>f.validUntil))lines.push('', overview?`Dates are from the uploaded certificates, checked against **${humanEvidenceDate(asOf)}**. A renewal or current issuer status requires separate evidence.`:`Date status is computed as of **${humanEvidenceDate(asOf)}** from the stated dates only. Surveillance conditions, issuer validity and any unprovided renewal are not independently established.`);
   if([...identifiers.values()].some(versions=>versions.size>1))lines.push('', '**Source conflict:** differing fields exist for the same certificate identifier. The source versions are shown separately; no current version is assumed.');
   return { answer:lines.join('\n'), documents:sourceDocs, kind:'certificate', complete:true };
 }

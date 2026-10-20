@@ -1,6 +1,7 @@
 import { chunkText, isValidEmbedding, assertChunkCoverage } from './rag-core.js';
 import { config } from './config.js';
 import { selectKnowledgeDocuments, sourceTextQuality } from './rag-planning.js';
+import { assistantIdentityAnswer, normalizeConversationIntent } from './rag-conversation.js';
 import { certificateAnswer, missingAmountAnswer } from './rag-facts.js';
 import { responsibilityAnswer,qualifiedFeatureAnswer,availabilityAnswer,serviceOverviewAnswer } from './rag-tables.js';
 import { packEvidence, evidenceMessage, type EvidenceSource } from './rag-evidence.js';
@@ -116,11 +117,12 @@ export function shouldQueryKnowledgeBase(
   if (!query || typeof query !== 'string') return false;
   const trimmed = query.trim();
   if (!trimmed) return false;
+  if (assistantIdentityAnswer(trimmed)) return false;
 
   // If user explicitly scoped to a folder or document, always query
   if (scope?.mode === 'folder' || scope?.mode === 'document') return true;
 
-  const lower = trimmed.toLowerCase();
+  const lower = normalizeConversationIntent(trimmed);
 
   // 1. Common greetings & pleasantries (Urdu, English, Roman Urdu) -> skip RAG
   if (/^(hi|hello|hey|heya|howdy|salam|assalam|aoa|hola|good\s*(morning|afternoon|evening|night|day)|kese\s*ho|kia\s*hal\s*hai|kaise\s*ho|kya\s*haal\s*hai)[.!?\s]*$/i.test(lower)) {

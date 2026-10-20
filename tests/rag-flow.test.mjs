@@ -24,6 +24,8 @@ test('RAG HTTP lifecycle: readiness, private ACL, grounded SSE, source view, del
   const userLogin=await api('/api/auth/login',undefined,{username:'rag-test-reader',password:'rag-reader-password'});const other=userLogin.headers.get('set-cookie').split(';')[0];
   const doc=await upload(cookie,'SecretFixture.txt');assert.equal(doc.status,'indexing');
   const request={message:'What uptime does SecretFixture state?',rag_scope:{mode:'document',id:doc.id},use_rag:true,max_tokens:400};
+  const identity=await (await api('/api/chat',cookie,{...request,message:'who are u'})).json();assert.match(identity.answer,/CloudCore AI/);assert.deepEqual(identity.citations,[]);assert.equal(identity.finishReason,'stop');
+  const identityStream=await (await api('/api/chat',cookie,{...request,message:'who r u?',stream:true})).text();assert.match(identityStream,/CloudCore AI/);assert.match(identityStream,/\[DONE\]/);
   assert.equal((await (await api('/api/chat',cookie,request)).json()).finishReason,'no_evidence');
   for(let n=0;n<50&&!release;n++)await pause(20);assert.ok(release);hold=false;release();
   for(let n=0;n<100;n++){const r=await (await api('/api/knowledge/documents/'+doc.id,cookie)).json();if(r.document.status==='ready')break;await pause(20);}

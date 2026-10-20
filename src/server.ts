@@ -27,6 +27,8 @@ import { activeStatuses, type Meeting, type MeetingStatus, type User, type Role,
 import { repository } from './repository.js';
 import { createMeetingSchema, momSchema, validateTeamsUrl } from './validation.js';
 import { retrieveKnowledgeContext, indexDocumentChunks, backfillUnindexedDocuments, extractDocumentImageOcr, extractPdfOcr, shouldQueryKnowledgeBase } from './rag.js';
+import { assistantIdentityAnswer, augmentConversationalQuery } from './rag-conversation.js';
+export { augmentConversationalQuery } from './rag-conversation.js';
 import { generateGroundedReply } from './rag-generation.js';
 import type { RetrievalResult } from './rag.js';
 import { sourceTextQuality } from './rag-planning.js';
@@ -169,47 +171,6 @@ export {
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export function augmentConversationalQuery(query: string, history: Array<{ role: 'user' | 'assistant'; content: string }>): string {
-  if (!history || history.length === 0) return query;
-  const qLower = query.toLowerCase();
-
-  const isFollowUp =
-    query.trim().split(/\s+/).length <= 10 ||
-    /\b(it|this|that|these|those|its|previous|second|first|third|last|above|mentioned|is ki|iski|yeh|woh|kab|kya|expiry|expire|valid|renewal|renew|issued|scope|auditor|tier|compliance)\b/i.test(query);
-
-  if (!isFollowUp) return query;
-
-  const recentMessages = history.slice(-4).reverse();
-  const candidates: string[] = [];
-
-  const patterns = [
-    /\b(PCI(?:\s*DSS)?(?:\s*v?[\d\.]+)?)/gi,
-    /\b(TIA[-\s]?942(?:-[A-Z0-9]+)?)/gi,
-    /\b(ISO(?:\/IEC)?\s*\d{4,5}(?::\d{4})?)/gi,
-    /\b(SOC\s*[123]|HIPAA|GDPR|ISMS)\b/gi,
-    /\b(Garden\s+Town|Lahore\s+Data\s+Center|Karachi|Islamabad)\b/gi,
-    /\b([\w\-.]+\.(?:pdf|docx?|xlsx?|pptx?|txt))\b/gi
-  ];
-
-  for (const msg of recentMessages) {
-    for (const pat of patterns) {
-      const matches = msg.content.matchAll(pat);
-      for (const m of matches) {
-        const entity = m[0].trim();
-        if (entity && !qLower.includes(entity.toLowerCase()) && !candidates.some(c => c.toLowerCase() === entity.toLowerCase())) {
-          candidates.push(entity);
-        }
-      }
-    }
-    if (candidates.length >= 3) break;
-  }
-
-  if (candidates.length > 0) {
-    return `${query} (${candidates.slice(0, 3).join(', ')})`;
-  }
-  return query;
-}
-
 app.post('/api/chat',requireUser,async(req,res)=>{
   try{
     if(!config.ai.baseUrl)return res.status(503).json({error:{code:'ai_disconnected',message:'Internal AI service is not configured.'}});
@@ -251,6 +212,17 @@ app.post('/api/chat',requireUser,async(req,res)=>{
 
     const streamRequested=Boolean(stream===true||req.query.stream==='true'||req.header('accept')?.includes('text/event-stream'));
     const cleanUrl=buildAiUrl('/chat/completions');
+    const identity=assistantIdentityAnswer(cleanMessage);
+    if(identity){
+      if(streamRequested){
+        res.setHeader('content-type','text/event-stream; charset=utf-8');res.setHeader('cache-control','no-cache, no-transform');res.setHeader('x-accel-buffering','no');res.flushHeaders?.();
+        res.write(`data: ${JSON.stringify({citations:[],coverage:'none'})}\n\n`);
+        res.write(`data: ${JSON.stringify({choices:[{delta:{content:identity},finish_reason:'stop'}]})}\n\n`);
+        res.write('data: [DONE]\n\n');res.end();return;
+      }
+      return res.json({answer:identity,citations:[],finishReason:'stop',coverage:'none'});
+    }
+
 
     let docContext = '';
     let citations: any[] = [];

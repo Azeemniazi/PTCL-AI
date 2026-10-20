@@ -30,3 +30,11 @@ test('unprovided price cannot become an invented numeric quote',()=>{
   assert.match(answer.answer,/do \*\*not state/);assert.ok(!answer.answer.includes('12000'));
   assert.equal(missingAmountAnswer([doc('p','Price: PKR 1234 per TB per month.')],'What exact monthly PKR price is charged per TB?'),undefined);
 });
+
+test('certificate overview retains rating, scope and expired dates with fewer columns',()=>{
+ const source={...cert('rated','9-Apr-2025'),extractedText:cert('rated','9-Apr-2025').extractedText.replace('CONSTRUCTED FACILITY','DESIGN DOCUMENTS').replace('10-Apr-2027','10-Apr-2024')};
+ const answer=certificateAnswer([source],'data center certifications','2026-10-20');
+ assert.match(answer.answer,/Rated-3/);assert.match(answer.answer,/Design documents/);assert.match(answer.answer,/\*\*\(expired\)\*\*/);
+ assert.match(answer.answer,/\| Site \| Certification \/ scope \| Valid until \| Source \|/);
+ assert.doesNotMatch(answer.answer,/counted once/);
+});
