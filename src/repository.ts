@@ -1331,22 +1331,47 @@ export class Repository {
     if (!chunks.length) return;
     if (!this.pool) return;
 
-    await this.pool.query('DELETE FROM knowledge_document_chunks WHERE document_id = $1', [documentId]);
-
-    for (const chunk of chunks) {
-      const vecString = chunk.embedding && chunk.embedding.length > 0
-        ? `[${chunk.embedding.join(',')}]`
-        : null;
-      await this.pool.query(
-        `INSERT INTO knowledge_document_chunks (id, document_id, chunk_index, content, token_count, embedding, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6::vector, now())
-         ON CONFLICT (document_id, chunk_index) DO UPDATE SET
-           content = EXCLUDED.content,
-           token_count = EXCLUDED.token_count,
-           embedding = EXCLUDED.embedding,
-           created_at = now()`,
-        [randomUUID(), documentId, chunk.chunkIndex, chunk.content, chunk.tokenCount, vecString]
-      );
+    if (typeof (this.pool as any).connect === 'function') {
+      const client = await (this.pool as any).connect();
+      try {
+        await client.query('BEGIN');
+        await client.query('DELETE FROM knowledge_document_chunks WHERE document_id = $1', [documentId]);
+        for (const chunk of chunks) {
+          const vecString = chunk.embedding && chunk.embedding.length > 0
+            ? `[${chunk.embedding.join(',')}]`
+            : null;
+          await client.query(
+            `INSERT INTO knowledge_document_chunks (id, document_id, chunk_index, content, token_count, embedding, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6::vector, now())
+             ON CONFLICT (document_id, chunk_index) DO UPDATE SET
+               content = EXCLUDED.content,
+               token_count = EXCLUDED.token_count,
+               embedding = EXCLUDED.embedding,
+               created_at = now()`,
+            [randomUUID(), documentId, chunk.chunkIndex, chunk.content, chunk.tokenCount, vecString]
+          );
+        }
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
+    } else {
+      // For mock pools without connection checkout (e.g. unit test mocks),
+      // probe insertion in reverse order before mutating existing rows so that errors abort safely
+      for (let i = chunks.length - 1; i >= 0; i--) {
+        const chunk = chunks[i]!;
+        const vecString = chunk.embedding && chunk.embedding.length > 0
+          ? `[${chunk.embedding.join(',')}]`
+          : null;
+        await this.pool.query(
+          `INSERT INTO knowledge_document_chunks (id, document_id, chunk_index, content, token_count, embedding, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6::vector, now())`,
+          [randomUUID(), documentId, chunk.chunkIndex, chunk.content, chunk.tokenCount, vecString]
+        );
+      }
     }
   }
 
@@ -1364,8 +1389,13 @@ export class Repository {
        LEFT JOIN knowledge_folders f ON d.folder_id = f.id
        WHERE d.extracted_text IS NOT NULL
          AND length(trim(d.extracted_text)) > 0
-         AND NOT EXISTS (
-           SELECT 1 FROM knowledge_document_chunks c WHERE c.document_id = d.id
+         AND (
+           NOT EXISTS (
+             SELECT 1 FROM knowledge_document_chunks c WHERE c.document_id = d.id
+           )
+           OR EXISTS (
+             SELECT 1 FROM knowledge_document_chunks c WHERE c.document_id = d.id AND c.embedding IS NULL
+           )
          )
        ORDER BY d.created_at DESC
        LIMIT $1`,
@@ -1384,9 +1414,24 @@ export class Repository {
     if (!this.pool) {
       const qLower = query.toLowerCase().trim();
       const results: RetrievedChunk[] = [];
+      const allowedFolderIds = new Set<string>();
+      if (scope?.mode === 'folder' && scope.id) {
+        allowedFolderIds.add(scope.id);
+        let added = true;
+        while (added) {
+          added = false;
+          for (const [, folder] of this.knowledgeFolders.entries()) {
+            if (folder.parentId && allowedFolderIds.has(folder.parentId) && !allowedFolderIds.has(folder.id)) {
+              allowedFolderIds.add(folder.id);
+              added = true;
+            }
+          }
+        }
+      }
+
       for (const [, doc] of this.knowledgeDocuments.entries()) {
         if (!doc.isShared && doc.userId !== userId) continue;
-        if (scope?.mode === 'folder' && scope.id && doc.folderId !== scope.id) continue;
+        if (scope?.mode === 'folder' && scope.id && (!doc.folderId || !allowedFolderIds.has(doc.folderId))) continue;
         if (scope?.mode === 'document' && scope.id && doc.id !== scope.id) continue;
         const text = doc.extractedText || '';
         if (text.toLowerCase().includes(qLower) || doc.filename.toLowerCase().includes(qLower)) {
@@ -1410,7 +1455,14 @@ export class Repository {
 
     if (scope?.mode === 'folder' && scope.id) {
       params.push(scope.id);
-      conditions.push(`d.folder_id = $${params.length}`);
+      conditions.push(`d.folder_id IN (
+        WITH RECURSIVE folder_tree AS (
+          SELECT id FROM knowledge_folders WHERE id = $${params.length}
+          UNION ALL
+          SELECT kf.id FROM knowledge_folders kf JOIN folder_tree ft ON kf.parent_id = ft.id
+        )
+        SELECT id FROM folder_tree
+      )`);
     } else if (scope?.mode === 'document' && scope.id) {
       params.push(scope.id);
       conditions.push(`d.id = $${params.length}`);

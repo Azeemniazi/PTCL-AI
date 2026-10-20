@@ -24,72 +24,60 @@ export function chunkText(text: string, maxWords = 400, overlap = 80): ChunkSpli
   const clean = text.replace(/\r\n/g, '\n').trim();
   if (!clean) return [];
 
+  const safeOverlap = Math.max(0, Math.min(overlap, maxWords - 1));
   const rawParagraphs = clean.split(/\n{2,}/);
-  const paragraphs: string[] = [];
+  const pieces: string[] = [];
 
   for (const p of rawParagraphs) {
     const trimmed = p.trim();
     if (!trimmed) continue;
-    const words = trimmed.split(/\s+/);
-    if (words.length > maxWords) {
-      // Split large paragraph by sentences
-      const sentences = trimmed.match(/[^.!?]+[.!?]+(\s+|$)|[^.!?]+$/g) || [trimmed];
-      let currentSentenceBlock = '';
-      for (const s of sentences) {
-        const sentenceWords = s.trim().split(/\s+/).length;
-        const currentWords = currentSentenceBlock ? currentSentenceBlock.split(/\s+/).length : 0;
-        if (currentWords + sentenceWords > maxWords && currentSentenceBlock) {
-          paragraphs.push(currentSentenceBlock.trim());
-          currentSentenceBlock = s;
-        } else {
-          currentSentenceBlock = currentSentenceBlock ? `${currentSentenceBlock} ${s}` : s;
-        }
-      }
-      if (currentSentenceBlock.trim()) {
-        paragraphs.push(currentSentenceBlock.trim());
-      }
-    } else {
-      paragraphs.push(trimmed);
+    const sentences = trimmed.match(/[^.!?]+[.!?]+(?:\s+|$)|[^.!?]+$/g) || [trimmed];
+    for (const s of sentences) {
+      const sTrim = s.trim();
+      if (sTrim) pieces.push(sTrim);
     }
   }
+
+  if (pieces.length === 0) return [];
 
   const chunks: ChunkSplit[] = [];
   let currentWords: string[] = [];
-  let currentText = '';
+  let newWordsAdded = false;
 
-  for (let i = 0; i < paragraphs.length; i++) {
-    const p = paragraphs[i]!;
-    const pWords = p.split(/\s+/);
+  const emitChunk = () => {
+    if (currentWords.length === 0 || !newWordsAdded) return;
+    chunks.push({
+      chunkIndex: chunks.length,
+      content: currentWords.join(' '),
+      tokenCount: Math.ceil(currentWords.length * 1.3)
+    });
+    newWordsAdded = false;
+  };
 
-    if (currentWords.length + pWords.length <= maxWords) {
-      currentWords.push(...pWords);
-      currentText = currentText ? `${currentText}\n\n${p}` : p;
-    } else {
-      if (currentWords.length > 0) {
-        chunks.push({
-          chunkIndex: chunks.length,
-          content: currentText.trim(),
-          tokenCount: Math.ceil(currentWords.length * 1.3)
-        });
+  for (const piece of pieces) {
+    let pWords = piece.split(/\s+/).filter(Boolean);
+    while (pWords.length > 0) {
+      const room = maxWords - currentWords.length;
+      if (room <= 0) {
+        emitChunk();
+        currentWords = currentWords.slice(-safeOverlap);
+        continue;
       }
-
-      // Calculate sliding overlap from previous chunk
-      const overlapWords = currentWords.slice(-overlap);
-      currentWords = [...overlapWords, ...pWords];
-      currentText = overlapWords.length > 0
-        ? `${overlapWords.join(' ')}\n\n${p}`
-        : p;
+      if (pWords.length <= room) {
+        currentWords.push(...pWords);
+        newWordsAdded = true;
+        pWords = [];
+      } else {
+        currentWords.push(...pWords.slice(0, room));
+        newWordsAdded = true;
+        pWords = pWords.slice(room);
+        emitChunk();
+        currentWords = currentWords.slice(-safeOverlap);
+      }
     }
   }
 
-  if (currentWords.length > 0 && currentText.trim()) {
-    chunks.push({
-      chunkIndex: chunks.length,
-      content: currentText.trim(),
-      tokenCount: Math.ceil(currentWords.length * 1.3)
-    });
-  }
-
+  emitChunk();
   return chunks;
 }
 
@@ -111,7 +99,11 @@ export async function generateEmbedding(input: string): Promise<number[] | null>
       return null;
     }
     const data: any = await res.json();
-    return data?.data?.[0]?.embedding ?? null;
+    const vec = data?.data?.[0]?.embedding;
+    if (!Array.isArray(vec) || vec.length !== 2560 || !vec.every((n: any) => typeof n === 'number' && Number.isFinite(n))) {
+      return null;
+    }
+    return vec;
   } catch (error) {
     logger.warn({ error: error instanceof Error ? error.message : String(error) }, 'Embedding request error');
     return null;
@@ -127,6 +119,7 @@ export async function generateBatchEmbeddings(inputs: string[], batchSize = 3): 
 
   for (let i = 0; i < inputs.length; i += batchSize) {
     const batch = inputs.slice(i, i + batchSize).map(t => t.slice(0, 16000));
+    const batchVectors: Array<number[] | null> = new Array(batch.length).fill(null);
     try {
       const res = await fetch(url, {
         method: 'POST',
@@ -136,7 +129,16 @@ export async function generateBatchEmbeddings(inputs: string[], batchSize = 3): 
       });
       if (res.ok) {
         const data: any = await res.json();
-        const batchVectors = (data?.data ?? []).map((item: any) => item?.embedding ?? null);
+        const rawItems = Array.isArray(data?.data) ? data.data : [];
+        for (const item of rawItems) {
+          const idx = typeof item?.index === 'number' ? item.index : -1;
+          if (idx >= 0 && idx < batch.length) {
+            const emb = item?.embedding;
+            if (Array.isArray(emb) && emb.every((n: any) => typeof n === 'number' && Number.isFinite(n))) {
+              batchVectors[idx] = emb;
+            }
+          }
+        }
         results.push(...batchVectors);
       } else {
         for (const singleText of batch) {
@@ -191,7 +193,12 @@ export function shouldQueryKnowledgeBase(
     return true;
   }
 
-  // 5. Short queries (<= 2 words) without enterprise keywords -> skip RAG
+  // 5. Short follow-up questions ending with ? or query intent (e.g. "Pricing?", "Why?")
+  if (trimmed.endsWith('?') || /\b(pricing|cost|price|fee|rate|why|how|what|where|when|which|who|limit|terms)\b/i.test(lower)) {
+    return true;
+  }
+
+  // 6. Short non-question statements (<= 2 words) without enterprise keywords -> skip RAG
   const wordCount = lower.split(/\s+/).length;
   if (wordCount <= 2) {
     return false;
@@ -209,9 +216,6 @@ export async function rerankCandidates(
   documents: string[]
 ): Promise<Array<{ index: number; relevanceScore: number }>> {
   if (!documents.length) return [];
-  if (documents.length === 1) {
-    return [{ index: 0, relevanceScore: 1.0 }];
-  }
 
   const cappedDocs = documents.slice(0, 4);
   const url = `${config.ai.rerankerUrl}/v1/rerank`;
@@ -229,8 +233,8 @@ export async function rerankCandidates(
 
     if (!res.ok) {
       const err = await res.text().catch(() => '');
-      logger.warn({ status: res.status, err }, 'Reranker request failed, falling back to initial scores');
-      return documents.map((_, index) => ({ index, relevanceScore: 1 / (index + 1) }));
+      logger.warn({ status: res.status, err }, 'Reranker request failed');
+      return documents.map((_, index) => ({ index, relevanceScore: 0 }));
     }
 
     const data: any = await res.json();
@@ -242,13 +246,11 @@ export async function rerankCandidates(
 
     return documents.map((_, index) => ({
       index,
-      relevanceScore: scoredMap.has(index)
-        ? scoredMap.get(index)!
-        : Math.max(0.1, 0.5 - index * 0.05)
+      relevanceScore: scoredMap.has(index) ? scoredMap.get(index)! : 0
     }));
   } catch (error) {
     logger.warn({ error: error instanceof Error ? error.message : String(error) }, 'Reranker service error');
-    return documents.map((_, index) => ({ index, relevanceScore: 1 / (index + 1) }));
+    return documents.map((_, index) => ({ index, relevanceScore: 0 }));
   }
 }
 
@@ -390,17 +392,19 @@ export async function retrieveKnowledgeContext(
   const candidateTexts = candidates.map(c => c.content);
   const rerankedScores = await rerankCandidates(query, candidateTexts);
 
-  // Map scores back to candidate chunks
-  const scoredChunks = rerankedScores
-    .map(r => {
-      const chunk = candidates[r.index];
-      if (!chunk) return null;
+  // Map scores back to candidate chunks: prefer cross-encoder rerank score if > 0, otherwise retain initial search score
+  const scoredChunks = candidates
+    .map((chunk, index) => {
+      const reranked = rerankedScores.find(r => r.index === index);
+      const score = (reranked && typeof reranked.relevanceScore === 'number' && reranked.relevanceScore > 0)
+        ? reranked.relevanceScore
+        : (chunk.score ?? 0);
       return {
         ...chunk,
-        score: r.relevanceScore
+        score
       };
     })
-    .filter((c): c is RetrievedChunk => c !== null && c.score >= threshold)
+    .filter((c): c is RetrievedChunk => c.score >= threshold)
     .sort((a, b) => b.score - a.score);
 
   if (!scoredChunks.length) {
@@ -444,7 +448,7 @@ export async function retrieveKnowledgeContext(
       : chunk.filename;
 
     contextParts.push(
-      `[Source ${i + 1}: "${sourceLabel}" | Relevance: ${(chunk.score * 100).toFixed(1)}%]\n"""\n${chunk.content.slice(0, 850)}\n"""`
+      `[Source ${i + 1}: "${sourceLabel}" | Relevance: ${(chunk.score * 100).toFixed(1)}%]\n"""\n${chunk.content}\n"""`
     );
 
     citations.push({
@@ -484,6 +488,10 @@ export async function indexDocumentChunks(doc: { id: string; extractedText?: str
   // Generate embeddings in batches of 6
   const contents = splits.map(s => s.content);
   const embeddings = await generateBatchEmbeddings(contents, 6);
+
+  if (!embeddings.length || embeddings.every(e => e === null)) {
+    throw new Error('Embedding generation failed or returned empty results for all chunks');
+  }
 
   const chunksToInsert = splits.map((s, idx) => ({
     chunkIndex: s.chunkIndex,

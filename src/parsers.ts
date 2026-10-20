@@ -342,10 +342,10 @@ export function extractPdfText(bytes: Buffer): string {
         if (line.trim()) chunks.push(line.trim());
       }
     }
-    if (chunks.length > 0) return chunks.join('\n').slice(0, 24000);
+    if (chunks.length > 0) return chunks.join('\n');
     const readablePhrases = rawLatin.match(/\b[A-Za-z][A-Za-z0-9,.;:'"?!()\- ]{12,}\b/g) ?? [];
     const filtered = readablePhrases.filter(p => !/\b(obj|endobj|stream|endstream|xref|FlateDecode|Filter|Length|Type|Font|Page|Parent|Resources)\b/.test(p));
-    return filtered.join('\n').slice(0, 24000).trim();
+    return filtered.join('\n').trim();
   } catch {
     return '';
   }
@@ -355,24 +355,24 @@ export function extractDocumentText(filename: string, bytes: Buffer): string {
   try {
     const lower = filename.toLowerCase();
     if (/\.(txt|md|csv|json|log|xml|yaml|yml|tsv|html|htm|css|js|ts|py|sh|sql|ini|conf|env)$/i.test(lower)) {
-      return bytes.toString('utf8').slice(0, 24000).trim();
+      return bytes.toString('utf8').trim();
     }
     if (bytes.length >= 4 && bytes.readUInt32LE(0) === 0x04034b50) {
       try {
         const zipText = extractZipXmlText(bytes);
-        if (zipText) return zipText.slice(0, 24000);
+        if (zipText) return zipText;
       } catch {}
       return `Uploaded Office document "${filename}" (${Math.max(1, Math.round(bytes.length / 1024))} KB).`;
     }
     if (lower.endsWith('.pdf') || (bytes.length >= 5 && bytes.subarray(0, 5).toString('ascii') === '%PDF-')) {
       try {
         const pdfText = extractPdfText(bytes);
-        if (pdfText) return pdfText.slice(0, 24000);
+        if (pdfText) return pdfText;
       } catch {}
       return `Uploaded PDF document "${filename}" (${Math.max(1, Math.round(bytes.length / 1024))} KB).`;
     }
     const readablePhrases = bytes.toString('utf8').match(/\b[A-Za-z][A-Za-z0-9,.;:'"?!()\- ]{10,}\b/g) ?? [];
-    return readablePhrases.join('\n').slice(0, 12000).trim();
+    return readablePhrases.join('\n').trim();
   } catch {
     return `Uploaded document "${filename}" (${Math.max(1, Math.round(bytes.length / 1024))} KB).`;
   }

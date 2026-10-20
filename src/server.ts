@@ -165,8 +165,22 @@ export {
 app.post('/api/chat',requireUser,async(req,res)=>{
   try{
     if(!config.ai.baseUrl)return res.status(503).json({error:{code:'ai_disconnected',message:'Internal AI service is not configured.'}});
-    const {message,history,messages:clientMessages,max_tokens,stream=false,use_rag=true}=req.body??{};
+    const {message,history,messages:clientMessages,max_tokens,stream=false,use_rag=true,rag_scope}=req.body??{};
     if(!message||typeof message!=='string')return res.status(400).json({error:{code:'invalid_request',message:'Message is required.'}});
+    if (rag_scope !== undefined && rag_scope !== null) {
+      if (typeof rag_scope !== 'object' || Array.isArray(rag_scope)) {
+        return res.status(400).json({error:{code:'invalid_request',message:'rag_scope must be an object.'}});
+      }
+      if (!['all', 'folder', 'document'].includes(rag_scope.mode)) {
+        return res.status(400).json({error:{code:'invalid_request',message:'rag_scope.mode must be all, folder, or document.'}});
+      }
+      if ((rag_scope.mode === 'folder' || rag_scope.mode === 'document') && (typeof rag_scope.id !== 'string' || !rag_scope.id.trim())) {
+        return res.status(400).json({error:{code:'invalid_request',message:'rag_scope.id must be a non-empty string for folder/document mode.'}});
+      }
+      if (rag_scope.id !== undefined && typeof rag_scope.id !== 'string') {
+        return res.status(400).json({error:{code:'invalid_request',message:'rag_scope.id must be a string.'}});
+      }
+    }
     const cleanMessage=sanitizePrompt(message).slice(0,8000);
     if(!cleanMessage)return res.status(400).json({error:{code:'invalid_request',message:'Valid message is required.'}});
 
@@ -199,7 +213,7 @@ app.post('/api/chat',requireUser,async(req,res)=>{
         logger.warn({ error: err instanceof Error ? err.message : String(err) }, 'Knowledge Hub RAG retrieval failed');
       }
 
-      if (!docContext) {
+      if (!docContext && !rag_scope) {
         const userDoc = userDocuments.get(req.session.user.id);
         if (userDoc) {
           const snippet = selectRelevantDocContext(userDoc.content, cleanMessage, 4200);
@@ -268,7 +282,34 @@ Core Guidelines:
       if(upstream.status===400){
         const errText=await upstream.text().catch(()=>'');
         if(/exceedcontextsize|context size/i.test(errText)){
-          const compactDoc=docContext?docContext.slice(0, 1800):'';
+          let compactDoc = '';
+          const retainedCitations: any[] = [];
+          if (docContext) {
+            const sourceBlocks = docContext.split(/(?=\[Source \d+: )/);
+            const prefix = sourceBlocks[0] || '';
+            let currentText = prefix;
+            for (let b = 1; b < sourceBlocks.length; b++) {
+              const block = sourceBlocks[b]!;
+              if ((currentText + block).length <= 1800) {
+                currentText += block;
+                const match = block.match(/\[Source \d+: "(?:[^"\/]*\/)?([^"]+)"/);
+                if (match) {
+                  const fname = match[1];
+                  const c = citations.find(cit => cit.filename === fname);
+                  if (c && !retainedCitations.some(rc => rc.filename === c.filename)) {
+                    retainedCitations.push(c);
+                  }
+                }
+              }
+            }
+            if (retainedCitations.length > 0) {
+              compactDoc = currentText.trimEnd() + '\n=== END KNOWLEDGE BASE CONTEXT ===';
+              citations = retainedCitations;
+            } else {
+              compactDoc = '';
+              citations = [];
+            }
+          }
           upstream=await fetch(cleanUrl,{
             method:'POST',
             headers:buildAiHeaders({'content-type':'application/json'}),
