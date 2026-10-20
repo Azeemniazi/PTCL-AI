@@ -30,6 +30,7 @@ test('RAG HTTP lifecycle: readiness, private ACL, grounded SSE, source view, del
   for(let n=0;n<50&&!release;n++)await pause(20);assert.ok(release);hold=false;release();
   for(let n=0;n<100;n++){const r=await (await api('/api/knowledge/documents/'+doc.id,cookie)).json();if(r.document.status==='ready')break;await pause(20);}
   const answer=await (await api('/api/chat',cookie,request)).json();assert.match(answer.answer,/99.87%/);assert.equal(answer.citations[0].documentId,doc.id);
+  const followup=await (await api('/api/chat',cookie,{message:'all please',use_rag:true,history:[{role:'user',content:'What cloud uptime does SecretFixture state?'},{role:'assistant',content:'Some other cloud provider has 100% uptime.'}],max_tokens:400})).json();assert.match(followup.answer,/99.87%/);assert.equal(followup.citations[0].documentId,doc.id);assert.equal(followup.finishReason,'stop');
   const denied=await (await api('/api/chat',other,request)).json();assert.equal(denied.finishReason,'no_evidence');assert.deepEqual(denied.citations,[]);
   assert.equal((await api('/api/knowledge/documents/'+doc.id+'/view',other)).status,403);
   assert.equal((await api('/api/knowledge/documents/'+doc.id+'/view',cookie)).status,200);

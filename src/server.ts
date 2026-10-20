@@ -228,10 +228,11 @@ app.post('/api/chat',requireUser,async(req,res)=>{
     let citations: any[] = [];
     let retrieved: RetrievalResult|undefined;
     let retrievalFailed=false;
-    if (use_rag !== false && req.session.user && shouldQueryKnowledgeBase(cleanMessage, req.body?.rag_scope)) {
+    const ragQuery = augmentConversationalQuery(cleanMessage, contextHistory);
+    const needsKnowledge=shouldQueryKnowledgeBase(ragQuery,rag_scope);
+    if (use_rag !== false && req.session.user && needsKnowledge) {
       try {
         const ragScope = req.body?.rag_scope;
-        const ragQuery = augmentConversationalQuery(cleanMessage, contextHistory);
         const ragRes = await retrieveKnowledgeContext(req.session.user.id, ragQuery, { scope: ragScope });
         retrieved=ragRes;
         if (ragRes.contextBlock) {
@@ -264,7 +265,7 @@ app.post('/api/chat',requireUser,async(req,res)=>{
       }
     }
 
-    if(retrieved?.sources?.length || retrievalFailed || (use_rag!==false && (rag_scope || shouldQueryKnowledgeBase(cleanMessage,rag_scope)) && !docContext)){
+    if(retrieved?.sources?.length || retrievalFailed || (use_rag!==false && (rag_scope || needsKnowledge) && !docContext)){
       beginLiveChat();
       try{
         const reply=retrieved?.directAnswer ? {answer:retrieved.directAnswer,finishReason:'stop',coverage:retrieved.coverage,sourceIds:citations.map(c=>c.sourceId)} : retrieved?.sources?.length ? await generateGroundedReply({
