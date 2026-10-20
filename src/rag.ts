@@ -2,7 +2,7 @@ import { chunkText, isValidEmbedding, assertChunkCoverage } from './rag-core.js'
 import { config } from './config.js';
 import { selectKnowledgeDocuments, sourceTextQuality } from './rag-planning.js';
 import { certificateAnswer, missingAmountAnswer } from './rag-facts.js';
-import { responsibilityAnswer,qualifiedFeatureAnswer,availabilityAnswer } from './rag-tables.js';
+import { responsibilityAnswer,qualifiedFeatureAnswer,availabilityAnswer,serviceOverviewAnswer } from './rag-tables.js';
 import { packEvidence, evidenceMessage, type EvidenceSource } from './rag-evidence.js';
 import type { KnowledgeChunk, RetrievedChunk } from './models.js';
 import { repository } from './repository.js';
@@ -337,7 +337,7 @@ export async function retrieveKnowledgeContext(userId:string,query:string,option
     documents=ready.filter(d=>ids.has(d.id)&&sourceTextQuality(d.extractedText??'').usable);
   }
   if(!documents.length)return {contextBlock:'',citations:[],sources:[],coverage:'none'};
-  const factual=certificateAnswer(documents,query,new Date().toISOString().slice(0,10))??missingAmountAnswer(documents,query)??responsibilityAnswer(documents,query)??qualifiedFeatureAnswer(documents,query)??availabilityAnswer(documents,query);
+  const factual=certificateAnswer(documents,query,new Date().toISOString().slice(0,10))??missingAmountAnswer(documents,query)??responsibilityAnswer(documents,query)??qualifiedFeatureAnswer(documents,query)??availabilityAnswer(documents,query)??serviceOverviewAnswer(documents,query);
   if(factual)documents=factual.documents;
   const sources=packEvidence(documents,query);
   const citations=sources.map(s=>({sourceId:s.sourceId,documentId:s.documentId,filename:s.filename,chunkIndex:0,score:0,preview:s.text.slice(0,240)}));

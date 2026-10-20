@@ -85,3 +85,21 @@ export function availabilityAnswer(documents:KnowledgeDocument[],query:string):F
  const percentages=new Set(parts.join(' ').match(/\b\d+(?:\.\d+)?%/g)??[]);
  return {answer:(percentages.size>1?'The sources state different uptime percentages. Their support and coverage wording is shown separately below.\n\n':'')+parts.join('\n').trim(),documents:used,kind:'availability',complete:true};
 }
+
+/** Standard service documents expose primary definitions and architecture in
+ * numbered sections. Quote those for purpose/technology comparisons. */
+export function serviceOverviewAnswer(documents:KnowledgeDocument[],query:string):FactualAnswer|undefined{
+ if(documents.length<2||!/\b(difference|compare|versus)\b/i.test(query)||!/\b(purpose|technolog\w*|used|use cases?)\b/i.test(query)||/\b(price|cost|rpo|rto|uptime|support|responsibilit\w*)\b/i.test(query))return undefined;
+ const used:KnowledgeDocument[]=[];const parts:string[]=[];
+ const section=(text:string,number:string,next:string)=>new RegExp('(?:^|\\n)'+number.replace('.','\\.')+'[^\\n]*\\n([\\s\\S]*?)(?=\\n'+next.replace('.','\\.')+'(?:\\s|$))','i').exec(text)?.[1]?.trim();
+ for(const document of documents){
+  const text=document.extractedText??'';let overview=section(text,'1.1','1.2');const architecture=section(text,'2.1','2.2');
+  if(!overview||!architecture)return undefined;
+  // Do not turn an unfinished source fragment into a completed sentence.
+  if(!/[.!?]$/.test(overview)){const boundary=overview.lastIndexOf('. ');if(boundary<0)return undefined;overview=overview.slice(0,boundary+1);}
+  const technology=architecture.split(/(?<=[.!?])\s+/)[0]!;
+  if(overview.length>1600||technology.length>1000)return undefined;
+  used.push(document);parts.push(`**${document.filename}** [S${used.length}]`,'','Purpose / use as described:',`> ${overview.replace(/\s+/g,' ')}`,'','Architecture / technology excerpt:',`> ${technology.replace(/\s+/g,' ')}`,'');
+ }
+ return {answer:parts.join('\n').trim(),documents:used,kind:'service-overview',complete:true};
+}
