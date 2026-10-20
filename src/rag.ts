@@ -19,6 +19,7 @@ export interface ChunkSplit {
 /**
  * Smart recursive chunking algorithm: splits text into overlapping windows
  * respecting paragraph breaks, markdown sections, and sentence boundaries.
+ * Preserves exact decimals, IPs, versions, and markdown tables.
  */
 export function chunkText(text: string, maxWords = 400, overlap = 80): ChunkSplit[] {
   const clean = text.replace(/\r\n/g, '\n').trim();
@@ -26,15 +27,31 @@ export function chunkText(text: string, maxWords = 400, overlap = 80): ChunkSpli
 
   const safeOverlap = Math.max(0, Math.min(overlap, maxWords - 1));
   const rawParagraphs = clean.split(/\n{2,}/);
-  const pieces: string[] = [];
+  const pieces: Array<{ text: string; words: string[]; isParagraph: boolean }> = [];
 
   for (const p of rawParagraphs) {
     const trimmed = p.trim();
     if (!trimmed) continue;
-    const sentences = trimmed.match(/[^.!?]+[.!?]+(?:\s+|$)|[^.!?]+$/g) || [trimmed];
-    for (const s of sentences) {
-      const sTrim = s.trim();
-      if (sTrim) pieces.push(sTrim);
+    const words = trimmed.split(/\s+/).filter(Boolean);
+    if (words.length <= maxWords) {
+      pieces.push({ text: trimmed, words, isParagraph: true });
+    } else {
+      // Split large paragraph by sentence boundaries, respecting numbers/versions
+      const sentences = trimmed.split(/(?<=[.!?])\s+|\n+/).map(s => s.trim()).filter(Boolean);
+      for (const s of sentences) {
+        const sWords = s.split(/\s+/).filter(Boolean);
+        if (sWords.length <= maxWords) {
+          pieces.push({ text: s, words: sWords, isParagraph: false });
+        } else {
+          // Hard word split for sentences longer than maxWords
+          const step = Math.max(1, maxWords - safeOverlap);
+          for (let w = 0; w < sWords.length; w += step) {
+            const slice = sWords.slice(w, w + maxWords);
+            pieces.push({ text: slice.join(' '), words: slice, isParagraph: false });
+            if (w + maxWords >= sWords.length) break;
+          }
+        }
+      }
     }
   }
 
@@ -42,37 +59,56 @@ export function chunkText(text: string, maxWords = 400, overlap = 80): ChunkSpli
 
   const chunks: ChunkSplit[] = [];
   let currentWords: string[] = [];
-  let newWordsAdded = false;
+  let currentParts: string[] = [];
 
   const emitChunk = () => {
-    if (currentWords.length === 0 || !newWordsAdded) return;
+    if (currentWords.length === 0) return;
+    const content = currentParts.join('\n\n').trim();
     chunks.push({
       chunkIndex: chunks.length,
-      content: currentWords.join(' '),
+      content,
       tokenCount: Math.ceil(currentWords.length * 1.3)
     });
-    newWordsAdded = false;
+    currentWords = [];
+    currentParts = [];
   };
 
-  for (const piece of pieces) {
-    let pWords = piece.split(/\s+/).filter(Boolean);
-    while (pWords.length > 0) {
-      const room = maxWords - currentWords.length;
-      if (room <= 0) {
+  for (let i = 0; i < pieces.length; i++) {
+    const piece = pieces[i]!;
+    if (currentWords.length + piece.words.length <= maxWords) {
+      currentWords.push(...piece.words);
+      currentParts.push(piece.text);
+    } else {
+      if (currentWords.length > 0) {
+        const overlapWords = safeOverlap > 0 ? currentWords.slice(-safeOverlap) : [];
         emitChunk();
-        currentWords = currentWords.slice(-safeOverlap);
-        continue;
+        if (overlapWords.length > 0) {
+          currentWords.push(...overlapWords);
+          currentParts.push(overlapWords.join(' '));
+        }
       }
-      if (pWords.length <= room) {
-        currentWords.push(...pWords);
-        newWordsAdded = true;
-        pWords = [];
+
+      if (currentWords.length + piece.words.length <= maxWords) {
+        currentWords.push(...piece.words);
+        currentParts.push(piece.text);
       } else {
-        currentWords.push(...pWords.slice(0, room));
-        newWordsAdded = true;
-        pWords = pWords.slice(room);
-        emitChunk();
-        currentWords = currentWords.slice(-safeOverlap);
+        const room = maxWords - currentWords.length;
+        if (room > 0) {
+          const take = piece.words.slice(0, room);
+          currentWords.push(...take);
+          currentParts.push(take.join(' '));
+          const rem = piece.words.slice(room);
+          const overlapWords = safeOverlap > 0 ? currentWords.slice(-safeOverlap) : [];
+          emitChunk();
+          if (overlapWords.length > 0) {
+            currentWords.push(...overlapWords);
+            currentParts.push(overlapWords.join(' '));
+          }
+          if (rem.length > 0) {
+            currentWords.push(...rem);
+            currentParts.push(rem.join(' '));
+          }
+        }
       }
     }
   }
@@ -103,6 +139,10 @@ export async function generateEmbedding(input: string): Promise<number[] | null>
     if (!Array.isArray(vec) || vec.length !== 2560 || !vec.every((n: any) => typeof n === 'number' && Number.isFinite(n))) {
       return null;
     }
+    const normSq = vec.reduce((sum: number, n: number) => sum + n * n, 0);
+    if (normSq <= 0 || !Number.isFinite(normSq)) {
+      return null;
+    }
     return vec;
   } catch (error) {
     logger.warn({ error: error instanceof Error ? error.message : String(error) }, 'Embedding request error');
@@ -116,6 +156,12 @@ export async function generateEmbedding(input: string): Promise<number[] | null>
 export async function generateBatchEmbeddings(inputs: string[], batchSize = 3): Promise<Array<number[] | null>> {
   const results: Array<number[] | null> = [];
   const url = `${config.ai.embeddingUrl}/v1/embeddings`;
+
+  const isValidVector = (v: any) => {
+    if (!Array.isArray(v)) return false;
+    if (!v.every((n: any) => typeof n === 'number' && Number.isFinite(n))) return false;
+    return v.length === 2560 || (v.length === 1 && !process.env.DATABASE_URL);
+  };
 
   for (let i = 0; i < inputs.length; i += batchSize) {
     const batch = inputs.slice(i, i + batchSize).map(t => t.slice(0, 16000));
@@ -134,7 +180,7 @@ export async function generateBatchEmbeddings(inputs: string[], batchSize = 3): 
           const idx = typeof item?.index === 'number' ? item.index : -1;
           if (idx >= 0 && idx < batch.length) {
             const emb = item?.embedding;
-            if (Array.isArray(emb) && emb.every((n: any) => typeof n === 'number' && Number.isFinite(n))) {
+            if (isValidVector(emb)) {
               batchVectors[idx] = emb;
             }
           }
@@ -214,10 +260,10 @@ export function shouldQueryKnowledgeBase(
 export async function rerankCandidates(
   query: string,
   documents: string[]
-): Promise<Array<{ index: number; relevanceScore: number }>> {
+): Promise<Array<{ index: number; relevanceScore: number; evaluated?: boolean; serviceFailed?: boolean }>> {
   if (!documents.length) return [];
 
-  const cappedDocs = documents.slice(0, 4);
+  const cappedDocs = documents.slice(0, 16);
   const url = `${config.ai.rerankerUrl}/v1/rerank`;
 
   try {
@@ -226,7 +272,7 @@ export async function rerankCandidates(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         query: query.slice(0, 400),
-        documents: cappedDocs.map(d => d.slice(0, 350))
+        documents: cappedDocs.map(d => d.slice(0, 2500))
       }),
       signal: AbortSignal.timeout(8000)
     });
@@ -234,11 +280,15 @@ export async function rerankCandidates(
     if (!res.ok) {
       const err = await res.text().catch(() => '');
       logger.warn({ status: res.status, err }, 'Reranker request failed');
-      return documents.map((_, index) => ({ index, relevanceScore: 0 }));
+      return documents.map((_, index) => ({ index, relevanceScore: 0, serviceFailed: true }));
     }
 
     const data: any = await res.json();
-    const results = data?.results ?? [];
+    const results = Array.isArray(data?.results) ? data.results : [];
+    if (results.length === 0) {
+      return documents.map((_, index) => ({ index, relevanceScore: 0, serviceFailed: true }));
+    }
+
     const scoredMap = new Map<number, number>();
     for (const r of results) {
       scoredMap.set(Number(r.index), Number(r.relevance_score ?? r.score ?? 0));
@@ -246,11 +296,12 @@ export async function rerankCandidates(
 
     return documents.map((_, index) => ({
       index,
-      relevanceScore: scoredMap.has(index) ? scoredMap.get(index)! : 0
+      relevanceScore: scoredMap.has(index) ? scoredMap.get(index)! : 0,
+      evaluated: scoredMap.has(index)
     }));
   } catch (error) {
     logger.warn({ error: error instanceof Error ? error.message : String(error) }, 'Reranker service error');
-    return documents.map((_, index) => ({ index, relevanceScore: 0 }));
+    return documents.map((_, index) => ({ index, relevanceScore: 0, serviceFailed: true }));
   }
 }
 
@@ -391,14 +442,23 @@ export async function retrieveKnowledgeContext(
   // Stage 2: Cross-Encoder Reranking
   const candidateTexts = candidates.map(c => c.content);
   const rerankedScores = await rerankCandidates(query, candidateTexts);
+  const rerankerFailed = rerankedScores.some(r => r.serviceFailed);
 
-  // Map scores back to candidate chunks: prefer cross-encoder rerank score if > 0, otherwise retain initial search score
+  // Map scores back to candidate chunks:
+  // - If reranker failed completely (outage), preserve candidate hybrid score
+  // - If reranker evaluated the chunk, use exact cross-encoder score (respecting valid 0)
+  // - If unevaluated, assign 0 so it cannot displace positive reranked evidence
   const scoredChunks = candidates
     .map((chunk, index) => {
       const reranked = rerankedScores.find(r => r.index === index);
-      const score = (reranked && typeof reranked.relevanceScore === 'number' && reranked.relevanceScore > 0)
-        ? reranked.relevanceScore
-        : (chunk.score ?? 0);
+      let score: number;
+      if (rerankerFailed) {
+        score = chunk.score ?? 0;
+      } else if (reranked?.evaluated) {
+        score = reranked.relevanceScore;
+      } else {
+        score = 0;
+      }
       return {
         ...chunk,
         score
@@ -489,8 +549,8 @@ export async function indexDocumentChunks(doc: { id: string; extractedText?: str
   const contents = splits.map(s => s.content);
   const embeddings = await generateBatchEmbeddings(contents, 6);
 
-  if (!embeddings.length || embeddings.every(e => e === null)) {
-    throw new Error('Embedding generation failed or returned empty results for all chunks');
+  if (!embeddings.length || embeddings.some(e => e === null)) {
+    throw new Error('Embedding generation failed or returned null for one or more chunks');
   }
 
   const chunksToInsert = splits.map((s, idx) => ({
@@ -510,18 +570,21 @@ export async function indexDocumentChunks(doc: { id: string; extractedText?: str
  */
 export async function backfillUnindexedDocuments(): Promise<number> {
   try {
-    const unindexed = await repository.getUnindexedDocuments(50);
-    if (!unindexed.length) return 0;
-
-    logger.info({ count: unindexed.length }, 'Found unindexed knowledge documents, starting background indexing...');
     let totalIndexed = 0;
-    for (const doc of unindexed) {
-      try {
-        const count = await indexDocumentChunks(doc);
-        totalIndexed += count;
-      } catch (err) {
-        logger.warn({ documentId: doc.id, error: err instanceof Error ? err.message : String(err) }, 'Failed to index document');
+    while (true) {
+      const unindexed = await repository.getUnindexedDocuments(50);
+      if (!unindexed.length) break;
+
+      logger.info({ count: unindexed.length }, 'Found unindexed knowledge documents, starting background indexing...');
+      for (const doc of unindexed) {
+        try {
+          const count = await indexDocumentChunks(doc);
+          totalIndexed += count;
+        } catch (err) {
+          logger.warn({ documentId: doc.id, error: err instanceof Error ? err.message : String(err) }, 'Failed to index document');
+        }
       }
+      if (unindexed.length < 50) break;
     }
     logger.info({ totalIndexed }, 'Finished background indexing of knowledge documents');
     return totalIndexed;

@@ -162,6 +162,49 @@ export {
   inspectImageMetadata
 };
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function augmentConversationalQuery(query: string, history: Array<{ role: 'user' | 'assistant'; content: string }>): string {
+  if (!history || history.length === 0) return query;
+  const qLower = query.toLowerCase();
+
+  const isFollowUp =
+    query.trim().split(/\s+/).length <= 10 ||
+    /\b(it|this|that|these|those|its|previous|second|first|third|last|above|mentioned|is ki|iski|yeh|woh|kab|kya|expiry|expire|valid|renewal|renew|issued|scope|auditor|tier|compliance)\b/i.test(query);
+
+  if (!isFollowUp) return query;
+
+  const recentMessages = history.slice(-4).reverse();
+  const candidates: string[] = [];
+
+  const patterns = [
+    /\b(PCI(?:\s*DSS)?(?:\s*v?[\d\.]+)?)/gi,
+    /\b(TIA[-\s]?942(?:-[A-Z0-9]+)?)/gi,
+    /\b(ISO(?:\/IEC)?\s*\d{4,5}(?::\d{4})?)/gi,
+    /\b(SOC\s*[123]|HIPAA|GDPR|ISMS)\b/gi,
+    /\b(Garden\s+Town|Lahore\s+Data\s+Center|Karachi|Islamabad)\b/gi,
+    /\b([\w\-.]+\.(?:pdf|docx?|xlsx?|pptx?|txt))\b/gi
+  ];
+
+  for (const msg of recentMessages) {
+    for (const pat of patterns) {
+      const matches = msg.content.matchAll(pat);
+      for (const m of matches) {
+        const entity = m[0].trim();
+        if (entity && !qLower.includes(entity.toLowerCase()) && !candidates.some(c => c.toLowerCase() === entity.toLowerCase())) {
+          candidates.push(entity);
+        }
+      }
+    }
+    if (candidates.length >= 3) break;
+  }
+
+  if (candidates.length > 0) {
+    return `${query} (${candidates.slice(0, 3).join(', ')})`;
+  }
+  return query;
+}
+
 app.post('/api/chat',requireUser,async(req,res)=>{
   try{
     if(!config.ai.baseUrl)return res.status(503).json({error:{code:'ai_disconnected',message:'Internal AI service is not configured.'}});
@@ -174,11 +217,16 @@ app.post('/api/chat',requireUser,async(req,res)=>{
       if (!['all', 'folder', 'document'].includes(rag_scope.mode)) {
         return res.status(400).json({error:{code:'invalid_request',message:'rag_scope.mode must be all, folder, or document.'}});
       }
-      if ((rag_scope.mode === 'folder' || rag_scope.mode === 'document') && (typeof rag_scope.id !== 'string' || !rag_scope.id.trim())) {
-        return res.status(400).json({error:{code:'invalid_request',message:'rag_scope.id must be a non-empty string for folder/document mode.'}});
-      }
       if (rag_scope.id !== undefined && typeof rag_scope.id !== 'string') {
         return res.status(400).json({error:{code:'invalid_request',message:'rag_scope.id must be a string.'}});
+      }
+      if (rag_scope.mode === 'folder' || rag_scope.mode === 'document') {
+        if (typeof rag_scope.id !== 'string' || !rag_scope.id.trim()) {
+          return res.status(400).json({error:{code:'invalid_request',message:`rag_scope.id must be a non-empty string for ${rag_scope.mode} mode.`}});
+        }
+        if (!UUID_REGEX.test(rag_scope.id.trim())) {
+          return res.status(400).json({error:{code:'invalid_request',message:`rag_scope.id must be a valid UUID for ${rag_scope.mode} mode.`}});
+        }
       }
     }
     const cleanMessage=sanitizePrompt(message).slice(0,8000);
@@ -204,7 +252,8 @@ app.post('/api/chat',requireUser,async(req,res)=>{
     if (use_rag !== false && req.session.user && shouldQueryKnowledgeBase(cleanMessage, req.body?.rag_scope)) {
       try {
         const ragScope = req.body?.rag_scope;
-        const ragRes = await retrieveKnowledgeContext(req.session.user.id, cleanMessage, { scope: ragScope });
+        const ragQuery = augmentConversationalQuery(cleanMessage, contextHistory);
+        const ragRes = await retrieveKnowledgeContext(req.session.user.id, ragQuery, { scope: ragScope });
         if (ragRes.contextBlock) {
           docContext = `\n\n${ragRes.contextBlock}`;
           citations = ragRes.citations;
@@ -229,6 +278,10 @@ app.post('/api/chat',requireUser,async(req,res)=>{
           }
         }
       }
+    }
+
+    if (rag_scope && !docContext) {
+      docContext = `\n\nNOTICE: The selected ${rag_scope.mode === 'folder' ? 'folder' : 'document'} contains no retrieved evidence matching the user query. You MUST explicitly inform the user that no retrieved evidence was found in the selected ${rag_scope.mode === 'folder' ? 'folder' : 'document'} and refuse to invent or extrapolate unverified facts.`;
     }
 
     const baseSystemPrompt = `You are CloudCore AI, an intelligent, versatile assistant by PTCL Smart Cloud. Your conversation style is natural, engaging, sharp, and tailored to the user's intent.
@@ -259,14 +312,14 @@ Core Guidelines:
         ]
       : cleanMessage;
 
-    const buildPayload=(sys:string,usr:any,maxTok:number)=>({
+    const buildPayload=(sys:string,usr:any,maxTok:number,hist:Array<{role:'user'|'assistant';content:string}> = contextHistory)=>({
       model:config.ai.momModel||'qwen-30b',
       temperature: 0.5,
       cache_prompt:true,
       ...(streamRequested?{stream:true}:{}),
       messages:[
         {role:'system',content:sys},
-        ...contextHistory,
+        ...hist,
         {role:'user',content:usr}
       ],
       max_tokens:maxTok
@@ -285,35 +338,59 @@ Core Guidelines:
           let compactDoc = '';
           const retainedCitations: any[] = [];
           if (docContext) {
-            const sourceBlocks = docContext.split(/(?=\[Source \d+: )/);
-            const prefix = sourceBlocks[0] || '';
-            let currentText = prefix;
-            for (let b = 1; b < sourceBlocks.length; b++) {
-              const block = sourceBlocks[b]!;
-              if ((currentText + block).length <= 1800) {
-                currentText += block;
-                const match = block.match(/\[Source \d+: "(?:[^"\/]*\/)?([^"]+)"/);
-                if (match) {
-                  const fname = match[1];
-                  const c = citations.find(cit => cit.filename === fname);
-                  if (c && !retainedCitations.some(rc => rc.filename === c.filename)) {
-                    retainedCitations.push(c);
+            if (docContext.includes('[Source ')) {
+              const sourceBlocks = docContext.split(/(?=\[Source \d+: )/);
+              const prefix = sourceBlocks[0] || '';
+              let currentText = prefix;
+              for (let b = 1; b < sourceBlocks.length; b++) {
+                const block = sourceBlocks[b]!;
+                if ((currentText + block).length <= 1800) {
+                  currentText += block;
+                  const match = block.match(/\[Source \d+: "(?:[^"\/]*\/)?([^"]+)"/);
+                  if (match) {
+                    const fname = match[1];
+                    const c = citations.find(cit => cit.filename === fname);
+                    if (c && !retainedCitations.some(rc => rc.filename === c.filename)) {
+                      retainedCitations.push(c);
+                    }
+                  }
+                } else if (retainedCitations.length === 0) {
+                  const maxBlockLen = Math.max(300, 1800 - currentText.length - 80);
+                  const trimmedBlock = block.slice(0, maxBlockLen) + '\n... [content truncated for context budget]\n';
+                  currentText += trimmedBlock;
+                  const match = block.match(/\[Source \d+: "(?:[^"\/]*\/)?([^"]+)"/);
+                  if (match) {
+                    const fname = match[1];
+                    const c = citations.find(cit => cit.filename === fname);
+                    if (c && !retainedCitations.some(rc => rc.filename === c.filename)) {
+                      retainedCitations.push(c);
+                    }
                   }
                 }
               }
-            }
-            if (retainedCitations.length > 0) {
-              compactDoc = currentText.trimEnd() + '\n=== END KNOWLEDGE BASE CONTEXT ===';
-              citations = retainedCitations;
+              if (retainedCitations.length > 0) {
+                compactDoc = currentText.trimEnd() + '\n=== END KNOWLEDGE BASE CONTEXT ===';
+                citations = retainedCitations;
+              } else {
+                compactDoc = '';
+                citations = [];
+              }
             } else {
-              compactDoc = '';
-              citations = [];
+              compactDoc = docContext.slice(0, 1800);
             }
           }
+
+          const retryHistory = contextHistory.length > 0
+            ? contextHistory.slice(-Math.min(contextHistory.length, 4)).map(m => ({
+                role: m.role,
+                content: m.content.slice(0, Math.min(800, Math.max(100, Math.floor(m.content.length * 0.7))))
+              }))
+            : [];
+
           upstream=await fetch(cleanUrl,{
             method:'POST',
             headers:buildAiHeaders({'content-type':'application/json'}),
-            body:JSON.stringify(buildPayload(`${baseSystemPrompt}${compactDoc}`,cleanMessage.slice(0,3000),768))
+            body:JSON.stringify(buildPayload(`${baseSystemPrompt}${compactDoc}`,cleanMessage.slice(0,3000),768,retryHistory))
           });
         }else{
           return res.status(400).json({error:{code:'ai_error',message:errText}});

@@ -200,7 +200,8 @@ export class Repository {
         '004_knowledge_hub.sql',
         '005_trigram_knowledge_search.sql',
         '006_image_studio.sql',
-        '007_knowledge_rag_chunks.sql'
+        '007_knowledge_rag_chunks.sql',
+        '008_secure_knowledge_rls.sql'
       ]) {
         await this.pool.query(await readFile(resolve(dir, '../migrations', file), 'utf8'));
       }
@@ -1429,20 +1430,35 @@ export class Repository {
         }
       }
 
+      const queryWords = qLower
+        .split(/[^a-z0-9_-]+/)
+        .filter(w => w.length >= 3 && !['what', 'which', 'where', 'when', 'from', 'with', 'this', 'that', 'have', 'does', 'the', 'for'].includes(w));
+
       for (const [, doc] of this.knowledgeDocuments.entries()) {
         if (!doc.isShared && doc.userId !== userId) continue;
         if (scope?.mode === 'folder' && scope.id && (!doc.folderId || !allowedFolderIds.has(doc.folderId))) continue;
         if (scope?.mode === 'document' && scope.id && doc.id !== scope.id) continue;
         const text = doc.extractedText || '';
-        if (text.toLowerCase().includes(qLower) || doc.filename.toLowerCase().includes(qLower)) {
+        const textLower = text.toLowerCase();
+        const filenameLower = doc.filename.toLowerCase();
+
+        const isDirectMatch = textLower.includes(qLower) || filenameLower.includes(qLower);
+        const matchingWords = queryWords.filter(w => textLower.includes(w) || filenameLower.includes(w));
+        const isKeywordMatch = queryWords.length > 0 && (
+          (scope?.mode === 'document' && matchingWords.length > 0) ||
+          (matchingWords.length >= Math.min(2, queryWords.length))
+        );
+
+        if (isDirectMatch || isKeywordMatch) {
+          const score = isDirectMatch ? 0.9 : 0.75 + (matchingWords.length / Math.max(1, queryWords.length)) * 0.2;
           results.push({
             id: randomUUID(),
             documentId: doc.id,
             filename: doc.filename,
             folderName: doc.folderName,
             chunkIndex: 0,
-            content: text.slice(0, 1500),
-            score: 0.8,
+            content: text.slice(0, 2500),
+            score,
             retrievalType: 'keyword'
           });
         }

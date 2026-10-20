@@ -308,7 +308,7 @@ export function extractPdfText(bytes: Buffer): string {
         maxBuffer: 10 * 1024 * 1024
       });
       if (text && text.trim().length >= 40) {
-        return text.slice(0, 32000).trim();
+        return text.trim();
       }
     } finally {
       try { unlinkSync(tempPath); } catch {}
