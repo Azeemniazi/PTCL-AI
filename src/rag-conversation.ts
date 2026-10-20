@@ -23,7 +23,7 @@ export function augmentConversationalQuery(query: string, history: Turn[]): stri
   const dependent=/\b(it|its|this|that|these|those|their|them|above|previous|expiry|expire\w*|valid\w*|renew\w*|issued|scope|auditor|tier|iski|yeh|woh|kab)\b|^(?:all|every(?:thing| one)?|more|and\b|what about\b|why\b|how so\b)/i;
   if(!dependent.test(normalized))return query;
   for(const turn of history.slice(-12).reverse()){
-    if(turn.role==='user'&&subject.test(turn.content))return `${turn.content}\nFollow-up: ${query}`;
+    if(turn.role==='user'&&subject.test(turn.content))return `${turn.content}\n${query}`;
   }
   return query;
 }
