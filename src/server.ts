@@ -810,11 +810,17 @@ app.get(['/api/knowledge/documents/:id/view', '/api/knowledge/documents/:id/prev
       md: 'text/plain; charset=utf-8',
       csv: 'text/csv; charset=utf-8',
       json: 'application/json; charset=utf-8',
+      html: 'text/plain; charset=utf-8',
+      htm: 'text/plain; charset=utf-8',
+      js: 'text/plain; charset=utf-8',
+      mjs: 'text/plain; charset=utf-8',
+      xml: 'text/plain; charset=utf-8',
       docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
     };
-    const mime = mimeMap[ext] || doc.mimeType || 'application/octet-stream';
+    const mime = mimeMap[ext] || 'application/octet-stream';
+    if(ext==='svg')res.setHeader('Content-Security-Policy',"sandbox; default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'none'");
     res.setHeader('Content-Type', mime);
     res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(doc.filename)}"`);
     createReadStream(fullPath).pipe(res);

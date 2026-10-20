@@ -78,7 +78,7 @@ export function humanEvidenceDate(value: string | undefined): string {
   return new Date(value+'T00:00:00Z').toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'});
 }
 
-export interface FactualAnswer { answer: string; documents: KnowledgeDocument[]; kind: 'certificate'|'missing-amount'; complete: boolean; }
+export interface FactualAnswer { answer: string; documents: KnowledgeDocument[]; kind: 'certificate'|'missing-amount'|'responsibility'|'qualified-feature'|'availability'; complete: boolean; }
 
 /** Bounded structured answers are derived from source fields, never generated values. */
 export function certificateAnswer(documents: KnowledgeDocument[], query: string, asOfDay: string): FactualAnswer | undefined {

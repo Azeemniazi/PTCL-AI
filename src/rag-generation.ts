@@ -12,7 +12,7 @@ export async function generateGroundedReply(options:{url:string;headers:Record<s
     ...history,
     {role:'user',content:evidenceMessage(sources)},
     {role:'user',content:JSON.stringify({type:'verified_arithmetic',calculations:deriveEvidenceCalculations(sources,options.question)})},
-    {role:'user',content:options.question+`\nResponse budget: under ${Math.floor(maxTokens*0.55)} words. Cover all requested parts without repeating them.`}
+    {role:'user',content:options.question+`\nUse the shortest complete answer covering the requested parts. Do not add related product features, dates or locations unless asked. Stop when the question is answered. Response budget: under ${Math.floor(maxTokens*0.55)} words; this is a ceiling, not a length target.`}
   ];
   const base=options.url.replace(/\/v1\/chat\/completions\/?$/,'');
   // Count the actual chat template where supported by llama.cpp; use a

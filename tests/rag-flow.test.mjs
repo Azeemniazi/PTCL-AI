@@ -16,7 +16,7 @@ test('RAG HTTP lifecycle: readiness, private ACL, grounded SSE, source view, del
  const child=spawn(process.execPath,[fileURLToPath(new URL('../build/server.js',import.meta.url))],{cwd:temp,windowsHide:true,env:{...process.env,NODE_ENV:'test',PORT:String(port),DATABASE_URL:'',REDIS_URL:'',AUTH_MODE:'local',PUBLIC_BASE_URL:base,AI_BASE_URL:engineUrl+'/v1',EMBEDDING_API_URL:engineUrl,RERANKER_API_URL:engineUrl,INITIAL_DEV_PASSWORD:'rag-test-password',LOG_LEVEL:'error'}});
  let logs='';child.stderr.on('data',b=>logs+=b);child.stdout.on('data',b=>logs+=b);
  const api=(path,cookie,body,method=body?'POST':'GET')=>fetch(base+path,{method,signal:AbortSignal.timeout(10000),headers:{'x-requested-with':'CloudCoreAI',...(cookie?{cookie}:{}),...(body&&!(body instanceof FormData)?{'content-type':'application/json'}:{})},body:body instanceof FormData?body:body?JSON.stringify(body):undefined});
- const upload=async(cookie,name)=>{const form=new FormData();form.append('files',new Blob(['SecretFixture uptime is 99.87%.\nSupport is 8x5.'],{type:'text/plain'}),name);form.set('isShared','false');const r=await api('/api/knowledge/upload',cookie,form);assert.equal(r.status,201,await r.clone().text());return (await r.json()).uploaded[0];};
+ const upload=async(cookie,name,mime='text/plain',content='SecretFixture uptime is 99.87%.\nSupport is 8x5.')=>{const form=new FormData();form.append('files',new Blob([content],{type:mime}),name);form.set('isShared','false');const r=await api('/api/knowledge/upload',cookie,form);assert.equal(r.status,201,await r.clone().text());return (await r.json()).uploaded[0];};
  try{
   let ready=false;for(let n=0;n<100;n++){try{if((await fetch(base+'/healthz')).ok){ready=true;break;}}catch{}await pause(30);}assert.ok(ready,logs);
   const login=await api('/api/auth/login',undefined,{username:'azeemniazi',password:'rag-test-password'});assert.equal(login.status,200);const cookie=login.headers.get('set-cookie').split(';')[0];
@@ -40,6 +40,10 @@ test('RAG HTTP lifecycle: readiness, private ACL, grounded SSE, source view, del
   outage=false;
   assert.equal((await api('/api/knowledge/documents/'+failed.id+'/reindex',cookie,{},'POST')).status,202);
   for(let n=0;n<100;n++){status=(await (await api('/api/knowledge/documents/'+failed.id,cookie)).json()).document.status;if(status==='ready')break;await pause(20);}assert.equal(status,'ready');
+  const html=await upload(cookie,'untrusted.html','text/html','<h1>Untrusted document preview content.</h1>');
+  assert.match((await api('/api/knowledge/documents/'+html.id+'/view',cookie)).headers.get('content-type'),/text\/plain/);
+  const svg=await upload(cookie,'untrusted.svg','image/svg+xml','<svg xmlns="http://www.w3.org/2000/svg"><text>Untrusted document preview content for testing.</text></svg>');
+  const svgResponse=await api('/api/knowledge/documents/'+svg.id+'/view',cookie);assert.match(svgResponse.headers.get('content-security-policy'),/sandbox/);assert.match(svgResponse.headers.get('content-security-policy'),/script-src 'none'/);
  }finally{
   release?.();if(child.exitCode===null){const done=once(child,'exit');child.kill();await done;}await new Promise(r=>{engine.close(r);engine.closeAllConnections();});
   assert.ok(resolve(temp).startsWith(resolve(tmpdir(),'cloudcore-rag-')));rmSync(temp,{recursive:true,force:true,maxRetries:10,retryDelay:100});
