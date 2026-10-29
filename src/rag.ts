@@ -135,7 +135,7 @@ export function shouldQueryKnowledgeBase(
   }
 
   // 3. Simple math, time, jokes, coding prompts that don't reference enterprise data
-  if (/^(what\s+is\s+\d+[\s\+\-\*\/]+\d+|what\s+time\s+is\s+it|write\s+(a\s+)?(python|javascript|code|script|function|poem|story))\b/i.test(lower)) {
+  if (/^(what\s+is\s+\d+[\s\+\-\*\/]+\d+|what\s+time\s+is\s+it|(write|how\s+to\s+code|code|explain|create|generate|show\s+me)\s+(a\s+)?(python|javascript|typescript|code|script|function|program|html|css|sql|poem|story))\b/i.test(lower)) {
     return false;
   }
 

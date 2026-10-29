@@ -265,7 +265,7 @@ app.post('/api/chat',requireUser,async(req,res)=>{
       }
     }
 
-    if(retrieved?.sources?.length || retrievalFailed || (use_rag!==false && (rag_scope || needsKnowledge) && !docContext)){
+    if(retrieved?.sources?.length || (use_rag!==false && rag_scope && (!docContext || retrievalFailed))){
       beginLiveChat();
       try{
         const reply=retrieved?.directAnswer ? {answer:retrieved.directAnswer,finishReason:'stop',coverage:retrieved.coverage,sourceIds:citations.map(c=>c.sourceId)} : retrieved?.sources?.length ? await generateGroundedReply({
