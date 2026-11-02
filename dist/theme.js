@@ -1,3 +1,34 @@
+
+function renderPageNumbers(curPage, totalPages) {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, i) => i + 1).map(p => `
+      <button type="button" class="ref-page-num ${p === curPage ? 'active' : ''}" data-action="knowledge-page" data-page="${p}" ${p === curPage ? 'aria-current="page"' : ''}>${p}</button>
+    `).join('');
+  }
+  const pages = [];
+  if (curPage <= 4) {
+    for (let i = 1; i <= 5; i++) pages.push(i);
+    pages.push('...');
+    pages.push(totalPages);
+  } else if (curPage >= totalPages - 3) {
+    pages.push(1);
+    pages.push('...');
+    for (let i = totalPages - 4; i <= totalPages; i++) pages.push(i);
+  } else {
+    pages.push(1);
+    pages.push('...');
+    pages.push(curPage - 1);
+    pages.push(curPage);
+    pages.push(curPage + 1);
+    pages.push('...');
+    pages.push(totalPages);
+  }
+  return pages.map(p => {
+    if (p === '...') return `<span class="ref-page-ellipsis">…</span>`;
+    return `<button type="button" class="ref-page-num ${p === curPage ? 'active' : ''}" data-action="knowledge-page" data-page="${p}" ${p === curPage ? 'aria-current="page"' : ''}>${p}</button>`;
+  }).join('');
+}
+
 /* Reference-theme views. The application owns state, authentication and API calls. */
 function refVideoBackground(kind){
   const asset=kind==='sidebar'?'sidebar':'assistant';
@@ -116,6 +147,15 @@ function refKnowledge() {
   const selectedSet = (typeof selectedKnowledgeDocIds !== 'undefined' && selectedKnowledgeDocIds instanceof Set) ? selectedKnowledgeDocIds : new Set();
 
   const totalDocs = docs.length;
+  const pageSize = 10;
+  const totalPages = Math.max(1, Math.ceil(totalDocs / pageSize));
+  if (typeof knowledgePage === 'undefined') knowledgePage = 1;
+  if (knowledgePage > totalPages) knowledgePage = totalPages;
+  if (knowledgePage < 1) knowledgePage = 1;
+  const curPage = knowledgePage;
+  const startIdx = (curPage - 1) * pageSize;
+  const endIdx = Math.min(startIdx + pageSize, totalDocs);
+  const pagedDocs = docs.slice(startIdx, endIdx);
   const totalFolders = folders.length;
   const totalBytes = docs.reduce((acc, d) => acc + (d.sizeBytes || 0), 0);
   const sharedDocs = docs.filter(d => d.isShared).length;
@@ -314,7 +354,7 @@ function refKnowledge() {
         <table class="ref-knowledge-table">
           <thead>
             <tr>
-              <th style="width:40px;"><input type="checkbox" id="ref-select-all-docs" ${docs.length && selectedSet.size === docs.length ? 'checked' : ''} data-action="toggle-select-all" aria-label="Select all documents"></th>
+              <th style="width:40px;"><input type="checkbox" id="ref-select-all-docs" ${pagedDocs.length && pagedDocs.every(d => selectedSet.has(d.id)) ? 'checked' : ''} data-action="toggle-select-all" aria-label="Select all documents"></th>
               <th>Filename</th>
               <th>Folder</th>
               <th>Scope</th>
@@ -325,7 +365,7 @@ function refKnowledge() {
             </tr>
           </thead>
           <tbody>
-            ${docs.length ? docs.map(d => {
+            ${pagedDocs.length ? pagedDocs.map(d => {
               const ext = d.filename.split('.').pop()?.toUpperCase() || 'FILE';
               const isChecked = selectedSet.has(d.id);
               return `
@@ -366,6 +406,24 @@ function refKnowledge() {
             `}
           </tbody>
         </table>
+      </div>
+      <div class="ref-pagination-bar">
+        <div class="ref-pagination-info">
+          Showing <b>${totalDocs ? startIdx + 1 : 0}–${endIdx}</b> of <b>${totalDocs}</b> files
+        </div>
+        ${totalPages > 1 ? `
+          <nav class="ref-pagination-controls" aria-label="Document pagination">
+            <button type="button" class="ref-page-btn ref-page-prev ${curPage <= 1 ? 'disabled' : ''}" data-action="knowledge-page" data-page="${curPage - 1}" ${curPage <= 1 ? 'disabled' : ''} aria-label="Previous page">
+              ‹ Prev
+            </button>
+            <div class="ref-page-numbers">
+              ${renderPageNumbers(curPage, totalPages)}
+            </div>
+            <button type="button" class="ref-page-btn ref-page-next ${curPage >= totalPages ? 'disabled' : ''}" data-action="knowledge-page" data-page="${curPage + 1}" ${curPage >= totalPages ? 'disabled' : ''} aria-label="Next page">
+              Next ›
+            </button>
+          </nav>
+        ` : ''}
       </div>
     </section>
 
@@ -1035,6 +1093,7 @@ function refBind() {
     let kTimer;
     kSearch.oninput=e=>{
       if(typeof knowledgeSearch!=='undefined')knowledgeSearch=e.target.value;
+      if(typeof knowledgePage!=='undefined')knowledgePage=1;
       clearTimeout(kTimer);
       kTimer=setTimeout(()=>{
         if(typeof loadKnowledge==='function')loadKnowledge();
@@ -1043,6 +1102,7 @@ function refBind() {
     kSearch.onkeydown=e=>{
       if(e.key==='Enter'){
         e.preventDefault();
+        if(typeof knowledgePage!=='undefined')knowledgePage=1;
         clearTimeout(kTimer);
         if(typeof loadKnowledge==='function')loadKnowledge();
       }
