@@ -303,23 +303,10 @@ function refKnowledge() {
       </div>
     </div>
 
-    <!-- Scope Pills -->
-    <nav class="ref-knowledge-scope-tabs" role="tablist" aria-label="Knowledge Hub scope">
-      <button type="button" role="tab" aria-selected="${scope === 'shared'}" class="${scope === 'shared' ? 'active' : ''}" data-action="knowledge-scope" data-scope="shared">
-        ${icon('globe')} Workspace Shared <span class="ref-scope-chip">${sharedDocs}</span>
-      </button>
-      <button type="button" role="tab" aria-selected="${scope === 'personal'}" class="${scope === 'personal' ? 'active' : ''}" data-action="knowledge-scope" data-scope="personal">
-        ${icon('lock')} My Personal Drive <span class="ref-scope-chip">${personalDocs}</span>
-      </button>
-      <button type="button" role="tab" aria-selected="${scope === 'all'}" class="${scope === 'all' ? 'active' : ''}" data-action="knowledge-scope" data-scope="all">
-        ${icon('folder')} All Files <span class="ref-scope-chip">${totalDocs}</span>
-      </button>
-    </nav>
-
     <!-- 2. Modern AI Hero Search Card: What would you like to find? -->
     <section class="ref-knowledge-hero-card">
       <div class="ref-ai-hero-spark">
-        ${icon('spark')}
+        <img src="assets/cloudcore-mark.png" alt="CloudCore AI" class="ref-ai-hero-logo">
       </div>
       <h2 class="ref-ai-hero-title">What would you like to find?</h2>
       <p class="ref-ai-hero-subtitle">Ask questions, search across all your documents, or get instant answers with AI.</p>
@@ -362,6 +349,21 @@ function refKnowledge() {
         </div>
       ` : ''}
     </section>
+
+    <!-- Scope Pills -->
+    <nav class="ref-knowledge-scope-tabs" role="tablist" aria-label="Knowledge Hub scope">
+      <button type="button" role="tab" aria-selected="${scope === 'shared'}" class="${scope === 'shared' ? 'active' : ''}" data-action="knowledge-scope" data-scope="shared">
+        ${icon('globe')} Workspace Shared <span class="ref-scope-chip">${sharedDocs}</span>
+      </button>
+      <button type="button" role="tab" aria-selected="${scope === 'personal'}" class="${scope === 'personal' ? 'active' : ''}" data-action="knowledge-scope" data-scope="personal">
+        ${icon('lock')} My Personal Drive <span class="ref-scope-chip">${personalDocs}</span>
+      </button>
+      <button type="button" role="tab" aria-selected="${scope === 'all'}" class="${scope === 'all' ? 'active' : ''}" data-action="knowledge-scope" data-scope="all">
+        ${icon('folder')} All Files <span class="ref-scope-chip">${totalDocs}</span>
+      </button>
+    </nav>
+
+    
 
     ${activeFolderBanner}
     ${foldersShelf}

@@ -761,7 +761,7 @@ dialog:has(.ref-viewer-modal){max-width:94vw;width:94vw;padding:0;border:0;borde
   align-items: center;
   justify-content: center;
 }
-.ref-stat-icon-wrap.icon-blue { background: #eff6ff; color: #2563eb; }
+.ref-stat-icon-wrap.icon-blue { background: #f0fdf4; color: #005437; }
 .ref-stat-icon-wrap.icon-cyan { background: #f0fdfa; color: #0d9488; }
 .ref-stat-icon-wrap.icon-green { background: #f0fdf4; color: #16a34a; }
 .ref-stat-icon-wrap.icon-purple { background: #faf5ff; color: #7c3aed; }
@@ -779,7 +779,7 @@ dialog:has(.ref-viewer-modal){max-width:94vw;width:94vw;padding:0;border:0;borde
   gap: 6px;
   background: #ffffff;
   border: 1px solid #cbd5e1;
-  color: #2563eb;
+  color: #005437;
   font-weight: 600;
   font-size: 13px;
   padding: 8px 16px;
@@ -807,8 +807,8 @@ dialog:has(.ref-viewer-modal){max-width:94vw;width:94vw;padding:0;border:0;borde
 
 /* AI Hero Card: "What would you like to find?" */
 .ref-knowledge-hero-card {
-  background: linear-gradient(180deg, #f0f7ff 0%, #ffffff 100%);
-  border: 1px solid #e2e8f0;
+  background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%);
+  border: 1.5px solid #dcfce7;
   border-radius: 20px;
   padding: 36px 24px 30px;
   text-align: center;
@@ -816,16 +816,21 @@ dialog:has(.ref-viewer-modal){max-width:94vw;width:94vw;padding:0;border:0;borde
   box-shadow: 0 4px 20px rgba(0,0,0,0.03);
 }
 .ref-ai-hero-spark {
-  width: 48px;
-  height: 48px;
+  width: 52px;
+  height: 52px;
   margin: 0 auto 16px;
-  background: #e0f2fe;
-  color: #0284c7;
-  border-radius: 14px;
+  background: #ffffff;
+  border: 1.5px solid #bbf7d0;
+  border-radius: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 12px rgba(2, 132, 199, 0.15);
+  box-shadow: 0 4px 14px rgba(0, 84, 55, 0.12);
+}
+.ref-ai-hero-logo {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
 }
 .ref-ai-hero-spark svg { width: 24px; height: 24px; }
 .ref-ai-hero-title {
@@ -881,8 +886,9 @@ dialog:has(.ref-viewer-modal){max-width:94vw;width:94vw;padding:0;border:0;borde
 .ref-search-scope-pill {
   font-size: 11px;
   font-weight: 600;
-  color: #64748b;
-  background: #f1f5f9;
+  color: #005437;
+  background: #f0fdf4;
+  border: 1px solid #dcfce7;
   padding: 4px 10px;
   border-radius: 9999px;
 }
@@ -913,25 +919,26 @@ dialog:has(.ref-viewer-modal){max-width:94vw;width:94vw;padding:0;border:0;borde
 }
 .ref-try-asking-label {
   font-size: 13px;
-  font-weight: 500;
-  color: #64748b;
+  font-weight: 600;
+  color: #166534;
   margin-right: 4px;
 }
 .ref-ai-hero-pill {
   background: #ffffff;
-  border: 1px solid #e2e8f0;
-  color: #2563eb;
+  border: 1px solid #bbf7d0;
+  color: #005437;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   padding: 6px 14px;
   border-radius: 9999px;
   cursor: pointer;
   transition: all 0.15s;
 }
 .ref-ai-hero-pill:hover {
-  background: #eff6ff;
-  border-color: #93c5fd;
-  color: #1d4ed8;
+  background: #f0fdf4;
+  border-color: #86efac;
+  color: #003e29;
+  box-shadow: 0 2px 6px rgba(0, 84, 55, 0.1);
 }
 
 /* Modern Folders Shelf with 3D Icons */
