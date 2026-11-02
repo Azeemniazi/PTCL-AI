@@ -767,6 +767,11 @@ app.get(['/api/knowledge/documents/:id/view', '/api/knowledge/documents/:id/prev
     }
     const fullPath = isAbsolute(doc.storagePath) ? doc.storagePath : resolve(knowledgeStorageDir, doc.storagePath);
     if (!existsSync(fullPath)) {
+      if (doc.extractedText && doc.extractedText.trim().length > 0) {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        const safeText = doc.extractedText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${encodeURIComponent(doc.filename)}</title><style>body{font-family:system-ui,-apple-system,sans-serif;background:#0f172a;color:#f8fafc;padding:32px;margin:0;line-height:1.6;}.banner{background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.3);color:#93c5fd;padding:12px 16px;border-radius:8px;margin-bottom:20px;font-size:14px;display:flex;align-items:center;gap:8px;}pre{white-space:pre-wrap;word-break:break-word;background:#1e293b;padding:24px;border-radius:10px;border:1px solid #334155;font-size:14px;color:#e2e8f0;font-family:inherit;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);}</style></head><body><div class="banner">ℹ️ <b>Indexed Text View:</b> Original binary file is not stored locally on this node. Showing extracted search text.</div><pre>${safeText}</pre></body></html>`);
+      }
       return res.status(404).json({ error: { code: 'file_missing', message: 'Stored file binary was not found.' } });
     }
     const ext = doc.filename.split('.').pop()?.toLowerCase() || '';

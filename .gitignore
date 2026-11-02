@@ -13,3 +13,4 @@ vexa-cloud.env
 !.env.example
 *.log
 artifacts/
+data/
