@@ -724,3 +724,536 @@ dialog:has(.ref-viewer-modal){max-width:94vw;width:94vw;padding:0;border:0;borde
   font-size: 14px;
   user-select: none;
 }
+
+
+/* =========================================================================
+   KNOWLEDGE HUB - MODERN 3D DESIGN PHILOSOPHY
+   ========================================================================= */
+
+/* Top Stats & Tools Bar */
+.ref-knowledge-stats-strip-modern {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(160px, 1fr)) auto;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 20px;
+}
+@media (max-width: 1024px) {
+  .ref-knowledge-stats-strip-modern {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+.ref-stat-card-modern {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #ffffff;
+  border: 1px solid #eef2f6;
+  border-radius: 12px;
+  padding: 12px 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+}
+.ref-stat-icon-wrap {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.ref-stat-icon-wrap.icon-blue { background: #eff6ff; color: #2563eb; }
+.ref-stat-icon-wrap.icon-cyan { background: #f0fdfa; color: #0d9488; }
+.ref-stat-icon-wrap.icon-green { background: #f0fdf4; color: #16a34a; }
+.ref-stat-icon-wrap.icon-purple { background: #faf5ff; color: #7c3aed; }
+.ref-stat-card-modern b { display: block; font-size: 17px; font-weight: 700; color: #0f172a; line-height: 1.2; }
+.ref-stat-card-modern small { display: block; font-size: 11px; color: #64748b; font-weight: 500; }
+
+.ref-stats-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ref-btn-outline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #2563eb;
+  font-weight: 600;
+  font-size: 13px;
+  padding: 8px 16px;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.ref-btn-outline:hover { background: #f8fafc; border-color: #94a3b8; }
+.ref-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #005437;
+  border: 1px solid #005437;
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 13px;
+  padding: 8px 18px;
+  border-radius: 9px;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0,84,55,0.2);
+  transition: all 0.15s;
+}
+.ref-btn-primary:hover { background: #003e29; border-color: #003e29; }
+
+/* AI Hero Card: "What would you like to find?" */
+.ref-knowledge-hero-card {
+  background: linear-gradient(180deg, #f0f7ff 0%, #ffffff 100%);
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  padding: 36px 24px 30px;
+  text-align: center;
+  margin-bottom: 24px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.03);
+}
+.ref-ai-hero-spark {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 16px;
+  background: #e0f2fe;
+  color: #0284c7;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(2, 132, 199, 0.15);
+}
+.ref-ai-hero-spark svg { width: 24px; height: 24px; }
+.ref-ai-hero-title {
+  font-size: 26px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 6px;
+  letter-spacing: -0.02em;
+}
+.ref-ai-hero-subtitle {
+  font-size: 14px;
+  color: #64748b;
+  margin: 0 0 22px;
+}
+.ref-ai-hero-form {
+  max-width: 700px;
+  margin: 0 auto 18px;
+}
+.ref-ai-search-box {
+  display: flex;
+  align-items: center;
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 9999px;
+  padding: 5px 6px 5px 18px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.05);
+  transition: all 0.2s;
+}
+.ref-ai-search-box:focus-within {
+  border-color: #005437;
+  box-shadow: 0 4px 20px rgba(0,84,55,0.18);
+}
+.ref-search-glass {
+  color: #94a3b8;
+  display: inline-flex;
+  align-items: center;
+}
+.ref-search-glass svg { width: 18px; height: 18px; }
+.ref-ai-search-box input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 14px;
+  padding: 8px 12px;
+  color: #0f172a;
+}
+.ref-search-box-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ref-search-scope-pill {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  background: #f1f5f9;
+  padding: 4px 10px;
+  border-radius: 9999px;
+}
+.ref-ask-ai-btn {
+  background: #005437;
+  color: #ffffff;
+  border: none;
+  border-radius: 9999px;
+  padding: 9px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s;
+  box-shadow: 0 2px 6px rgba(0,84,55,0.25);
+}
+.ref-ask-ai-btn:hover {
+  background: #003e29;
+}
+.ref-ai-hero-suggestions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ref-try-asking-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #64748b;
+  margin-right: 4px;
+}
+.ref-ai-hero-pill {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.ref-ai-hero-pill:hover {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
+/* Modern Folders Shelf with 3D Icons */
+.ref-folder-grid-modern {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-top: 14px;
+}
+@media (max-width: 1100px) {
+  .ref-folder-grid-modern { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 600px) {
+  .ref-folder-grid-modern { grid-template-columns: 1fr; }
+}
+.ref-folder-card-modern {
+  background: #ffffff;
+  border: 1px solid #eef2f6;
+  border-radius: 14px;
+  padding: 16px;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+  transition: all 0.2s ease;
+}
+.ref-folder-card-modern:hover {
+  transform: translateY(-2px);
+  border-color: #cbd5e1;
+  box-shadow: 0 8px 18px rgba(0,0,0,0.06);
+}
+.ref-folder-card-main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  position: relative;
+}
+.ref-folder-3d-wrap {
+  width: 58px;
+  height: 50px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ref-3d-folder-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 3px 6px rgba(0,0,0,0.08));
+}
+.ref-3d-folder-banner-img {
+  width: 44px;
+  height: 40px;
+  object-fit: contain;
+}
+.ref-folder-card-content {
+  flex: 1;
+  min-width: 0;
+}
+.ref-folder-card-content h4 {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ref-folder-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #64748b;
+}
+.ref-folder-card-options {
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+.ref-folder-card-modern:hover .ref-folder-card-options {
+  opacity: 1;
+}
+
+/* Documents Section & Table */
+.ref-knowledge-files-panel-modern {
+  background: #ffffff;
+  border: 1px solid #eef2f6;
+  border-radius: 16px;
+  padding: 20px;
+  margin-top: 24px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+}
+.ref-docs-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+.ref-docs-header-row h2 {
+  font-size: 18px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 2px;
+}
+.ref-docs-header-row p {
+  font-size: 12px;
+  color: #64748b;
+  margin: 0;
+}
+.ref-docs-filter-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ref-search-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 6px 12px;
+}
+.ref-search-inline input {
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13px;
+  color: #0f172a;
+  width: 160px;
+}
+.ref-type-pills-modern {
+  display: inline-flex;
+  gap: 4px;
+  background: #f1f5f9;
+  padding: 3px;
+  border-radius: 8px;
+}
+.ref-type-pills-modern button {
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.ref-type-pills-modern button.active {
+  background: #ffffff;
+  color: #005437;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+.ref-knowledge-table-modern {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.ref-knowledge-table-modern thead th {
+  background: #f8fafc;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+  padding: 12px 14px;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+}
+.ref-knowledge-table-modern tbody tr {
+  border-bottom: 1px solid #f1f5f9;
+  transition: background 0.15s;
+}
+.ref-knowledge-table-modern tbody tr:hover {
+  background: #f8fafc;
+}
+.ref-knowledge-table-modern tbody td {
+  padding: 12px 14px;
+  font-size: 13px;
+  color: #334155;
+  border-bottom: 1px solid #f1f5f9;
+}
+.ref-doc-title-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ref-file-type-icon {
+  font-size: 9px;
+  font-weight: 800;
+  padding: 3px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.05em;
+}
+.ref-file-type-icon.icon-pdf { background: #fee2e2; color: #dc2626; }
+.ref-file-type-icon.icon-word { background: #dbeafe; color: #2563eb; }
+.ref-file-type-icon.icon-excel { background: #dcfce7; color: #16a34a; }
+.ref-file-type-icon.icon-ppt { background: #ffedd5; color: #ea580c; }
+.ref-file-type-icon.icon-file { background: #f1f5f9; color: #475569; }
+
+.ref-doc-link-name {
+  font-weight: 600;
+  color: #0f172a;
+  text-decoration: none;
+  max-width: 280px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ref-doc-link-name:hover {
+  color: #005437;
+  text-decoration: underline;
+}
+
+.ref-file-type-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 9999px;
+}
+.ref-file-type-tag.type-pdf { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+.ref-file-type-tag.type-word { background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; }
+.ref-file-type-tag.type-excel { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+.ref-file-type-tag.type-ppt { background: #fff7ed; color: #ea580c; border: 1px solid #fed7aa; }
+.ref-file-type-tag.type-file { background: #f8fafc; color: #64748b; border: 1px solid #e2e8f0; }
+
+.ref-folder-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #334155;
+  font-weight: 500;
+}
+.ref-mini-folder-icon {
+  width: 18px;
+  height: 16px;
+  object-fit: contain;
+}
+.ref-size-cell, .ref-date-cell {
+  color: #64748b;
+  font-size: 12px;
+}
+.ref-user-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ref-user-avatar-pill {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #e0f2fe;
+  color: #0284c7;
+  font-size: 10px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.ref-view-btn-pill {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #005437;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s;
+}
+.ref-view-btn-pill:hover {
+  background: #005437;
+  color: #ffffff;
+  border-color: #005437;
+}
+
+/* 3D Folder Icon Picker in Modals */
+.ref-folder-icon-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-top: 8px;
+}
+.ref-folder-icon-option {
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 8px 6px;
+  text-align: center;
+  cursor: pointer;
+  background: #ffffff;
+  transition: all 0.15s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.ref-folder-icon-option:hover {
+  border-color: #94a3b8;
+  background: #f8fafc;
+}
+.ref-folder-icon-option.selected {
+  border-color: #005437;
+  background: #f0fdf4;
+  box-shadow: 0 0 0 2px rgba(0, 84, 55, 0.2);
+}
+.ref-folder-icon-option .ref-icon-preview {
+  width: 44px;
+  height: 38px;
+  object-fit: contain;
+}
+.ref-folder-icon-option span {
+  font-size: 11px;
+  font-weight: 600;
+  color: #334155;
+}
+.ref-folder-icon-option.selected span {
+  color: #005437;
+}

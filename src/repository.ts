@@ -1020,18 +1020,20 @@ export class Repository {
     return q.rows[0] ? folderRow(q.rows[0]) : undefined;
   }
 
-  async updateFolder(id: string, userId: string, input: { name?: string; isShared?: boolean }, isPrivileged = false): Promise<KnowledgeFolder | undefined> {
+  async updateFolder(id: string, userId: string, input: { name?: string; isShared?: boolean; color?: string }, isPrivileged = false): Promise<KnowledgeFolder | undefined> {
     const existing = await this.getFolderById(id);
     if (!existing) return undefined;
     if (existing.userId !== userId && !isPrivileged) throw new Error('Unauthorized to modify this folder.');
 
     const name = input.name?.trim() || existing.name;
     const isShared = typeof input.isShared === 'boolean' ? input.isShared : existing.isShared;
+    const color = typeof input.color === 'string' && input.color.trim() ? input.color.trim() : existing.color;
     const now = new Date().toISOString();
 
     if (!this.pool) {
       existing.name = name;
       existing.isShared = isShared;
+      existing.color = color;
       existing.updatedAt = now;
       this.knowledgeFolders.set(id, existing);
       return existing;
@@ -1039,10 +1041,10 @@ export class Repository {
 
     const q = await this.pool.query(
       `UPDATE knowledge_folders
-       SET name = $2, is_shared = $3, updated_at = $4
+       SET name = $2, is_shared = $3, color = $4, updated_at = $5
        WHERE id = $1
        RETURNING *`,
-      [id, name, isShared, now]
+      [id, name, isShared, color, now]
     );
     return q.rows[0] ? folderRow(q.rows[0]) : undefined;
   }

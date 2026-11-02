@@ -1,4 +1,37 @@
 
+function getFolderIconKey(f) {
+  if (!f) return 'general';
+  const c = (f.color || '').toLowerCase().trim();
+  const validKeys = ['server', 'partnership', 'documents', 'cloud', 'security', 'analytics', 'tech', 'general'];
+  if (validKeys.includes(c)) return c;
+  const name = (f.name || '').toLowerCase();
+  if (name.includes('datacenter') || name.includes('server') || name.includes('facility') || name.includes('hardware')) return 'server';
+  if (name.includes('partner') || name.includes('letter') || name.includes('legal') || name.includes('agreement') || name.includes('contract')) return 'partnership';
+  if (name.includes('product') || name.includes('doc') || name.includes('manual') || name.includes('spec')) return 'documents';
+  if (name.includes('qcloud') || name.includes('cloud') || name.includes('iaas') || name.includes('draas') || name.includes('baas')) return 'cloud';
+  if (name.includes('iso') || name.includes('security') || name.includes('pci') || name.includes('policy') || name.includes('compliance')) return 'security';
+  if (name.includes('analytic') || name.includes('report') || name.includes('metric') || name.includes('finance')) return 'analytics';
+  if (name.includes('tech') || name.includes('dev') || name.includes('code') || name.includes('api')) return 'tech';
+  return 'general';
+}
+
+function getDocTypeInfo(filename) {
+  const ext = (filename || '').split('.').pop()?.toLowerCase() || '';
+  if (ext === 'pdf') return { label: 'PDF', cls: 'type-pdf', iconCls: 'icon-pdf' };
+  if (['docx', 'doc'].includes(ext)) return { label: 'Word', cls: 'type-word', iconCls: 'icon-word' };
+  if (['xlsx', 'xls', 'csv'].includes(ext)) return { label: 'Excel', cls: 'type-excel', iconCls: 'icon-excel' };
+  if (['pptx', 'ppt'].includes(ext)) return { label: 'PPT', cls: 'type-ppt', iconCls: 'icon-ppt' };
+  return { label: ext.toUpperCase() || 'FILE', cls: 'type-file', iconCls: 'icon-file' };
+}
+
+function getUserInitials(name) {
+  if (!name) return 'U';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return name.slice(0, 2).toUpperCase();
+}
+
+
 function renderPageNumbers(curPage, totalPages) {
   if (totalPages <= 7) {
     return Array.from({ length: totalPages }, (_, i) => i + 1).map(p => `
@@ -147,6 +180,12 @@ function refKnowledge() {
   const selectedSet = (typeof selectedKnowledgeDocIds !== 'undefined' && selectedKnowledgeDocIds instanceof Set) ? selectedKnowledgeDocIds : new Set();
 
   const totalDocs = docs.length;
+  const totalFolders = folders.length;
+  const totalBytes = docs.reduce((acc, d) => acc + (d.sizeBytes || 0), 0);
+  const sharedDocs = docs.filter(d => d.isShared).length;
+  const personalDocs = docs.filter(d => !d.isShared).length;
+
+  // Pagination calculation: 10 files per page
   const pageSize = 10;
   const totalPages = Math.max(1, Math.ceil(totalDocs / pageSize));
   if (typeof knowledgePage === 'undefined') knowledgePage = 1;
@@ -156,39 +195,36 @@ function refKnowledge() {
   const startIdx = (curPage - 1) * pageSize;
   const endIdx = Math.min(startIdx + pageSize, totalDocs);
   const pagedDocs = docs.slice(startIdx, endIdx);
-  const totalFolders = folders.length;
-  const totalBytes = docs.reduce((acc, d) => acc + (d.sizeBytes || 0), 0);
-  const sharedDocs = docs.filter(d => d.isShared).length;
-  const personalDocs = docs.filter(d => !d.isShared).length;
 
   const typePills = [
-    ['all', 'All Files'],
+    ['all', 'All Types'],
     ['pdf', 'PDF'],
     ['word', 'Word'],
-    ['excel', 'Excel / CSV'],
+    ['excel', 'Excel'],
     ['text', 'Text / MD']
   ];
 
   const breadcrumb = activeFolder
-    ? `<div class="ref-knowledge-breadcrumb"><button type="button" class="ref-crumb-btn" data-action="select-folder" data-id="">Knowledge Hub</button> <span class="ref-crumb-sep">/</span> <span class="ref-crumb-cur">${esc(activeFolder.name)}</span> <button type="button" class="soft-button small" data-action="clear-folder-filter" title="Back to all files">✕ Back</button></div>`
+    ? `<div class="ref-knowledge-breadcrumb"><button type="button" class="ref-crumb-btn" data-action="select-folder" data-id="">Knowledge Hub</button> <span class="ref-crumb-sep">/</span> <span class="ref-crumb-cur">${esc(activeFolder.name)}</span> <button type="button" class="soft-button small" data-action="clear-folder-filter" title="Back to all folders">✕ All Folders</button></div>`
     : `<div class="ref-knowledge-breadcrumb"><span class="ref-crumb-cur">Knowledge Hub</span> <span class="ref-crumb-sep">/</span> <span style="color:#78889a;">${scope === 'shared' ? 'Workspace Shared' : scope === 'personal' ? 'My Personal Drive' : 'All Accessible Files'}</span></div>`;
 
   const activeFolderBanner = activeFolder ? `
     <div class="ref-active-folder-banner">
       <div class="ref-active-folder-info">
-        <span class="ref-folder-icon">${icon('folder')}</span>
+        <img src="assets/folders/folder-${getFolderIconKey(activeFolder)}.svg" alt="${esc(activeFolder.name)}" class="ref-3d-folder-banner-img">
         <div>
           <h3>${esc(activeFolder.name)}</h3>
           <p>${activeFolder.fileCount || 0} file${activeFolder.fileCount === 1 ? '' : 's'} · ${formatBytes(activeFolder.totalSizeBytes || 0)} · Created by <b>${esc(activeFolder.creatorName || 'User')}</b> · <span class="ref-folder-badge ${activeFolder.isShared ? 'shared' : 'private'}">${activeFolder.isShared ? '🌐 Workspace Shared' : '🔒 Private'}</span></p>
         </div>
       </div>
       <div class="ref-folder-actions">
-        <button type="button" class="outline small" data-action="rename-folder" data-id="${esc(activeFolder.id)}" data-name="${esc(activeFolder.name)}" data-shared="${activeFolder.isShared}">${icon('sliders')} Rename</button>
+        <button type="button" class="outline small" data-action="rename-folder" data-id="${esc(activeFolder.id)}" data-name="${esc(activeFolder.name)}" data-shared="${activeFolder.isShared}">${icon('sliders')} Edit Folder</button>
         <button type="button" class="outline danger-outline small" data-action="delete-folder" data-id="${esc(activeFolder.id)}" data-name="${esc(activeFolder.name)}" data-count="${activeFolder.fileCount || 0}">${icon('trash')} Delete Folder</button>
       </div>
     </div>
   ` : '';
 
+  // 3D Folder Cards Grid
   const foldersShelf = (!activeFolder) ? `
     <section class="ref-folder-section">
       <div class="ref-folder-header">
@@ -196,32 +232,35 @@ function refKnowledge() {
           <h2>Folders (${folders.length})</h2>
           <p>Organize team knowledge by department, project, or category.</p>
         </div>
+        <button type="button" class="ref-link-action" data-action="knowledge-scope" data-scope="all">View all folders →</button>
       </div>
-      <div class="ref-folder-grid">
-        ${folders.length ? folders.map(f => `
-          <div class="ref-folder-card" data-action="select-folder" data-id="${esc(f.id)}">
-            <div class="ref-folder-card-top">
-              <span class="ref-folder-card-icon" style="color:${esc(f.color || '#005437')}">${icon('folder')}</span>
-              <span class="ref-folder-badge ${f.isShared ? 'shared' : 'private'}">${f.isShared ? '🌐 Shared' : '🔒 Private'}</span>
-            </div>
-            <h4 title="${esc(f.name)}">${esc(f.name)}</h4>
-            <div class="ref-folder-card-meta">
-              <span>${f.fileCount || 0} file${f.fileCount === 1 ? '' : 's'}</span>
-              <span>${formatBytes(f.totalSizeBytes || 0)}</span>
-            </div>
-            <div class="ref-folder-card-footer">
-              <small>By ${esc(f.creatorName || 'Team')}</small>
-              <div class="ref-card-actions">
-                <button type="button" class="icon-button" data-action="rename-folder" data-id="${esc(f.id)}" data-name="${esc(f.name)}" data-shared="${f.isShared}" title="Rename folder">${icon('sliders')}</button>
-                <button type="button" class="icon-button danger" data-action="delete-folder" data-id="${esc(f.id)}" data-name="${esc(f.name)}" data-count="${f.fileCount || 0}" title="Delete folder">${icon('trash')}</button>
+      <div class="ref-folder-grid-modern">
+        ${folders.length ? folders.map(f => {
+          const iconKey = getFolderIconKey(f);
+          return `
+            <div class="ref-folder-card-modern" data-action="select-folder" data-id="${esc(f.id)}">
+              <div class="ref-folder-card-main">
+                <div class="ref-folder-3d-wrap">
+                  <img src="assets/folders/folder-${iconKey}.svg" alt="${esc(f.name)}" class="ref-3d-folder-img" loading="lazy">
+                </div>
+                <div class="ref-folder-card-content">
+                  <h4 title="${esc(f.name)}">${esc(f.name)}</h4>
+                  <div class="ref-folder-card-meta">
+                    <span>${f.fileCount || 0} file${f.fileCount === 1 ? '' : 's'}</span>
+                    <span class="ref-folder-badge ${f.isShared ? 'shared' : 'private'}">${f.isShared ? '🌐 Shared' : '🔒 Private'}</span>
+                  </div>
+                </div>
+                <div class="ref-folder-card-options" onclick="event.stopPropagation()">
+                  <button type="button" class="icon-button ref-folder-menu-btn" data-action="rename-folder" data-id="${esc(f.id)}" data-name="${esc(f.name)}" data-shared="${f.isShared}" title="Edit folder">${icon('more')}</button>
+                </div>
               </div>
             </div>
-          </div>
-        `).join('') : `
+          `;
+        }).join('') : `
           <div class="ref-folder-empty-card" data-action="new-folder">
             <span class="mini-icon">${icon('plus')}</span>
             <b>Create First Folder</b>
-            <small>Organize documents into shared or personal folders</small>
+            <small>Choose from 8 cool 3D folder icons</small>
           </div>
         `}
       </div>
@@ -240,36 +279,31 @@ function refKnowledge() {
   ` : '';
 
   return `
-    <div class="ref-page-heading">
-      <div>
-        <h1>Knowledge Hub</h1>
-        <p>Centralized repository for enterprise manuals, technical specs, and team knowledge.</p>
-      </div>
-      <div class="ref-page-heading-tools">
-        <button type="button" class="outline" data-action="new-folder">${icon('plus')} New Folder</button>
-        <button type="button" class="primary" data-action="batch-upload">${icon('upload')} Upload Files</button>
-      </div>
-    </div>
-
-    <div class="ref-knowledge-stats-strip">
-      <div class="ref-stat-card">
-        <span class="ref-stat-icon">${icon('file')}</span>
+    <!-- 1. Top Modern Stats & Quick Actions Bar -->
+    <div class="ref-knowledge-stats-strip-modern">
+      <div class="ref-stat-card-modern">
+        <span class="ref-stat-icon-wrap icon-blue">${icon('file')}</span>
         <div><b>${totalDocs}</b><small>Total Documents</small></div>
       </div>
-      <div class="ref-stat-card">
-        <span class="ref-stat-icon">${icon('folder')}</span>
+      <div class="ref-stat-card-modern">
+        <span class="ref-stat-icon-wrap icon-cyan">${icon('folder')}</span>
         <div><b>${totalFolders}</b><small>Active Folders</small></div>
       </div>
-      <div class="ref-stat-card">
-        <span class="ref-stat-icon">${icon('chart')}</span>
+      <div class="ref-stat-card-modern">
+        <span class="ref-stat-icon-wrap icon-green">${icon('chart')}</span>
         <div><b>${formatBytes(totalBytes)}</b><small>Total Storage</small></div>
       </div>
-      <div class="ref-stat-card">
-        <span class="ref-stat-icon">${icon('shield')}</span>
+      <div class="ref-stat-card-modern">
+        <span class="ref-stat-icon-wrap icon-purple">${icon('users')}</span>
         <div><b>${scope === 'shared' ? 'Workspace Shared' : scope === 'personal' ? 'My Personal Drive' : 'All Files'}</b><small>Current Scope</small></div>
+      </div>
+      <div class="ref-stats-tools">
+        <button type="button" class="ref-btn-outline" data-action="new-folder">${icon('plus')} New Folder</button>
+        <button type="button" class="ref-btn-primary" data-action="batch-upload">${icon('upload')} Upload Files</button>
       </div>
     </div>
 
+    <!-- Scope Pills -->
     <nav class="ref-knowledge-scope-tabs" role="tablist" aria-label="Knowledge Hub scope">
       <button type="button" role="tab" aria-selected="${scope === 'shared'}" class="${scope === 'shared' ? 'active' : ''}" data-action="knowledge-scope" data-scope="shared">
         ${icon('globe')} Workspace Shared <span class="ref-scope-chip">${sharedDocs}</span>
@@ -282,28 +316,40 @@ function refKnowledge() {
       </button>
     </nav>
 
-    ${activeFolderBanner}
-    ${foldersShelf}
+    <!-- 2. Modern AI Hero Search Card: What would you like to find? -->
+    <section class="ref-knowledge-hero-card">
+      <div class="ref-ai-hero-spark">
+        ${icon('spark')}
+      </div>
+      <h2 class="ref-ai-hero-title">What would you like to find?</h2>
+      <p class="ref-ai-hero-subtitle">Ask questions, search across all your documents, or get instant answers with AI.</p>
 
-    <section class="panel ref-knowledge-ai-panel">
-      <div class="ref-knowledge-ai-header">
-        <div class="ref-knowledge-ai-title">
-          <span class="ref-ai-sparkle-badge">${icon('spark')}</span>
-          <div>
-            <h3>Ask Knowledge Hub with AI</h3>
-            <p>Search, summarize and verify facts grounded in your documents with source citations.</p>
+      <form class="ref-ai-hero-form" id="knowledge-chat-form">
+        <div class="ref-ai-search-box">
+          <span class="ref-search-glass">${icon('search')}</span>
+          <input name="knowledgePrompt" id="knowledge-prompt-input" placeholder="${activeFolder ? `Ask anything about "${esc(activeFolder.name)}"... ` : 'Ask anything about your documents...'}" autocomplete="off" ${Boolean(typeof knowledgeChatLoading!=='undefined'&&knowledgeChatLoading) ? 'disabled' : 'required'}>
+          <div class="ref-search-box-tools">
+            <span class="ref-search-scope-pill">${activeFolder ? esc(activeFolder.name) : 'All Docs'}</span>
+            <button type="submit" class="ref-ask-ai-btn" ${Boolean(typeof knowledgeChatLoading!=='undefined'&&knowledgeChatLoading) ? 'disabled' : ''}>
+              ${(typeof knowledgeChatLoading!=='undefined'&&knowledgeChatLoading) ? 'Searching…' : `${icon('arrow')} Ask AI`}
+            </button>
           </div>
         </div>
-        <div class="ref-knowledge-ai-scope-indicator">
-          <span class="ref-scope-tag ${activeFolder ? 'folder-scoped' : 'global-scoped'}">
-            ${activeFolder ? `${icon('folder')} Scoped to: <b>${esc(activeFolder.name)}</b>` : `${icon('globe')} All Workspace Documents`}
-          </span>
-          ${(typeof knowledgeChatMessages!=='undefined'&&knowledgeChatMessages.length) ? `<button type="button" class="soft-button small" data-action="clear-knowledge-chat" title="Clear conversation">${icon('trash')} Clear</button>` : ''}
-        </div>
+      </form>
+
+      <div class="ref-ai-hero-suggestions">
+        <span class="ref-try-asking-label">Try asking:</span>
+        <button type="button" class="ref-ai-hero-pill" data-action="suggest-knowledge-query" data-query="What compliance certifications and standards are documented in our knowledge base?">What compliance certifications do we have?</button>
+        <button type="button" class="ref-ai-hero-pill" data-action="suggest-knowledge-query" data-query="Summarize data center facilities, power redundancy and cooling specifications.">Data center facilities & specifications</button>
+        <button type="button" class="ref-ai-hero-pill" data-action="suggest-knowledge-query" data-query="What are the service level agreements (SLA) and uptime commitments?">SLA & uptime commitments</button>
       </div>
 
+      <!-- Real-time AI chat answers thread if active -->
       ${(typeof knowledgeChatMessages!=='undefined'&&knowledgeChatMessages.length) ? `
-        <div class="ref-knowledge-chat-thread" id="knowledge-chat-thread">
+        <div class="ref-knowledge-chat-thread" id="knowledge-chat-thread" style="margin-top:24px;text-align:left;">
+          <div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
+            <button type="button" class="soft-button small" data-action="clear-knowledge-chat" title="Clear conversation">${icon('trash')} Clear Chat</button>
+          </div>
           ${knowledgeChatMessages.map(m => `
             <div class="ref-knowledge-message ${m.role}">
               <span class="ref-msg-avatar">${m.role === 'user' ? esc((appUser?.displayName || 'U')[0]) : mark()}</span>
@@ -314,35 +360,25 @@ function refKnowledge() {
             </div>
           `).join('')}
         </div>
-      ` : `
-        <div class="ref-knowledge-ai-suggestions">
-          <small>Suggested questions:</small>
-          <button type="button" class="ref-ai-suggest-pill" data-action="suggest-knowledge-query" data-query="What compliance certifications and standards are documented in our knowledge base?">What compliance certifications do we have?</button>
-          <button type="button" class="ref-ai-suggest-pill" data-action="suggest-knowledge-query" data-query="Summarize data center facilities, power redundancy and cooling specifications.">Data center facilities & specifications</button>
-          <button type="button" class="ref-ai-suggest-pill" data-action="suggest-knowledge-query" data-query="What are the service level agreements (SLA) and uptime commitments?">SLA & uptime commitments</button>
-        </div>
-      `}
-
-      <form class="ref-knowledge-ai-form" id="knowledge-chat-form">
-        <div class="ref-knowledge-ai-input-wrap">
-          ${icon('search')}
-          <input name="knowledgePrompt" id="knowledge-prompt-input" placeholder="${activeFolder ? `Ask anything about "${esc(activeFolder.name)}"... ` : 'Ask anything across your knowledge documents...'}" autocomplete="off" ${Boolean(typeof knowledgeChatLoading!=='undefined'&&knowledgeChatLoading) ? 'disabled' : 'required'}>
-          <button type="submit" class="primary" ${Boolean(typeof knowledgeChatLoading!=='undefined'&&knowledgeChatLoading) ? 'disabled' : ''}>
-            ${(typeof knowledgeChatLoading!=='undefined'&&knowledgeChatLoading) ? 'Searching…' : `${icon('arrow')} Ask AI`}
-          </button>
-        </div>
-      </form>
+      ` : ''}
     </section>
 
-    <section class="panel ref-knowledge-files-panel">
-      <div class="ref-knowledge-toolbar">
-        ${breadcrumb}
-        <div class="ref-toolbar-controls">
-          <label class="ref-search">
+    ${activeFolderBanner}
+    ${foldersShelf}
+
+    <!-- 3. All Documents Table Section with 10-File Pagination -->
+    <section class="panel ref-knowledge-files-panel-modern">
+      <div class="ref-docs-header-row">
+        <div>
+          <h2>All documents</h2>
+          <p>${totalDocs} documents across ${totalFolders} folders</p>
+        </div>
+        <div class="ref-docs-filter-controls">
+          <label class="ref-search-inline">
             ${icon('search')}
-            <input id="ref-knowledge-search-input" placeholder="Search filenames or extracted text..." value="${esc(searchVal)}" aria-label="Search documents">
+            <input id="ref-knowledge-search-input" placeholder="Search filenames..." value="${esc(searchVal)}" aria-label="Search documents">
           </label>
-          <div class="ref-type-pills" role="group" aria-label="Filter by file type">
+          <div class="ref-type-pills-modern" role="group" aria-label="Filter by file type">
             ${typePills.map(([val, label]) => `
               <button type="button" class="${filterType === val ? 'active' : ''}" data-action="filter-type" data-type="${val}">${label}</button>
             `).join('')}
@@ -350,43 +386,55 @@ function refKnowledge() {
         </div>
       </div>
 
-      <div class="ref-table-wrap" style="margin-top:12px;">
-        <table class="ref-knowledge-table">
+      <div class="ref-table-wrap" style="margin-top:14px;">
+        <table class="ref-knowledge-table-modern">
           <thead>
             <tr>
-              <th style="width:40px;"><input type="checkbox" id="ref-select-all-docs" ${pagedDocs.length && pagedDocs.every(d => selectedSet.has(d.id)) ? 'checked' : ''} data-action="toggle-select-all" aria-label="Select all documents"></th>
-              <th>Filename</th>
+              <th style="width:36px;"><input type="checkbox" id="ref-select-all-docs" ${pagedDocs.length && pagedDocs.every(d => selectedSet.has(d.id)) ? 'checked' : ''} data-action="toggle-select-all" aria-label="Select all documents on this page"></th>
+              <th>Name</th>
+              <th>Type</th>
               <th>Folder</th>
-              <th>Scope</th>
               <th>Size</th>
-              <th>Owner</th>
-              <th>Uploaded</th>
+              <th>Last Modified</th>
+              <th>Shared By</th>
               <th style="text-align:right;">Actions</th>
             </tr>
           </thead>
           <tbody>
             ${pagedDocs.length ? pagedDocs.map(d => {
-              const ext = d.filename.split('.').pop()?.toUpperCase() || 'FILE';
+              const typeInfo = getDocTypeInfo(d.filename);
               const isChecked = selectedSet.has(d.id);
+              const folderMatch = folders.find(f => f.id === d.folderId);
+              const folderIconKey = getFolderIconKey(folderMatch);
+              const initials = getUserInitials(d.creatorName || 'Azeem Niazi');
+
               return `
                 <tr class="${isChecked ? 'row-selected' : ''}">
                   <td><input type="checkbox" ${isChecked ? 'checked' : ''} data-action="toggle-doc-select" data-id="${esc(d.id)}" aria-label="Select ${esc(d.filename)}"></td>
                   <td>
-                    <div style="display:flex;align-items:center;gap:10px;">
-                      <span class="ref-ext-badge ext-${esc(ext.toLowerCase())}">${esc(ext)}</span>
-                      <a href="#view" class="ref-doc-name-cell ref-doc-name-link" data-action="view-doc" data-id="${esc(d.id)}" title="Click to view online without downloading">${esc(d.filename)}</a>
-                      <small role="status">${d.status==='indexing'?'Processing…':d.status==='failed'?'Processing failed':'Ready'}</small>
+                    <div class="ref-doc-title-cell">
+                      <span class="ref-file-type-icon ${typeInfo.iconCls}">${typeInfo.label}</span>
+                      <a href="#view" class="ref-doc-link-name" data-action="view-doc" data-id="${esc(d.id)}" title="Click to view online without downloading">${esc(d.filename)}</a>
                     </div>
                   </td>
-                  <td><span class="ref-crumb-pill">${esc(d.folderName || 'Unfiled')}</span></td>
-                  <td><span class="ref-folder-badge ${d.isShared ? 'shared' : 'private'}">${d.isShared ? '🌐 Shared' : '🔒 Private'}</span></td>
-                  <td>${formatBytes(d.sizeBytes)}</td>
-                  <td>${esc(d.creatorName || 'User')}</td>
-                  <td>${d.createdAt ? new Date(d.createdAt).toLocaleDateString() : '—'}</td>
+                  <td><span class="ref-file-type-tag ${typeInfo.cls}">${typeInfo.label}</span></td>
+                  <td>
+                    <div class="ref-folder-cell">
+                      <img src="assets/folders/folder-${folderIconKey}.svg" alt="" class="ref-mini-folder-icon">
+                      <span>${esc(d.folderName || 'Unfiled')}</span>
+                    </div>
+                  </td>
+                  <td class="ref-size-cell">${formatBytes(d.sizeBytes)}</td>
+                  <td class="ref-date-cell">${d.createdAt ? new Date(d.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</td>
+                  <td>
+                    <div class="ref-user-cell">
+                      <span class="ref-user-avatar-pill">${initials}</span>
+                      <span>${esc(d.creatorName || 'Azeem Niazi')}</span>
+                    </div>
+                  </td>
                   <td>
                     <div class="ref-row-actions">
-                      <button type="button" class="ref-view-btn" data-action="view-doc" data-id="${esc(d.id)}" title="View file online without downloading">${icon('eye')} View</button>
-                      ${d.status==='failed'&&(d.userId===appUser?.id||['dev','admin'].includes(appUser?.role))?`<button type="button" class="outline small" data-action="retry-doc" data-id="${esc(d.id)}">Retry processing</button>`:''}
+                      <button type="button" class="ref-view-btn-pill" data-action="view-doc" data-id="${esc(d.id)}" title="View file online without downloading">${icon('eye')} View</button>
                       <button type="button" class="icon-button" data-action="move-doc" data-id="${esc(d.id)}" title="Move to folder">${icon('folder')}</button>
                       <a class="icon-button" href="/api/knowledge/documents/${encodeURIComponent(d.id)}/download" download="${esc(d.filename)}" title="Download file">${icon('download')}</a>
                       <button type="button" class="icon-button danger" data-action="delete-doc" data-id="${esc(d.id)}" data-filename="${esc(d.filename)}" title="Delete document">${icon('trash')}</button>
@@ -396,17 +444,19 @@ function refKnowledge() {
               `;
             }).join('') : `
               <tr>
-                <td colspan="8" style="text-align:center;padding:36px 16px;color:#6b7c8f;">
+                <td colspan="8" style="text-align:center;padding:48px 16px;color:#6b7c8f;">
                   <span class="feature-icon" style="margin:0 auto 12px;">${icon('file')}</span>
-                  <h3 style="margin:0 0 4px;font-size:15px;color:#182820;">No documents in this view</h3>
+                  <h3 style="margin:0 0 4px;font-size:16px;color:#182820;">No documents found</h3>
                   <p style="margin:0 0 16px;font-size:13px;">${searchVal ? `No results matching "${esc(searchVal)}"` : activeFolder ? `Folder "${esc(activeFolder.name)}" is empty.` : 'Upload documents or choose a different scope above.'}</p>
-                  <button type="button" class="primary" data-action="batch-upload">${icon('upload')} Upload Files</button>
+                  <button type="button" class="ref-btn-primary" data-action="batch-upload">${icon('upload')} Upload Files</button>
                 </td>
               </tr>
             `}
           </tbody>
         </table>
       </div>
+
+      <!-- 10-File Pagination Controls Bar -->
       <div class="ref-pagination-bar">
         <div class="ref-pagination-info">
           Showing <b>${totalDocs ? startIdx + 1 : 0}–${endIdx}</b> of <b>${totalDocs}</b> files

@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 84" width="100%" height="100%" fill="none" class="ref-3d-folder-svg">
+  <defs>
+    <!-- Soft Ambient Floor Shadow -->
+    <filter id="shadow-general" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="8" stdDeviation="6" flood-color="#000000" flood-opacity="0.18" />
+    </filter>
+
+    <!-- Flap Depth Shadow -->
+    <filter id="flap-shadow-general" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="4" stdDeviation="3.5" flood-color="#000000" flood-opacity="0.22" />
+    </filter>
+
+    <!-- Gradients -->
+    <linearGradient id="back-general" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#005437" />
+      <stop offset="100%" stop-color="#003322" />
+    </linearGradient>
+
+    <linearGradient id="front-general" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#005437" />
+    </linearGradient>
+
+    <linearGradient id="paper-spec" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#e6edf5" />
+    </linearGradient>
+
+    <linearGradient id="highlight-general" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.6)" />
+      <stop offset="50%" stop-color="rgba(255,255,255,0.2)" />
+      <stop offset="100%" stop-color="rgba(255,255,255,0.4)" />
+    </linearGradient>
+  </defs>
+
+  <!-- 1. Ambient Drop Shadow -->
+  <ellipse cx="48" cy="74" rx="38" ry="6" fill="#000000" opacity="0.16" filter="blur(3px)" />
+
+  <!-- 2. Back Flap & Tab -->
+  <g filter="url(#shadow-general)">
+    <!-- Tab -->
+    <path d="M14 26 C14 21 17 17 22 17 L38 17 C42 17 45 20 47 23 L51 27 L80 27 C85 27 88 30 88 35 L88 64 C88 69 84 72 79 72 L17 72 C12 72 10 69 10 64 L10 30 C10 26 12 26 14 26 Z" fill="url(#back-general)" />
+  </g>
+
+  <!-- 3. Documents inside pocket (White paper sheets with 3D angle) -->
+  <!-- Sheet 2 (Back) -->
+  <rect x="23" y="16" width="48" height="34" rx="3" fill="#cbd5e1" transform="rotate(-3 23 16)" opacity="0.75" />
+  <!-- Sheet 1 (Front crisp white) -->
+  <g filter="drop-shadow(0 2px 3px rgba(0,0,0,0.12))">
+    <rect x="25" y="14" width="46" height="36" rx="3.5" fill="url(#paper-spec)" />
+    <!-- Text lines on sheet -->
+    <line x1="30" y1="20" x2="48" y2="20" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round" />
+    <line x1="30" y1="24" x2="62" y2="24" stroke="#cbd5e1" stroke-width="1.3" stroke-linecap="round" />
+    <line x1="30" y1="28" x2="56" y2="28" stroke="#cbd5e1" stroke-width="1.3" stroke-linecap="round" />
+  </g>
+
+  <!-- 4. Front Flap (Isometric glossy 3D front) -->
+  <g filter="url(#flap-shadow-general)">
+    <path d="M10 33 C10 29.5 13 27 17 27 L79 27 C83 27 86 29.5 86 33 L84 66 C84 71 80 74 75 74 L21 74 C16 74 12 71 12 66 Z" fill="url(#front-general)" />
+    <!-- Top specular edge highlight -->
+    <path d="M12 29.5 L84 29.5" stroke="url(#highlight-general)" stroke-width="1.6" stroke-linecap="round" />
+  </g>
+
+  <!-- 5. 3D Embossed Feature Badge -->
+  <rect x="35" y="38" width="26" height="24" rx="7" fill="rgba(0, 51, 34, 0.28)" stroke="rgba(255, 255, 255, 0.4)" stroke-width="1.2" />
+  <!-- Gloss on Badge -->
+  <path d="M36 44 C36 40 38 39 42 39 L54 39 C58 39 60 40 60 44" stroke="rgba(255,255,255,0.45)" stroke-width="0.8" fill="none" />
+  
+      <!-- Star / Brand -->
+      <path d="M48 43 l2 4.5 l4.8 0.5 l-3.6 3.2 l1 4.8 l-4.2 -2.4 l-4.2 2.4 l1 -4.8 l-3.6 -3.2 l4.8 -0.5 z" fill="#ffffff" opacity="0.95"/>
+    
+</svg>

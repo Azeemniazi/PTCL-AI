@@ -448,13 +448,38 @@ function toggleSelectAllDocs(){
 }
 
 function openNewFolderModal(){
+  const folderIcons = [
+    { id: 'server', label: 'Datacenter' },
+    { id: 'partnership', label: 'Partnerships' },
+    { id: 'documents', label: 'Product Docs' },
+    { id: 'cloud', label: 'Cloud / QCloud' },
+    { id: 'security', label: 'Security' },
+    { id: 'analytics', label: 'Analytics' },
+    { id: 'tech', label: 'Engineering' },
+    { id: 'general', label: 'General' }
+  ];
+
   modal(`
-    <div class="ref-modal-box">
+    <div class="ref-modal-box" style="max-width:540px;">
       <div class="panel-heading"><span class="feature-icon">${icon('folder')}</span><div><h2>Create New Folder</h2><p>Organize team manuals, technical specs, and documents.</p></div></div>
       <form id="new-folder-form">
-        <label class="login-label"><span>Folder Name</span><input name="name" type="text" required maxlength="120" placeholder="e.g. RAN Operations" autofocus></label>
+        <label class="login-label"><span>Folder Name</span><input name="name" type="text" required maxlength="120" placeholder="e.g. Cloud Operations" autofocus></label>
+        
         <div style="margin:16px 0;">
-          <span style="display:block;font-size:12px;color:#536477;margin-bottom:8px;">Folder Scope & Access</span>
+          <span style="display:block;font-size:12px;color:#536477;margin-bottom:8px;font-weight:600;">Choose 3D Folder Icon</span>
+          <div class="ref-folder-icon-grid" id="new-folder-icon-grid">
+            ${folderIcons.map((opt, i) => `
+              <label class="ref-folder-icon-option ${i === 0 ? 'selected' : ''}">
+                <input type="radio" name="folderColor" value="${opt.id}" ${i === 0 ? 'checked' : ''} style="display:none;">
+                <img src="assets/folders/folder-${opt.id}.svg" alt="${opt.label}" class="ref-icon-preview">
+                <span>${opt.label}</span>
+              </label>
+            `).join('')}
+          </div>
+        </div>
+
+        <div style="margin:16px 0;">
+          <span style="display:block;font-size:12px;color:#536477;margin-bottom:8px;font-weight:600;">Folder Scope & Access</span>
           <label style="display:flex;align-items:center;gap:10px;font-size:13px;margin-bottom:8px;cursor:pointer;">
             <input type="radio" name="isShared" value="true" checked>
             <span><b>Workspace Shared</b> (Visible and accessible to all team members)</span>
@@ -464,6 +489,7 @@ function openNewFolderModal(){
             <span><b>My Personal Drive</b> (Private to you)</span>
           </label>
         </div>
+
         <div class="dialog-actions">
           <button type="button" class="outline" data-action="close-dialog">Cancel</button>
           <button type="submit" class="primary">${icon('check')} Create Folder</button>
@@ -471,46 +497,90 @@ function openNewFolderModal(){
       </form>
     </div>
   `);
-  const form=$('#new-folder-form');
-  if(form){
-    form.onsubmit=async e=>{
+
+  // Handle icon selection highlight
+  const grid = document.getElementById('new-folder-icon-grid');
+  if (grid) {
+    grid.querySelectorAll('.ref-folder-icon-option').forEach(opt => {
+      opt.onclick = () => {
+        grid.querySelectorAll('.ref-folder-icon-option').forEach(o => o.classList.remove('selected'));
+        opt.classList.add('selected');
+        const rad = opt.querySelector('input[type="radio"]');
+        if (rad) rad.checked = true;
+      };
+    });
+  }
+
+  const form = $('#new-folder-form');
+  if (form) {
+    form.onsubmit = async e => {
       e.preventDefault();
-      const name=String(new FormData(form).get('name')||'').trim();
-      const isShared=new FormData(form).get('isShared')==='true';
-      if(!name)return toast('Folder name is required.');
-      try{
-        const res=await fetch('/api/knowledge/folders',{
-          method:'POST',
-          headers:{'content-type':'application/json','x-requested-with':'CloudCoreAI'},
-          body:JSON.stringify({name,isShared})
+      const name = String(new FormData(form).get('name') || '').trim();
+      const isShared = new FormData(form).get('isShared') === 'true';
+      const color = String(new FormData(form).get('folderColor') || 'general');
+      if (!name) return toast('Folder name is required.');
+      try {
+        const res = await fetch('/api/knowledge/folders', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-requested-with': 'CloudCoreAI' },
+          body: JSON.stringify({ name, isShared, color })
         });
-        const data=await res.json().catch(()=>({}));
-        if(!res.ok)throw Error(data.error?.message||'Failed to create folder.');
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw Error(data.error?.message || 'Failed to create folder.');
         $('#dialog')?.close();
         toast(`Folder "${name}" created.`);
         loadKnowledge();
-      }catch(err){toast(err.message);}
+      } catch (err) { toast(err.message); }
     };
   }
 }
 
 function openRenameFolderModal(id, currentName, currentShared){
+  const folder = knowledgeFolders.find(f => f.id === id);
+  const curIcon = folder ? getFolderIconKey(folder) : 'general';
+
+  const folderIcons = [
+    { id: 'server', label: 'Datacenter' },
+    { id: 'partnership', label: 'Partnerships' },
+    { id: 'documents', label: 'Product Docs' },
+    { id: 'cloud', label: 'Cloud / QCloud' },
+    { id: 'security', label: 'Security' },
+    { id: 'analytics', label: 'Analytics' },
+    { id: 'tech', label: 'Engineering' },
+    { id: 'general', label: 'General' }
+  ];
+
   modal(`
-    <div class="ref-modal-box">
-      <div class="panel-heading"><span class="feature-icon">${icon('sliders')}</span><div><h2>Rename Folder</h2><p>Change folder title or sharing scope.</p></div></div>
+    <div class="ref-modal-box" style="max-width:540px;">
+      <div class="panel-heading"><span class="feature-icon">${icon('sliders')}</span><div><h2>Edit Folder</h2><p>Change folder title, 3D icon or sharing scope.</p></div></div>
       <form id="rename-folder-form">
         <label class="login-label"><span>Folder Name</span><input name="name" type="text" required maxlength="120" value="${esc(currentName)}"></label>
+
         <div style="margin:16px 0;">
-          <span style="display:block;font-size:12px;color:#536477;margin-bottom:8px;">Folder Scope</span>
+          <span style="display:block;font-size:12px;color:#536477;margin-bottom:8px;font-weight:600;">Choose 3D Folder Icon</span>
+          <div class="ref-folder-icon-grid" id="edit-folder-icon-grid">
+            ${folderIcons.map((opt) => `
+              <label class="ref-folder-icon-option ${opt.id === curIcon ? 'selected' : ''}">
+                <input type="radio" name="folderColor" value="${opt.id}" ${opt.id === curIcon ? 'checked' : ''} style="display:none;">
+                <img src="assets/folders/folder-${opt.id}.svg" alt="${opt.label}" class="ref-icon-preview">
+                <span>${opt.label}</span>
+              </label>
+            `).join('')}
+          </div>
+        </div>
+
+        <div style="margin:16px 0;">
+          <span style="display:block;font-size:12px;color:#536477;margin-bottom:8px;font-weight:600;">Folder Scope</span>
           <label style="display:flex;align-items:center;gap:10px;font-size:13px;margin-bottom:8px;cursor:pointer;">
-            <input type="radio" name="isShared" value="true" ${currentShared?'checked':''}>
+            <input type="radio" name="isShared" value="true" ${currentShared ? 'checked' : ''}>
             <span><b>Workspace Shared</b> (Team-wide)</span>
           </label>
           <label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer;">
-            <input type="radio" name="isShared" value="false" ${!currentShared?'checked':''}>
+            <input type="radio" name="isShared" value="false" ${!currentShared ? 'checked' : ''}>
             <span><b>My Personal Drive</b> (Private)</span>
           </label>
         </div>
+
         <div class="dialog-actions">
           <button type="button" class="outline" data-action="close-dialog">Cancel</button>
           <button type="submit" class="primary">${icon('check')} Save Changes</button>
@@ -518,25 +588,39 @@ function openRenameFolderModal(id, currentName, currentShared){
       </form>
     </div>
   `);
-  const form=$('#rename-folder-form');
-  if(form){
-    form.onsubmit=async e=>{
+
+  const grid = document.getElementById('edit-folder-icon-grid');
+  if (grid) {
+    grid.querySelectorAll('.ref-folder-icon-option').forEach(opt => {
+      opt.onclick = () => {
+        grid.querySelectorAll('.ref-folder-icon-option').forEach(o => o.classList.remove('selected'));
+        opt.classList.add('selected');
+        const rad = opt.querySelector('input[type="radio"]');
+        if (rad) rad.checked = true;
+      };
+    });
+  }
+
+  const form = $('#rename-folder-form');
+  if (form) {
+    form.onsubmit = async e => {
       e.preventDefault();
-      const name=String(new FormData(form).get('name')||'').trim();
-      const isShared=new FormData(form).get('isShared')==='true';
-      if(!name)return toast('Folder name is required.');
-      try{
-        const res=await fetch(`/api/knowledge/folders/${encodeURIComponent(id)}`,{
-          method:'PATCH',
-          headers:{'content-type':'application/json','x-requested-with':'CloudCoreAI'},
-          body:JSON.stringify({name,isShared})
+      const name = String(new FormData(form).get('name') || '').trim();
+      const isShared = new FormData(form).get('isShared') === 'true';
+      const color = String(new FormData(form).get('folderColor') || 'general');
+      if (!name) return toast('Folder name is required.');
+      try {
+        const res = await fetch(`/api/knowledge/folders/${encodeURIComponent(id)}`, {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json', 'x-requested-with': 'CloudCoreAI' },
+          body: JSON.stringify({ name, isShared, color })
         });
-        const data=await res.json().catch(()=>({}));
-        if(!res.ok)throw Error(data.error?.message||'Failed to rename folder.');
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw Error(data.error?.message || 'Failed to update folder.');
         $('#dialog')?.close();
         toast('Folder updated.');
         loadKnowledge();
-      }catch(err){toast(err.message);}
+      } catch (err) { toast(err.message); }
     };
   }
 }

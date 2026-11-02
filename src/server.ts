@@ -526,7 +526,7 @@ app.patch('/api/knowledge/folders/:id', requireUser, async (req, res) => {
   try {
     const id = String(req.params.id);
     const isPrivileged = ['dev', 'admin'].includes(req.session.user!.role);
-    const updates: { name?: string; isShared?: boolean } = {};
+    const updates: { name?: string; isShared?: boolean; color?: string } = {};
     if (typeof req.body?.name === 'string') {
       const n = req.body.name.trim();
       if (!n || n.length > 120) return res.status(400).json({ error: { code: 'invalid_name', message: 'Folder name must be between 1 and 120 characters.' } });
@@ -534,6 +534,9 @@ app.patch('/api/knowledge/folders/:id', requireUser, async (req, res) => {
     }
     if (typeof req.body?.isShared === 'boolean') {
       updates.isShared = req.body.isShared;
+    }
+    if (typeof req.body?.color === 'string' && req.body.color.trim()) {
+      updates.color = req.body.color.trim();
     }
     const folder = await repository.updateFolder(id, req.session.user!.id, updates, isPrivileged);
     if (!folder) return res.status(404).json({ error: { code: 'not_found', message: 'Folder not found.' } });
