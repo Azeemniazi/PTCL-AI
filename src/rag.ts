@@ -341,6 +341,10 @@ export async function retrieveKnowledgeContext(userId:string,query:string,option
   if(!documents.length)return {contextBlock:'',citations:[],sources:[],coverage:'none'};
   const factual=certificateAnswer(documents,query,new Date().toISOString().slice(0,10))??missingAmountAnswer(documents,query)??responsibilityAnswer(documents,query)??qualifiedFeatureAnswer(documents,query)??availabilityAnswer(documents,query)??serviceOverviewAnswer(documents,query);
   if(factual)documents=factual.documents;
+  const maxDocs = options?.topK ?? 4;
+  if(!factual && documents.length > maxDocs){
+    documents = documents.slice(0, maxDocs);
+  }
   const sources=packEvidence(documents,query);
   const citations=sources.map(s=>({sourceId:s.sourceId,documentId:s.documentId,filename:s.filename,chunkIndex:0,score:0,preview:s.text.slice(0,240)}));
   let directAnswer=factual?.answer;

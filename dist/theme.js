@@ -245,6 +245,55 @@ function refKnowledge() {
     ${activeFolderBanner}
     ${foldersShelf}
 
+    <section class="panel ref-knowledge-ai-panel">
+      <div class="ref-knowledge-ai-header">
+        <div class="ref-knowledge-ai-title">
+          <span class="ref-ai-sparkle-badge">${icon('spark')}</span>
+          <div>
+            <h3>Ask Knowledge Hub with AI</h3>
+            <p>Search, summarize and verify facts grounded in your documents with source citations.</p>
+          </div>
+        </div>
+        <div class="ref-knowledge-ai-scope-indicator">
+          <span class="ref-scope-tag ${activeFolder ? 'folder-scoped' : 'global-scoped'}">
+            ${activeFolder ? `${icon('folder')} Scoped to: <b>${esc(activeFolder.name)}</b>` : `${icon('globe')} All Workspace Documents`}
+          </span>
+          ${(typeof knowledgeChatMessages!=='undefined'&&knowledgeChatMessages.length) ? `<button type="button" class="soft-button small" data-action="clear-knowledge-chat" title="Clear conversation">${icon('trash')} Clear</button>` : ''}
+        </div>
+      </div>
+
+      ${(typeof knowledgeChatMessages!=='undefined'&&knowledgeChatMessages.length) ? `
+        <div class="ref-knowledge-chat-thread" id="knowledge-chat-thread">
+          ${knowledgeChatMessages.map(m => `
+            <div class="ref-knowledge-message ${m.role}">
+              <span class="ref-msg-avatar">${m.role === 'user' ? esc((appUser?.displayName || 'U')[0]) : mark()}</span>
+              <div class="ref-msg-body chat-text" ${m.streaming ? 'id="active-knowledge-stream-bubble"' : ''}>
+                ${m.role === 'user' ? esc(m.content) : renderMarkdown(m.content) + renderCitations(m.citations)}
+                ${m.streaming ? '<span class="typing-cursor"></span>' : ''}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      ` : `
+        <div class="ref-knowledge-ai-suggestions">
+          <small>Suggested questions:</small>
+          <button type="button" class="ref-ai-suggest-pill" data-action="suggest-knowledge-query" data-query="What compliance certifications and standards are documented in our knowledge base?">What compliance certifications do we have?</button>
+          <button type="button" class="ref-ai-suggest-pill" data-action="suggest-knowledge-query" data-query="Summarize data center facilities, power redundancy and cooling specifications.">Data center facilities & specifications</button>
+          <button type="button" class="ref-ai-suggest-pill" data-action="suggest-knowledge-query" data-query="What are the service level agreements (SLA) and uptime commitments?">SLA & uptime commitments</button>
+        </div>
+      `}
+
+      <form class="ref-knowledge-ai-form" id="knowledge-chat-form">
+        <div class="ref-knowledge-ai-input-wrap">
+          ${icon('search')}
+          <input name="knowledgePrompt" id="knowledge-prompt-input" placeholder="${activeFolder ? `Ask anything about "${esc(activeFolder.name)}"... ` : 'Ask anything across your knowledge documents...'}" autocomplete="off" ${Boolean(typeof knowledgeChatLoading!=='undefined'&&knowledgeChatLoading) ? 'disabled' : 'required'}>
+          <button type="submit" class="primary" ${Boolean(typeof knowledgeChatLoading!=='undefined'&&knowledgeChatLoading) ? 'disabled' : ''}>
+            ${(typeof knowledgeChatLoading!=='undefined'&&knowledgeChatLoading) ? 'Searching…' : `${icon('arrow')} Ask AI`}
+          </button>
+        </div>
+      </form>
+    </section>
+
     <section class="panel ref-knowledge-files-panel">
       <div class="ref-knowledge-toolbar">
         ${breadcrumb}
@@ -1002,6 +1051,18 @@ function refBind() {
   document.querySelectorAll('.ref-card-actions').forEach(el=>{
     el.onclick=e=>e.stopPropagation();
   });
+  const kChatForm=$('#knowledge-chat-form');
+  if(kChatForm){
+    kChatForm.onsubmit=e=>{
+      e.preventDefault();
+      const input=kChatForm.querySelector('input[name="knowledgePrompt"]');
+      if(input&&input.value.trim()){
+        const val=input.value.trim();
+        input.value='';
+        if(typeof sendKnowledgeChatMessage==='function')sendKnowledgeChatMessage(val);
+      }
+    };
+  }
   const selectAllDocs=$('#ref-select-all-docs');
   if(selectAllDocs&&typeof selectedKnowledgeDocIds!=='undefined'&&typeof knowledgeDocs!=='undefined'){
     selectAllDocs.indeterminate=selectedKnowledgeDocIds.size>0&&selectedKnowledgeDocIds.size<knowledgeDocs.length;

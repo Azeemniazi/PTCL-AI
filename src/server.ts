@@ -228,12 +228,14 @@ app.post('/api/chat',requireUser,async(req,res)=>{
     let citations: any[] = [];
     let retrieved: RetrievalResult|undefined;
     let retrievalFailed=false;
+    const isExplicitKnowledgeChat = Boolean(use_rag === true || rag_scope);
     const ragQuery = augmentConversationalQuery(cleanMessage, contextHistory);
     const needsKnowledge=shouldQueryKnowledgeBase(ragQuery,rag_scope);
-    if (use_rag !== false && req.session.user && needsKnowledge) {
+
+    if (isExplicitKnowledgeChat && req.session.user && (rag_scope || needsKnowledge || use_rag === true)) {
       try {
         const ragScope = req.body?.rag_scope;
-        const ragRes = await retrieveKnowledgeContext(req.session.user.id, ragQuery, { scope: ragScope });
+        const ragRes = await retrieveKnowledgeContext(req.session.user.id, ragQuery, { scope: ragScope, topK: 4 });
         retrieved=ragRes;
         if (ragRes.contextBlock) {
           docContext = `\n\n${ragRes.contextBlock}`;
@@ -243,29 +245,26 @@ app.post('/api/chat',requireUser,async(req,res)=>{
         retrievalFailed=true;
         logger.warn({ error: err instanceof Error ? err.message : String(err) }, 'Knowledge Hub RAG retrieval failed');
       }
-
-      if (!docContext && !rag_scope) {
-        const userDoc = userDocuments.get(req.session.user.id);
-        if (userDoc) {
-          const snippet = selectRelevantDocContext(userDoc.content, cleanMessage, 4200);
-          if (snippet) {
-            const sources=packEvidence([{id:'chat-upload',filename:userDoc.filename,extractedText:userDoc.content} as any],cleanMessage);
-            docContext=evidenceMessage(sources);
-            citations = [{
-              documentId: 'chat-upload',
-              sourceId:'S1',
-              filename: userDoc.filename,
-              chunkIndex: 0,
-              score: 1.0,
-              preview: snippet.slice(0, 200)
-            }];
-            retrieved={contextBlock:docContext,sources,citations,coverage:sources.every(s=>s.complete)?'complete':'excerpts'};
-          }
+    } else if (!isExplicitKnowledgeChat && req.session.user) {
+      // General AI Assistant chat: check only for ephemeral attached document
+      const userDoc = userDocuments.get(req.session.user.id);
+      if (userDoc) {
+        const snippet = selectRelevantDocContext(userDoc.content, cleanMessage, 4200);
+        if (snippet) {
+          docContext = `\n\n=== ATTACHED DOCUMENT CONTEXT ("${userDoc.filename}") ===\n${snippet}\n=== END ATTACHED DOCUMENT ===\nINSTRUCTION: The user has attached this document to the conversation. Use the information in it to answer their questions accurately.`;
+          citations = [{
+            documentId: 'chat-upload',
+            sourceId:'S1',
+            filename: userDoc.filename,
+            chunkIndex: 0,
+            score: 1.0,
+            preview: snippet.slice(0, 200)
+          }];
         }
       }
     }
 
-    if(retrieved?.sources?.length || (use_rag!==false && rag_scope && (!docContext || retrievalFailed))){
+    if(isExplicitKnowledgeChat && (retrieved?.sources?.length || (rag_scope && (!docContext || retrievalFailed)))){
       beginLiveChat();
       try{
         const reply=retrieved?.directAnswer ? {answer:retrieved.directAnswer,finishReason:'stop',coverage:retrieved.coverage,sourceIds:citations.map(c=>c.sourceId)} : retrieved?.sources?.length ? await generateGroundedReply({
