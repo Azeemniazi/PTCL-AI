@@ -89,7 +89,7 @@ export function certificateAnswer(documents: KnowledgeDocument[], query: string,
   if(/\b(sites?|locations?)\b/i.test(query)&&!/\b(number|expiry|expires|validity|edition|standard)\b/i.test(query))return undefined;
   const family = /\bTIA[-\s]?942\b/i.test(query) ? 'TIA' : /\bISO(?:\/IEC)?\b/i.test(query) ? 'ISO' : /\bPCI(?:\s+DSS)?\b/i.test(query) ? 'PCI' : /\bpartner\b/i.test(query) ? 'partner' : undefined;
   if (!family && !/\b(certificates?|certifications?|expiry|expire|validity)\b/i.test(query)) return undefined;
-  if (!/\b(number|valid\w*|expir\w*|issued|dates?|edition|standards?|which|list|compare|tier|level|certificate|certifications?)\b|میعاد|کب|تاریخ/i.test(query)) return undefined;
+  if (!/\b(number|valid\w*|expir\w*|issued|dates?|edition|standards?|which|list|compare|tier|level|certificates?|certifications?|acess\w*|access\w*|show\w*|view\w*|what|tell|check|see|available)\b|میعاد|کب|تاریخ/i.test(query)) return undefined;
   if (/\b(SOC\s*[123]|HIPAA|GDPR)\b/i.test(query)) return undefined;
   let facts = documents.map(extractCertificateFact).filter((x):x is CertificateFact=>Boolean(x));
   if (family) facts = facts.filter(x=>x.family===family);

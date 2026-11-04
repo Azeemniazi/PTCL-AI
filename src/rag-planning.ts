@@ -17,7 +17,7 @@ export function normalizeKnowledgeText(value: string): string {
 }
 
 function terms(value: string): string[] {
-  const conversational = new Set('can u you me tell please kindly provide get need want about us we hold available'.split(' '));
+  const conversational = new Set('can u you me tell please kindly provide get need want about us we hold available acess access show view find check open see list give display'.split(' '));
   return [...new Set(normalizeKnowledgeText(value).split(' ').filter(t=>t.length>1&&!stop.has(t)&&!conversational.has(t)&&!/^\d+$/.test(t)))];
 }
 
@@ -73,7 +73,8 @@ export function selectKnowledgeDocuments(documents: KnowledgeDocument[], query: 
   const scored=records.map(record=>({ ...record, score:qTerms.reduce((sum,t)=>sum+(record.terms.has(t)?1+Math.log((records.length+1)/(1+(frequencies.get(t)??0))):0),0), anchor:anchors.some(t=>record.terms.has(t)) }));
   let selected=scored.filter(r=>r.anchor).sort((a,b)=>b.score-a.score||b.document.extractedText!.length-a.document.extractedText!.length);
   // Family-wide inventories must enumerate the entire filtered catalog.
-  if(certificateIntent&&!anchors.length&&(!qTerms.length||family)){
+  const nonCertTerms = qTerms.filter(t => !/^(certificat\w*|compliance)$/i.test(t));
+  if(certificateIntent&&!anchors.length&&(!nonCertTerms.length||family)){
     // A category request is an inventory even without the word "all". Do not
     // sample a few semantically similar certificates and present that as coverage.
     selected=scored.filter(r=>Boolean(extractCertificateFact(r.document)));
