@@ -266,6 +266,7 @@ app.post('/api/chat',requireUser,async(req,res)=>{
 
     if(isExplicitKnowledgeChat){
       beginLiveChat();
+      let keepAliveTimer: NodeJS.Timeout | undefined;
       try{
         if(streamRequested){
           res.setHeader('content-type','text/event-stream; charset=utf-8');
@@ -275,10 +276,14 @@ app.post('/api/chat',requireUser,async(req,res)=>{
           res.socket?.setNoDelay(true);
           res.flushHeaders?.();
           res.write(': stream-start\n\n');
+          keepAliveTimer = setInterval(() => {
+            try { res.write(': keep-alive\n\n'); } catch {}
+          }, 5000);
         }
         const reply=retrieved?.directAnswer ? {answer:retrieved.directAnswer,finishReason:'stop',coverage:retrieved.coverage,sourceIds:citations.map(c=>c.sourceId)} : retrieved?.sources?.length ? await generateGroundedReply({
           url:cleanUrl,headers:buildAiHeaders({'content-type':'application/json'}),model:config.ai.momModel||'qwen-30b',question:cleanMessage,history:contextHistory,sources:retrieved.sources,maxTokens:typeof max_tokens==='number'?max_tokens:1200
         }) : {answer:retrievalFailed?'I could not retrieve the knowledge-base evidence. Please try again; I cannot verify a factual answer while retrieval is unavailable.':'The accessible knowledge base did not provide readable evidence for this question in the selected scope. I cannot verify the requested facts from these sources.',finishReason:retrievalFailed?'retrieval_failed':'no_evidence',coverage:'none',sourceIds:[]};
+        if(keepAliveTimer){ clearInterval(keepAliveTimer); keepAliveTimer = undefined; }
         const usedIds=new Set<string>(reply.sourceIds);
         const used=citations.filter(c=>usedIds.has(c.sourceId));
         if('validationIssues' in reply)logger.warn({issues:reply.validationIssues,documentIds:used.map(c=>c.documentId)},'Grounded answer could not pass verification');
@@ -288,7 +293,10 @@ app.post('/api/chat',requireUser,async(req,res)=>{
           res.write('data: [DONE]\n\n');res.end();return;
         }
         return res.json({answer:reply.answer,model:config.ai.momModel,citations:used,finishReason:reply.finishReason,coverage:reply.coverage});
-      }finally{endLiveChat();}
+      }finally{
+        if(keepAliveTimer) clearInterval(keepAliveTimer);
+        endLiveChat();
+      }
     }
 
     if (rag_scope && !docContext) {
