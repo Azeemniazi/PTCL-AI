@@ -1,0 +1,50 @@
+[
+  {
+    "id": "server",
+    "label": "Datacenter & Servers",
+    "desc": "Hardware, infrastructure & DC certifications",
+    "file": "folder-server.svg"
+  },
+  {
+    "id": "partnership",
+    "label": "Partnerships & Legal",
+    "desc": "Contracts, partner letters & agreements",
+    "file": "folder-partnership.svg"
+  },
+  {
+    "id": "documents",
+    "label": "Product Documents",
+    "desc": "Specifications, product docs & manuals",
+    "file": "folder-documents.svg"
+  },
+  {
+    "id": "cloud",
+    "label": "Cloud & Infrastructure",
+    "desc": "QCloud, cloud services & architectures",
+    "file": "folder-cloud.svg"
+  },
+  {
+    "id": "security",
+    "label": "Security & Compliance",
+    "desc": "ISO, PCI DSS & security policies",
+    "file": "folder-security.svg"
+  },
+  {
+    "id": "analytics",
+    "label": "Analytics & Financials",
+    "desc": "Cost models, SLA metrics & reports",
+    "file": "folder-analytics.svg"
+  },
+  {
+    "id": "tech",
+    "label": "Engineering & Tech",
+    "desc": "APIs, software architectures & guides",
+    "file": "folder-tech.svg"
+  },
+  {
+    "id": "general",
+    "label": "General & Operations",
+    "desc": "Operations, workspace shared & uncategorized",
+    "file": "folder-general.svg"
+  }
+]

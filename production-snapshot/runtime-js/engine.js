@@ -1,0 +1,169 @@
+import { randomUUID } from 'node:crypto';
+import { config } from './config.js';
+export const TEAMS_BOT_NAME = 'PTCL AI NOTETAKER';
+export function vexaEngineId(nativeMeetingId) { return `teams:${encodeURIComponent(nativeMeetingId)}`; }
+export function vexaNativeMeetingId(engineId) { if (!engineId.startsWith('teams:'))
+    throw new Error('Unsupported meeting engine identifier.'); return decodeURIComponent(engineId.slice(6)); }
+function mapStatus(value) {
+    switch (String(value ?? '')) {
+        case 'requested':
+        case 'joining': return 'launching';
+        case 'awaiting_admission': return 'lobby';
+        case 'active': return 'recording';
+        case 'stopping': return 'stopping';
+        case 'completed': return 'processing';
+        case 'failed':
+        case 'needs_human_help': return 'failed';
+        default: return undefined;
+    }
+}
+export function vexaSegmentTimeMs(value, absoluteTime, meetingStart) {
+    const meetingStartMs = Date.parse(String(meetingStart ?? ''));
+    const absoluteMs = Date.parse(String(absoluteTime ?? ''));
+    if (Number.isFinite(absoluteMs) && Number.isFinite(meetingStartMs))
+        return Math.max(0, Math.round(absoluteMs - meetingStartMs));
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric))
+        return 0;
+    if (numeric >= 100_000_000 && Number.isFinite(meetingStartMs))
+        return Math.max(0, Math.round(numeric * 1000 - meetingStartMs));
+    return Math.max(0, Math.round(numeric * 1000));
+}
+export function reconcileMeetingStatus(current, upstream) {
+    return current === 'completed' && upstream === 'processing' ? undefined : upstream;
+}
+export function isAuthorizedAudioHost(targetHost) {
+    const vexaHost = config.vexa.baseUrl ? new URL(config.vexa.baseUrl).host : '';
+    const s3Host = config.s3.endpoint ? new URL(config.s3.endpoint).host : '';
+    return Boolean(targetHost && (targetHost === vexaHost || (s3Host && targetHost === s3Host)));
+}
+export class VexaEngine {
+    headers(extra = {}) { return { 'content-type': 'application/json', 'x-api-key': config.vexa.apiKey, ...extra }; }
+    async response(path, init = {}) {
+        const response = await fetch(`${config.vexa.baseUrl}${path}`, { ...init, headers: this.headers(init.headers) });
+        if (!response.ok) {
+            const detail = await response.text().catch(() => '');
+            throw new Error(`Meeting engine returned ${response.status}${detail ? `: ${detail.slice(0, 300)}` : ''}.`);
+        }
+        return response;
+    }
+    async json(path, init = {}) { const response = await this.response(path, init); return response.status === 204 ? undefined : response.json(); }
+    async launch(_meetingId, meetingUrl) {
+        const data = await this.json('/bots', { method: 'POST', body: JSON.stringify({
+                meeting_url: meetingUrl,
+                bot_name: TEAMS_BOT_NAME,
+                recording_enabled: true,
+                transcribe_enabled: true,
+                task: 'transcribe',
+                automatic_leave: { max_wait_for_admission: 1_800_000, max_time_left_alone: 300_000, everyone_left_timeout: 300_000, no_one_joined_timeout: 1_800_000 }
+            }) });
+        const native = String(data?.native_meeting_id ?? '');
+        if (!native)
+            throw new Error('Meeting engine did not return a Teams meeting identifier.');
+        return { engineId: vexaEngineId(native) };
+    }
+    async stop(engineId) { const native = vexaNativeMeetingId(engineId); try {
+        await this.json(`/bots/teams/${encodeURIComponent(native)}`, { method: 'DELETE' });
+    }
+    catch (error) {
+        if (String(error?.message).includes('404') || String(error?.message).includes('No active meeting'))
+            return;
+        throw error;
+    } }
+    async sync(engineId) {
+        const native = vexaNativeMeetingId(engineId), data = await this.json(`/transcripts/teams/${encodeURIComponent(native)}`);
+        const segments = Array.isArray(data?.segments) ? data.segments.filter((s) => s?.completed !== false && typeof s?.text === 'string' && s.text.trim()).map((s) => ({ speakerName: typeof s.speaker === 'string' ? s.speaker : undefined, startMs: vexaSegmentTimeMs(s.start, s.absolute_start_time, data?.start_time), endMs: vexaSegmentTimeMs(s.end ?? s.start, s.absolute_end_time ?? s.absolute_start_time, data?.start_time), text: String(s.text).trim(), confidence: typeof s.confidence === 'number' ? s.confidence : undefined })) : [];
+        let participantData;
+        try {
+            participantData = await this.json(`/meetings/teams/${encodeURIComponent(native)}/participants`);
+        }
+        catch {
+            participantData = undefined;
+        }
+        const rawParticipants = Array.isArray(participantData?.participants) ? participantData.participants : Array.isArray(data?.participants) ? data.participants : Array.isArray(data?.data?.participants) ? data.data.participants : [];
+        const participants = rawParticipants.map((p) => ({ externalId: p?.id == null ? undefined : String(p.id), displayName: String(p?.display_name ?? p?.name ?? p?.speaker ?? 'Unknown participant'), joinedAt: p?.joined_at, leftAt: p?.left_at }));
+        const recordings = Array.isArray(data?.recordings) ? data.recordings : Array.isArray(data?.data?.recordings) ? data.data.recordings : [];
+        const recording = recordings.find((r) => r?.id != null) ?? recordings[0];
+        const failure = data?.data?.last_error ?? data?.data?.error_details;
+        return { status: mapStatus(data?.status), startedAt: data?.start_time, endedAt: data?.end_time, recordingId: recording?.id == null ? undefined : String(recording.id), failureCode: data?.status === 'failed' ? 'meeting_engine_failed' : undefined, failureMessage: failure ? String(typeof failure === 'string' ? failure : JSON.stringify(failure)).slice(0, 500) : undefined, transcript: segments, participants };
+    }
+    async audio(engineId, range) {
+        const state = await this.sync(engineId);
+        if (!state.recordingId)
+            return undefined;
+        const master = await this.json(`/recordings/${encodeURIComponent(state.recordingId)}/master?type=audio`);
+        const raw = master?.raw_url ?? master?.url;
+        if (typeof raw !== 'string')
+            return undefined;
+        const url = raw.startsWith('http') ? raw : `${config.vexa.baseUrl}${raw.startsWith('/') ? '' : '/'}${raw}`;
+        const targetUrl = new URL(url);
+        const vexaHost = config.vexa.baseUrl ? new URL(config.vexa.baseUrl).host : '';
+        const s3Host = config.s3.endpoint ? new URL(config.s3.endpoint).host : '';
+        if (!isAuthorizedAudioHost(targetUrl.host)) {
+            throw new Error(`Unauthorized audio destination host: ${targetUrl.host}`);
+        }
+        const headers = range ? { range } : {};
+        if (targetUrl.host === vexaHost) {
+            headers['x-api-key'] = config.vexa.apiKey;
+        }
+        const response = await fetch(targetUrl.href, { headers });
+        if (!response.ok)
+            throw new Error(`Meeting audio returned ${response.status}.`);
+        return response;
+    }
+    async screenshot(engineId) {
+        if (process.env.SCREENSHOT_SERVICE_URL) {
+            try {
+                const customResp = await fetch(process.env.SCREENSHOT_SERVICE_URL, { signal: AbortSignal.timeout(4000) });
+                if (customResp.ok)
+                    return customResp;
+            }
+            catch { }
+        }
+        if (config.vexa.baseUrl && config.vexa.apiKey && engineId) {
+            try {
+                const native = vexaNativeMeetingId(engineId);
+                const endpoints = [
+                    `${config.vexa.baseUrl}/bots/teams/${encodeURIComponent(native)}/screenshot`,
+                    `${config.vexa.baseUrl}/bots/teams/${encodeURIComponent(native)}/screen-share`,
+                    `${config.vexa.baseUrl}/bots/teams/${encodeURIComponent(native)}/screen`
+                ];
+                for (const ep of endpoints) {
+                    try {
+                        const upstream = await fetch(ep, {
+                            headers: { 'x-api-key': config.vexa.apiKey },
+                            signal: AbortSignal.timeout(3500)
+                        });
+                        if (upstream.ok)
+                            return upstream;
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+        }
+        const primaryPort = (config.vexa.baseUrl.includes(':8056') || config.nodeEnv === 'production') ? '8057' : '18058';
+        try {
+            const response = await fetch(`http://127.0.0.1:${primaryPort}/screenshot`, { signal: AbortSignal.timeout(4000) });
+            if (response.ok)
+                return response;
+        }
+        catch { }
+        try {
+            const altPort = primaryPort === '8057' ? '18058' : '8057';
+            const fallback = await fetch(`http://127.0.0.1:${altPort}/screenshot`, { signal: AbortSignal.timeout(2000) });
+            if (fallback.ok)
+                return fallback;
+        }
+        catch { }
+        return undefined;
+    }
+}
+class DevelopmentEngine {
+    async launch() { return { engineId: `dev_${randomUUID()}` }; }
+    async stop() { }
+    async sync() { return { transcript: [], participants: [] }; }
+    async audio() { return undefined; }
+    async screenshot() { return undefined; }
+}
+export const meetingEngine = config.vexa.baseUrl && config.vexa.apiKey ? new VexaEngine() : new DevelopmentEngine();
