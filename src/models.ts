@@ -60,6 +60,9 @@ export interface KnowledgeDocument {
   storagePath: string;
   isShared: boolean;
   status: 'ready' | 'indexing' | 'failed';
+  indexError?: string;
+  filingLocation?: { region?: string; site?: string; verifiedFolderId?: string; aliases?: string[] };
+  contentHash?: string;
   extractedText?: string;
   tokenCount?: number;
   createdAt: string;

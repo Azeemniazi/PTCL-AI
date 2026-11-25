@@ -355,6 +355,30 @@ export function extractDocumentText(filename: string, bytes: Buffer): string {
       return bytes.toString('utf8').trim();
     }
     if (bytes.length >= 4 && bytes.readUInt32LE(0) === 0x04034b50) {
+      if (lower.endsWith('.xlsx')) {
+        try {
+          const sheets = parseXlsxSheets(bytes);
+          if (sheets && sheets.length > 0) {
+            const mdSheets: string[] = [];
+            for (const sheet of sheets) {
+              const nonEmptyRows = sheet.rows.filter(r => r.some(cell => (cell ?? '').trim().length > 0));
+              if (!nonEmptyRows.length) continue;
+              const width = Math.max(...nonEmptyRows.map(r => r.length), 1);
+              const fmtRow = (r: string[]) =>
+                `| ${Array.from({ length: width }, (_, i) => String(r[i] ?? '').replace(/\s+/g, ' ').replace(/\|/g, '\\|').trim()).join(' | ')} |`;
+              const sep = `| ${Array.from({ length: width }, () => '---').join(' | ')} |`;
+              const lines = [
+                `## ${sheet.name}`,
+                fmtRow(nonEmptyRows[0]!),
+                sep,
+                ...nonEmptyRows.slice(1).map(fmtRow)
+              ];
+              mdSheets.push(lines.join('\n'));
+            }
+            if (mdSheets.length > 0) return mdSheets.join('\n\n').trim();
+          }
+        } catch {}
+      }
       try {
         const zipText = extractZipXmlText(bytes);
         if (zipText) return zipText;

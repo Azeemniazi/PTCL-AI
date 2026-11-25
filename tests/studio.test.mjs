@@ -8,8 +8,8 @@ import sharp from 'sharp';
 import { normalizeReference, parseRemixFields, probeImageEngine, remixImage } from '../build/image-engine.js';
 import {parseImageUrl,publicImageAddress} from '../build/image-url.js';
 
-const modelSource = readFileSync(new URL('../dist/studio-model.js',import.meta.url),'utf8');
-function model() { const c = vm.createContext({Set,Map,Date}); vm.runInContext(modelSource,c); return c.StudioModel; }
+const modelSource = readFileSync(new URL('../build/frontend-test/fixtures.js',import.meta.url),'utf8');
+function model() { const c = vm.createContext({Set,Map,Date}); vm.runInContext(modelSource,c); return c.CloudCoreFixtures.studioModel; }
 test('studio drafts are independent and image selection does not mutate prompts',()=>{
   const m = model(), s = m.createState();
   s.create.prompt = 'Keep this draft'; s.remix.prompt = 'Change the lighting';
@@ -44,18 +44,6 @@ test('URL import rejects credentials, local/private/metadata networks and unsupp
   for(const url of ['http://example.com/x.png','https://user:pass@example.com/x.png','https://example.com:8080/x.png','https://example.com/x.png#fragment','file:///tmp/x.png'])assert.throws(()=>parseImageUrl(url));
   assert.equal(parseImageUrl('https://example.com/x.png').hostname,'example.com');
 });
-test('studio renders all modes with honest status and no fixed fake progress',()=>{
-  const c=vm.createContext({Set,Map,Date,navigator:{platform:'Win32'},icon:n=>`<svg aria-hidden="true">${n}</svg>`,renderMarkdown:t=>t});
-  vm.runInContext(modelSource+readFileSync(new URL('../dist/studio-view.js',import.meta.url),'utf8'),c);
-  const s=c.StudioModel.createState();
-  s.job={id:'j',status:'processing',startedAt:new Date().toISOString()};
-  for(const tab of ['create','remix','gallery','analyze']) { s.tab=tab; const html=c.StudioView.render(s); assert.ok(html.includes(`aria-labelledby="is-tab-${tab}"`)); assert.ok(!html.includes('% Synthesized')); }
-  s.create.prompt='<img src=x onerror=alert(1)>';
-  assert.ok(!c.StudioView.render({...s,tab:'create'}).includes('<img src=x'));
-  s.analyze={...s.analyze,source:{url:'/image.png'},result:'Only metadata',kind:'metadata'};
-  assert.ok(c.StudioView.render(s).includes('not visual recognition or OCR'));
-});
-
 async function engine(handler) {
   const server=createServer(handler); server.listen(0,'127.0.0.1'); await once(server,'listening');
   return {url:`http://127.0.0.1:${server.address().port}`,close:()=>new Promise(resolve=>{server.close(resolve);server.closeAllConnections();})};

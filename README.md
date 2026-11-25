@@ -7,7 +7,7 @@ A responsive CloudCore AI workspace with a self-hosted Microsoft Teams meeting-n
 Requires Node.js 22. Development mode uses an in-memory repository and a mock meeting engine when service URLs are absent.
 
 ```sh
-npm install
+npm ci
 npm run build
 npm start
 ```
@@ -52,7 +52,7 @@ The hero uses one generated background derived from the supplied first reference
 
 Hero generation used the built-in imagegen tool. Prompt: Recreate the reference’s photoreal PTCL building, Islamabad mountains, landscaped grounds and curving roadway as a 16:9 background; building right, pale mint-white mist across left 35%; remove all UI and text except the physical PTCL sign. Saved asset: `dist/assets/hero.png`.
 
-Frontend source and deployable assets are in `dist/`; this directory is authored source. The TypeScript service is in `src/` and compiles to `build/`. `server.cjs` remains a static preview only; the functional deployment uses `build/server.js` or Docker Compose.
+The React and TypeScript frontend is in `frontend/`. Vite builds the browser entry into `dist/react/` and updates `dist/index.html`. Public images and styles are in `dist/`. The TypeScript service in `src/` compiles to `build/`. Run `npm ci` and `npm run check` from a fresh checkout. Docker builds both parts from source.
 
 ## Brand asset
 

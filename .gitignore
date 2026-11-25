@@ -14,3 +14,4 @@ vexa-cloud.env
 *.log
 artifacts/
 data/
+dist/react/

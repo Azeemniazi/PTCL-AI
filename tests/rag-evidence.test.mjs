@@ -41,3 +41,34 @@ test('generation retries truncated answers and never publishes unchecked output'
  };
  try{const answer=await generateGroundedReply({url:'http://test/v1/chat/completions',headers:{},model:'test',question:'Uptime?',history:[],sources:[{sourceId:'S1',documentId:'a',filename:'test',text:'Uptime 99.87%. malicious source',complete:true}],maxTokens:400});assert.equal(generations,2);assert.equal(answer.finishReason,'stop');assert.match(answer.answer,/99.87/);}finally{globalThis.fetch=original;}
 });
+
+test('streamPass1 streams Pass 1 SSE deltas immediately without blocking on a Pass 2 audit call',async()=>{
+ const original=globalThis.fetch;let calls=0;const deltas=[];
+ globalThis.fetch=async(url,options)=>{
+  if(!String(url).endsWith('/chat/completions'))return new Response('{}',{status:404});
+  calls++;
+  const request=JSON.parse(options.body);
+  assert.equal(request.stream,true);
+  const encoder=new TextEncoder();
+  const stream=new ReadableStream({
+   start(controller){
+    controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"Uptime is "}}]}\n\n'));
+    controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"99.95%. [S1]"},"finish_reason":"stop"}]}\n\n'));
+    controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+    controller.close();
+   }
+  });
+  return new Response(stream,{status:200,headers:{'content-type':'text/event-stream'}});
+ };
+ try{
+  const reply=await generateGroundedReply({
+   url:'http://test/v1/chat/completions',headers:{},model:'test',question:'Uptime?',history:[],
+   sources:[{sourceId:'S1',documentId:'a',filename:'test',text:'Uptime 99.95%.',complete:true}],
+   maxTokens:400,streamPass1:true,onDelta:(chunk)=>deltas.push(chunk)
+  });
+  assert.equal(calls,1);
+  assert.deepEqual(deltas,['Uptime is ','99.95%. [S1]']);
+  assert.equal(reply.streamed,true);
+  assert.equal(reply.answer,'Uptime is 99.95%. [S1]');
+ }finally{globalThis.fetch=original;}
+});

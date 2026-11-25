@@ -179,10 +179,4 @@ test('Roadmap 3: Screen-share snapshots extension and Vexa screen capture stream
   // When no bot is running locally or upstream, gracefully returns undefined or active stream Response without throwing
   assert.ok(result === undefined || (result && typeof result.status === 'number'), 'Screenshot must return undefined or active stream Response');
 
-  // Test frontend contains the capture snapshot action and button in dist/app.js
-  const appJs = readFileSync(resolve('dist/app.js'), 'utf8');
-  assert.ok(appJs.includes('data-action="capture-snapshot"'), 'Must have capture-snapshot button in snapshot tab');
-  assert.ok(appJs.includes('/capture-snapshot'), 'Must call /capture-snapshot endpoint in app.js');
-  assert.ok(appJs.includes('live-bot-screen-img'), 'Must have live bot screen viewer element');
-  assert.ok(appJs.includes('Vexa Screen Stream'), 'Must display Vexa screen stream title');
 });

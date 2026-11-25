@@ -8,8 +8,13 @@ folder tree.
 ## Runtime contracts
 
 - Node.js 22 or later; run `npm run check` before releasing changes.
-- Poppler `pdftotext`, `pdfinfo` and `pdftoppm` must be on the application host's
-  PATH. Raw PDF font streams are not an extraction fallback.
+- Install Poppler (`poppler-utils`) on the application's PATH or stage the
+  distribution packages under `runtime/poppler` beside the application build.
+  The app checks `pdftotext`, `pdfinfo` and `pdftoppm` at startup.
+- Tesseract and its English language data handle scanned pages locally. The
+  configured vision service is a fallback when local OCR returns no usable text.
+- ZIP and RAR processing uses Linux, Python 3 and libarchive. The container
+  build includes these dependencies.
 - The deployed answer model has an 8,192-token context. The application counts
   its chat template with the model's tokenizer where supported and reserves
   space for the answer and grounding review.
@@ -21,16 +26,21 @@ folder tree.
 
 ## Ingestion and recovery
 
+Resumable Knowledge Hub imports accept up to 2 GiB per file and per import.
+Files over 250 MiB keep their originals available for download. Search indexing
+and spreadsheet previews are limited to 250 MiB per file.
+
 An upload saves its original and an `indexing` record before acknowledging the
 request. Extraction/OCR and embeddings run in a serialized background queue.
 Only `ready` documents can supply evidence. An unreadable page, truncated OCR
 or failed embedding produces `failed` status rather than a partial ready index.
-PDF OCR has an explicit 50-page limit; larger scanned files require a reviewed
-limit/configuration change or smaller source files.
+PDF OCR can process up to 50 scanned pages per document. Split larger scans or
+review that limit before retrying them.
 
 The Knowledge Hub refreshes processing status. Owners and administrators can
-use **Retry processing**, which calls
-`POST /api/knowledge/documents/:id/reindex`. Pending records resume after an
+use **Retry indexing** on an individual file or in the Knowledge Hub toolbar.
+The toolbar action queues failed, supported files in the current folder and its
+subfolders, or across the selected drive when used at its root. Pending records resume after an
 app restart. Index replacement uses a database transaction, preserving the old
 chunks if replacement fails. Pending/failed sources are excluded from answers.
 

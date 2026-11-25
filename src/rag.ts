@@ -3,15 +3,12 @@ import { config } from './config.js';
 import { selectKnowledgeDocuments, sourceTextQuality } from './rag-planning.js';
 import { assistantIdentityAnswer, normalizeConversationIntent } from './rag-conversation.js';
 import { certificateAnswer, missingAmountAnswer } from './rag-facts.js';
-import { responsibilityAnswer,qualifiedFeatureAnswer,availabilityAnswer,serviceOverviewAnswer } from './rag-tables.js';
+import { responsibilityAnswer,qualifiedFeatureAnswer,availabilityAnswer,serviceOverviewAnswer,slaMatrixAnswer,dataCenterSpecsAnswer,serviceSpecsAnswer,genericTableAnswer,bankResourceName,bankResourceAnswer } from './rag-tables.js';
+import { namedCustomerLookup } from './knowledge-filing.js';
 import { packEvidence, evidenceMessage, type EvidenceSource } from './rag-evidence.js';
 import type { KnowledgeChunk, RetrievedChunk } from './models.js';
 import { repository } from './repository.js';
 import pino from 'pino';
-import { execFileSync } from 'node:child_process';
-import { writeFileSync, readFileSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
@@ -266,40 +263,6 @@ export async function extractDocumentImageOcr(
   }
 }
 
-/**
- * Render PDF pages to high-resolution PNGs and transcribe via Qwen3-VL 30B multimodal vision.
- */
-export async function extractPdfOcr(pdfBuffer: Buffer, maxPages = 50): Promise<string> {
-  const workdir=mkdtempSync(join(tmpdir(),'cloudcore-ocr-'));
-  const tempPdf = join(workdir,'source.pdf');
-  const tempPrefix = join(workdir,'page');
-  try {
-    writeFileSync(tempPdf, pdfBuffer);
-    const info=execFileSync('pdfinfo',[tempPdf],{encoding:'utf8',timeout:10000});
-    const pages=Number(/^Pages:\s+(\d+)/m.exec(info)?.[1]);
-    if(!Number.isInteger(pages)||pages<1||pages>maxPages)throw new Error(`OCR requires 1-${maxPages} pages; no partial index will be published`);
-    execFileSync('pdftoppm',['-png','-r','120',tempPdf,tempPrefix],{timeout:60000});
-    const rendered=readdirSync(workdir).filter(name=>/^page-\d+\.png$/.test(name)).sort((a,b)=>Number(a.match(/\d+/)![0])-Number(b.match(/\d+/)![0]));
-    if(rendered.length!==pages)throw new Error('PDF rendering did not produce every page');
-    const ocrPages: string[] = [];
-    for (const [index,name] of rendered.entries()) {
-      const pagePath=join(workdir,name);
-          const digitalText=execFileSync('pdftotext',['-f',String(index+1),'-l',String(index+1),'-layout','-enc','UTF-8',tempPdf,'-'],{encoding:'utf8',timeout:10000}).trim();
-          if(digitalText.length>=10&&sourceTextQuality(digitalText).usable){ocrPages.push(`--- Page ${index+1} ---\n${digitalText}`);continue;}
-          const pageBuffer = readFileSync(pagePath);
-          const pageText = await extractDocumentImageOcr(pageBuffer, 'image/png');
-          if(!sourceTextQuality(pageText).usable)throw new Error(`OCR failed for page ${index+1}`);
-          ocrPages.push(`--- Page ${index+1} ---\n${pageText.trim()}`);
-    }
-    return ocrPages.join('\n\n');
-  } catch (err) {
-    logger.warn({ error: String(err) }, 'PDF OCR rendering failed');
-    return '';
-  } finally {
-    rmSync(workdir,{recursive:true,force:true});
-  }
-}
-
 export interface RetrievalOptions {
   scope?: {
     mode: 'all' | 'folder' | 'document';
@@ -327,33 +290,50 @@ export interface RetrievalResult {
   coverage?: 'complete'|'excerpts'|'none';
 }
 
+function evidenceResult(documents: Parameters<typeof packEvidence>[0],query: string,directAnswer?: string): RetrievalResult{
+  const sources=packEvidence(documents,query);
+  const citations=sources.map(s=>({sourceId:s.sourceId,documentId:s.documentId,filename:s.filename,chunkIndex:0,score:0,preview:s.text.slice(0,240)}));
+  return {contextBlock:evidenceMessage(sources),sources,citations,directAnswer,coverage:sources.every(s=>s.complete)?'complete':'excerpts'};
+}
+
 export async function retrieveKnowledgeContext(userId:string,query:string,options?:RetrievalOptions):Promise<RetrievalResult>{
   const catalog=await repository.listKnowledgeSources(userId,options?.scope);
   const ready=catalog.filter(d=>d.status==='ready');
   if(!ready.length)return {contextBlock:'',citations:[],sources:[],coverage:'none'};
+  const customerLookup = /^(?:please\s+)?(?:find|list|show|give|get|lookup|look up|which)\b/i.test(query) &&
+    /\b(?:resources|files|documents|records|contracts|purchase orders|tickets)\b/i.test(query) &&
+    !/\b(?:compare|calculate|between|versus|expiry|expiration|deadline|renewal date|how many)\b/i.test(query);
+  const customer = bankResourceName(query) ?? (customerLookup
+    ? namedCustomerLookup(query, await repository.listFolders(userId, 'shared')) : undefined);
+  if(customer){
+    const exact=bankResourceAnswer(ready.filter(d=>sourceTextQuality(d.extractedText??'').usable),customer);
+    return exact ? {...evidenceResult(exact.documents,query,exact.answer),coverage:'excerpts'} :
+      {contextBlock:'',citations:[],sources:[],coverage:'none'};
+  }
   const selection=selectKnowledgeDocuments(ready,query,Boolean(options?.scope&&options.scope.mode!=='all'));
   let documents=selection.documents;
+  const usableReady=documents.length?[]:ready.filter(d=>sourceTextQuality(d.extractedText??'').usable);
+  let preMatchedFactual=documents.length?undefined:(slaMatrixAnswer(usableReady,query)??genericTableAnswer(usableReady,query));
+  if(preMatchedFactual)documents=preMatchedFactual.documents;
   if(!documents.length){
     const legacy=await retrieveHybridKnowledgeContext(userId,query,options);
     const ids=new Set(legacy.citations.map(c=>c.documentId));
     documents=ready.filter(d=>ids.has(d.id)&&sourceTextQuality(d.extractedText??'').usable);
   }
   if(!documents.length)return {contextBlock:'',citations:[],sources:[],coverage:'none'};
-  const factual=certificateAnswer(documents,query,new Date().toISOString().slice(0,10))??missingAmountAnswer(documents,query)??responsibilityAnswer(documents,query)??qualifiedFeatureAnswer(documents,query)??availabilityAnswer(documents,query)??serviceOverviewAnswer(documents,query);
+  const factual=preMatchedFactual??certificateAnswer(documents,query,new Date().toISOString().slice(0,10))??missingAmountAnswer(documents,query)??responsibilityAnswer(documents,query)??qualifiedFeatureAnswer(documents,query)??availabilityAnswer(documents,query)??serviceOverviewAnswer(documents,query)??slaMatrixAnswer(documents,query)??dataCenterSpecsAnswer(documents,query)??serviceSpecsAnswer(documents,query)??genericTableAnswer(documents,query);
   if(factual)documents=factual.documents;
   const maxDocs = options?.topK ?? 4;
   if(!factual && documents.length > maxDocs){
     documents = documents.slice(0, maxDocs);
   }
-  const sources=packEvidence(documents,query);
-  const citations=sources.map(s=>({sourceId:s.sourceId,documentId:s.documentId,filename:s.filename,chunkIndex:0,score:0,preview:s.text.slice(0,240)}));
   let directAnswer=factual?.answer;
   if(factual?.kind==='certificate'&&selection.exhaustive){
     const family=/\bTIA[-\s]?942\b/i.test(query)?/TIA[-_\s]?942|CDDT\s*H9/i:/\bISO\b/i.test(query)?/\bISO\b/i:/\bPCI\b/i.test(query)?/\bPCI\b/i:/certificate|partner|TIA|ISO|PCI/i;
     const unavailable=catalog.filter(d=>family.test(d.filename)&&(d.status!=='ready'||!sourceTextQuality(d.extractedText??'').usable));
     if(unavailable.length)directAnswer+=`\n\n**Incomplete inventory:** ${unavailable.length} matching source document(s) are still indexing, failed, or unreadable. Complete coverage of the uploaded collection is not established.`;
   }
-  return {contextBlock:evidenceMessage(sources),sources,citations,directAnswer,coverage:sources.every(s=>s.complete)?'complete':'excerpts'};
+  return evidenceResult(documents,query,directAnswer);
 }
 
 /**

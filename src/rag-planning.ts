@@ -12,7 +12,9 @@ export function normalizeKnowledgeText(value: string): string {
     .replace(/\b(?:colocation|facilities|facility)\b/g,'datacenter')
     .replace(/\bobject\s+storage\b/g,'obs')
     .replace(/\bbackup\s+as\s+a\s+service\b/g,'baas')
+    .replace(/\bcloud\s+backup\b/g,'baas')
     .replace(/\bdisaster\s+recovery\s+as\s+a\s+service\b/g,'draas')
+    .replace(/\b(?:virtual\s+data\s*cent(?:er|re)|virtual\s+machines?|\bvms?\b|\bcompute\b|\bvdc\b)\b/g,'iaas')
     .replace(/[^\p{L}\p{N}_]+/gu,' ').replace(/\s+/g,' ').trim();
 }
 

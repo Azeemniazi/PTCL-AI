@@ -114,7 +114,11 @@ button:disabled{opacity:.55;cursor:wait}
 @media(max-width:760px){.ref-home-cards.home-cards>a.ref-capability{padding:14px}}
 #toast{position:fixed;top:20px;right:24px;left:auto;bottom:auto;transform:translateY(-12px);background:#0c2e21;color:#f1fbf4;border:1px solid #2b6b4d;box-shadow:0 12px 32px #001a1145;z-index:99999;cursor:pointer;max-width:min(420px,calc(100vw - 32px));line-height:1.45}
 #toast.show{opacity:1;transform:translateY(0)}
-.composer-attachments{display:flex;flex-wrap:wrap;gap:8px;width:100%;margin-bottom:8px;padding:2px 4px}
+.composer.has-attachments>div{flex-wrap:wrap;row-gap:6px;padding-top:10px}
+.composer-attachments{display:flex;flex-wrap:wrap;gap:8px;flex:0 0 100%;width:100%;margin-bottom:4px;padding:2px 4px}
+.composer.has-attachments input{flex:1 1 0%;width:auto;min-width:120px}
+.composer.has-attachments .icon-button{flex-shrink:0}
+.ref-assistant-empty .composer.has-attachments input{flex:1 0 100%;width:100%}
 .attachment-chip{display:inline-flex;align-items:center;gap:7px;padding:5px 10px;border-radius:20px;font-size:12px;background:#e8f6ea;color:#083f28;border:1px solid #bddfc4;max-width:100%}
 .attachment-chip b{font-weight:600;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .attachment-chip small{font-size:10px;opacity:.8}
@@ -125,6 +129,7 @@ button:disabled{opacity:.55;cursor:wait}
 .composer-chip-thumb{width:26px;height:26px;border-radius:6px;object-fit:cover;flex-shrink:0;border:1px solid #75ba8d}
 .chat-msg-image-wrap{margin-bottom:12px;border-radius:12px;overflow:hidden;background:#0d1410;border:1px solid #cce2d3;max-width:360px;cursor:pointer;box-shadow:0 3px 12px rgba(0,50,25,0.06);transition:all .18s ease}
 .chat-msg-image-wrap:hover{border-color:#53aa73;box-shadow:0 6px 18px rgba(0,50,25,0.12);transform:translateY(-1px)}
+.assistant-image-preview{display:block;width:fit-content;padding:0;text-align:left}
 .chat-msg-image{display:block;width:100%;max-height:240px;object-fit:cover;background:#0d1410}
 .chat-msg-image-footer{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:#f3faf5;border-top:1px solid #e1eee4;font-size:11px;color:#1e4732}
 .chat-msg-image-name{display:inline-flex;align-items:center;gap:6px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -974,6 +979,17 @@ dialog:has(.ref-viewer-modal){max-width:94vw;width:94vw;padding:0;border:0;borde
   gap: 14px;
   position: relative;
 }
+.ref-knowledge-folder-open {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 14px;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+}
 .ref-folder-3d-wrap {
   width: 58px;
   height: 50px;
@@ -997,7 +1013,8 @@ dialog:has(.ref-viewer-modal){max-width:94vw;width:94vw;padding:0;border:0;borde
   flex: 1;
   min-width: 0;
 }
-.ref-folder-card-content h4 {
+.ref-knowledge-folder-name {
+  display: block;
   font-size: 14px;
   font-weight: 700;
   color: #0f172a;
@@ -1263,4 +1280,387 @@ dialog:has(.ref-viewer-modal){max-width:94vw;width:94vw;padding:0;border:0;borde
 }
 .ref-folder-icon-option.selected span {
   color: #005437;
+}
+.ref-folder-icon-option:focus-within {
+  outline: 2px solid #005437;
+  outline-offset: 2px;
+}
+.ref-folder-icon-option input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.ref-knowledge-folder-fields {
+  min-width: 0;
+  padding: 0;
+  margin: 16px 0;
+  border: 0;
+}
+.ref-knowledge-folder-fields legend {
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.ref-knowledge-folder-fields > label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.ref-knowledge-upload-files {
+  max-height: 180px;
+  overflow-y: auto;
+  margin: 12px 0;
+  padding: 0;
+  list-style: none;
+}
+.ref-knowledge-upload-files li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  margin-bottom: 6px;
+  border: 1px solid #e2ede6;
+  border-radius: 8px;
+  background: #f8faf9;
+  font-size: 12px;
+}
+.ref-knowledge-upload-files li > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ref-knowledge-upload-files li > button {
+  flex: 0 0 24px;
+}
+.ref-knowledge-upload-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  gap: 12px;
+  margin: 14px 0;
+}
+
+
+/* ==========================================================================
+   CloudCore AI — Enterprise Micro-Interaction System
+   Principles: Ease-out entrances, 20% shorter exits, scale(0.95) modals,
+   28ms capped row/card/citation staggers, scale(0.97) press, success pulse,
+   ease-in-out moves, zero bounce, streaming reveal mask, icon blur crossfade.
+   ========================================================================== */
+:root {
+  --cc-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --cc-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --cc-ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --cc-dur-enter: 200ms;
+  --cc-dur-exit: 155ms;
+  --cc-dur-move: 210ms;
+  --cc-dur-press: 85ms;
+}
+
+/* #1 Ease-out entrances + #13 No bounce (scoped strictly via JS state tracker) */
+@keyframes cc-fade-rise {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes cc-row-enter {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes cc-modal-open {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes cc-modal-close {
+  from {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.96) translateY(4px);
+  }
+}
+
+@keyframes cc-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes cc-backdrop-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes cc-success-pulse {
+  0% {
+    box-shadow: 0 12px 32px rgba(0, 26, 17, 0.27), 0 0 0 0 rgba(34, 197, 94, 0.55);
+  }
+  65% {
+    box-shadow: 0 12px 32px rgba(0, 26, 17, 0.27), 0 0 0 10px rgba(34, 197, 94, 0);
+  }
+  100% {
+    box-shadow: 0 12px 32px rgba(0, 26, 17, 0.27), 0 0 0 0 rgba(34, 197, 94, 0);
+  }
+}
+
+@keyframes cc-btn-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.45); }
+  100% { box-shadow: 0 0 0 9px rgba(16, 185, 129, 0); }
+}
+
+@keyframes cc-icon-crossfade {
+  0% {
+    opacity: 0;
+    filter: blur(2.5px);
+    transform: scale(0.84);
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0);
+    transform: scale(1);
+  }
+}
+
+@keyframes cc-stream-mask-reveal {
+  from {
+    opacity: 0.72;
+    mask-image: linear-gradient(180deg, #000 55%, transparent 100%);
+    -webkit-mask-image: linear-gradient(180deg, #000 55%, transparent 100%);
+  }
+  to {
+    opacity: 1;
+    mask-image: linear-gradient(180deg, #000 100%, #000 100%);
+    -webkit-mask-image: linear-gradient(180deg, #000 100%, #000 100%);
+  }
+}
+
+/* Route entrance (only on actual route change) */
+.workspace-main.cc-route-enter {
+  animation: cc-fade-rise var(--cc-dur-enter) var(--cc-ease-out) both;
+}
+
+/* Chat messages (only newly added messages) */
+.message.cc-msg-enter,
+.ref-knowledge-message.cc-msg-enter {
+  animation: cc-fade-rise 210ms var(--cc-ease-out) both;
+}
+
+/* #3 Stagger list rows & 3D folder cards (~28ms, capped) + #6 Settle citations */
+.cc-stagger-enter {
+  animation: cc-row-enter 190ms var(--cc-ease-out) both;
+  animation-delay: calc(var(--cc-stagger-i, 0) * 28ms);
+}
+
+.citation-chip.cc-citation-settle {
+  animation: cc-row-enter 180ms var(--cc-ease-out) both;
+  animation-delay: calc(80ms + var(--cc-stagger-i, 0) * 26ms);
+}
+
+/* #2 150-250ms + #10 Start at 0.95 + #15 Exits 20% shorter for <dialog> modals */
+dialog[open] {
+  animation: cc-modal-open var(--cc-dur-enter) var(--cc-ease-out) both;
+  transform-origin: center center;
+}
+dialog[open]::backdrop {
+  animation: cc-backdrop-in 180ms var(--cc-ease-out) both;
+}
+dialog.cc-closing {
+  animation: cc-modal-close var(--cc-dur-exit) var(--cc-ease-exit) both;
+}
+dialog.cc-closing::backdrop {
+  animation: cc-backdrop-out var(--cc-dur-exit) var(--cc-ease-exit) both;
+}
+
+/* Toast: crisp 190ms enter, 150ms exit, #8 green pulse on success */
+#toast {
+  transition: opacity var(--cc-dur-exit) var(--cc-ease-exit),
+              transform var(--cc-dur-exit) var(--cc-ease-exit);
+  transform: translateY(-10px) scale(0.96);
+}
+#toast.show {
+  transition: opacity var(--cc-dur-enter) var(--cc-ease-out),
+              transform var(--cc-dur-enter) var(--cc-ease-out);
+  transform: translateY(0) scale(1);
+}
+#toast.show.cc-toast-success {
+  animation: cc-success-pulse 650ms var(--cc-ease-out) 1;
+}
+
+/* #4 Scale to 0.97 on press (tactile executive click feel, no bounce) */
+.primary,
+.outline,
+.soft-button,
+.send,
+.icon-button,
+.ref-btn-primary,
+.ref-btn-outline,
+.ref-ask-ai-btn,
+.ref-ai-hero-pill,
+.ref-page-btn,
+.ref-type-pills-modern button,
+.ref-knowledge-scope-tabs button,
+.ref-folder-card-modern,
+.ref-assistant-option,
+.ref-assistant-shortcuts button,
+.ref-assistant-shortcuts a,
+.ref-lime-button,
+.ref-glass-button,
+.citation-chip {
+  transition: transform var(--cc-dur-move) var(--cc-ease-in-out),
+              background-color var(--cc-dur-move) var(--cc-ease-in-out),
+              border-color var(--cc-dur-move) var(--cc-ease-in-out),
+              box-shadow var(--cc-dur-move) var(--cc-ease-in-out),
+              color var(--cc-dur-move) var(--cc-ease-in-out);
+}
+
+.primary:active:not(:disabled),
+.outline:active:not(:disabled),
+.soft-button:active:not(:disabled),
+.send:active:not(:disabled),
+.icon-button:active:not(:disabled),
+.ref-btn-primary:active:not(:disabled),
+.ref-btn-outline:active:not(:disabled),
+.ref-ask-ai-btn:active:not(:disabled),
+.ref-ai-hero-pill:active:not(:disabled),
+.ref-page-btn:active:not(:disabled),
+.ref-type-pills-modern button:active:not(:disabled),
+.ref-knowledge-scope-tabs button:active:not(:disabled),
+.ref-folder-card-modern:active,
+.ref-assistant-option:active,
+.ref-assistant-shortcuts button:active,
+.ref-assistant-shortcuts a:active,
+.ref-lime-button:active,
+.ref-glass-button:active,
+.citation-chip:active {
+  transform: scale(0.97);
+  transition-duration: var(--cc-dur-press);
+  transition-timing-function: var(--cc-ease-out);
+}
+
+/* #9 Ease-in-out for navigation & sidebar moves */
+.ref-sidebar nav a,
+.ref-sidebar-user,
+.ref-history-row,
+.meeting-row,
+.ref-activity-row,
+.ref-knowledge-table-modern tbody tr {
+  transition: background-color var(--cc-dur-move) var(--cc-ease-in-out),
+              border-color var(--cc-dur-move) var(--cc-ease-in-out),
+              color var(--cc-dur-move) var(--cc-ease-in-out),
+              transform var(--cc-dur-move) var(--cc-ease-in-out);
+}
+
+/* #17 Masks for streaming reveals */
+#active-assistant-stream-bubble > *:last-of-type,
+#active-knowledge-stream-bubble > *:last-of-type {
+  animation: cc-stream-mask-reveal 180ms var(--cc-ease-out) both;
+}
+
+/* #18 Crossfade icons + subtle blur on state swap (e.g. Copy -> Checkmark) */
+.cc-icon-swapped {
+  animation: cc-icon-crossfade 180ms var(--cc-ease-out) both;
+}
+.cc-pulse-ok {
+  animation: cc-btn-pulse 520ms var(--cc-ease-out) 1;
+}
+
+/* Full reduced-motion compliance: OS preference + CloudCore Settings toggle */
+html.cc-reduced-motion *,
+html.cc-reduced-motion *::before,
+html.cc-reduced-motion *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  animation-delay: 0ms !important;
+  transition-duration: 0.001ms !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  dialog[open],
+  dialog.cc-closing,
+  .workspace-main.cc-route-enter,
+  .message.cc-msg-enter,
+  .ref-knowledge-message.cc-msg-enter,
+  .cc-stagger-enter,
+  .citation-chip.cc-citation-settle,
+  #toast.show.cc-toast-success,
+  .cc-icon-swapped,
+  .cc-pulse-ok {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+.workspace-profile-dialog,
+.workspace-image-dialog {
+  text-align: center;
+  padding: 12px 0;
+}
+.workspace-profile-dialog .avatar {
+  width: 54px;
+  height: 54px;
+  margin: 0 auto 12px;
+  font-size: 24px;
+}
+.workspace-profile-dialog .dialog-actions {
+  justify-content: center;
+}
+.workspace-notifications-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-right: 34px;
+  margin-bottom: 14px;
+}
+.workspace-notifications-heading h2 {
+  margin: 0;
+}
+.workspace-notifications-empty {
+  padding: 20px 0;
+  text-align: center;
+}
+.notifications-list .notification-item p {
+  margin: 3px 0 0;
+  font-size: 13px;
+}
+.notifications-list .notification-item small {
+  color: #75867e;
+  font-size: 11px;
+}
+.workspace-image-frame {
+  display: grid;
+  place-items: center;
+  max-height: 70vh;
+  overflow: auto;
+  padding: 12px;
+  border-radius: 12px;
+  background: #0d1410;
+}
+.workspace-image-frame img {
+  max-width: 100%;
+  max-height: 65vh;
+  object-fit: contain;
+  border-radius: 6px;
 }

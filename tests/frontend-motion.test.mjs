@@ -3,16 +3,18 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 
-const source=fs.readFileSync(new URL('../dist/theme.js',import.meta.url),'utf8');
+const source=fs.readFileSync(new URL('../build/frontend-test/fixtures.js',import.meta.url),'utf8');
 function fixture(reduced=false){
   const query={matches:reduced,addEventListener(_event,handler){this.changed=handler;}};
   const video={dataset:{videoSrc:'assets/sidebar-motion.mp4'},attributes:{},paused:true,muted:false,plays:0,pauses:0,
-    getAttribute(name){return this.attributes[name];},setAttribute(name,value){this.attributes[name]=value;},
+    getAttribute(name){return this.attributes[name];},setAttribute(name,value){this.attributes[name]=value;},addEventListener(){},
     play(){this.paused=false;this.plays++;return Promise.resolve();},pause(){this.paused=true;this.pauses++;}};
   const document={hidden:false,videos:[video],querySelectorAll(){return this.videos;},addEventListener(_event,handler){this.changed=handler;}};
   const context=vm.createContext({document,window:{matchMedia(){return query;}}});
   vm.runInContext(source,context);
-  return {video,query,document,sync:()=>vm.runInContext('refSyncMotion()',context),render:kind=>vm.runInContext(`refVideoBackground(${JSON.stringify(kind)})`,context)};
+  let mode = 'auto';
+  const { syncMotion } = context.CloudCoreFixtures.createWorkspaceTheme(() => mode);
+  return {video,query,document,sync:syncMotion,render:context.CloudCoreFixtures.backgroundMarkup,setMode(value){mode=value;syncMotion();}};
 }
 test('reduced motion uses the poster without downloading a background video',()=>{
   const f=fixture(true);f.sync();assert.equal(f.video.attributes.src,undefined);assert.equal(f.video.plays,0);
@@ -25,7 +27,15 @@ test('background videos pause when the page is hidden and resume when visible',(
   f.document.hidden=false;f.document.changed();assert.equal(f.video.plays,2);
 });
 test('leaving a view pauses its detached background video',()=>{
-  const f=fixture();f.sync();f.document.videos=[];f.sync();assert.equal(f.video.paused,true);
+  const f=fixture();
+  let end;
+  f.video.addEventListener=(_event,listener)=>{end=listener;};
+  f.sync();
+  f.document.videos=[];
+  f.sync();
+  end();
+  assert.equal(f.video.paused,true);
+  assert.equal(f.video.plays,1);
 });
 test('an offscreen background stays paused until it becomes visible',()=>{
   const f=fixture();f.video.dataset.motionVisible='false';f.sync();assert.equal(f.video.attributes.src,undefined);
@@ -65,16 +75,21 @@ test('re-rendering a workspace view reuses the live playing sidebar video withou
   assert.equal(f.video.paused,false);
 });
 test('loop guard enables native loop without attaching premature timeupdate seek jumps',()=>{
-  const f=fixture();
+  const f=fixture(true);
   const listeners={};
   f.video.addEventListener=(evt,fn)=>{listeners[evt]=fn;};
   f.sync();
   assert.equal(f.video.loop,true);
   assert.equal(typeof listeners.ended,'function');
   assert.equal(typeof listeners.timeupdate,'undefined');
-  // Trigger ended event safely recovers playback
+  f.setMode('on');
+  const plays = f.video.plays;
   listeners.ended();
   assert.equal(f.video.currentTime,0);
+  assert.equal(f.video.plays,plays+1);
+  f.setMode('off');
+  listeners.ended();
+  assert.equal(f.video.plays,plays+1);
 });
 test('motion video assets and matching posters exist on disk with valid headers',()=>{
   const assets=['assistant-motion.mp4','sidebar-motion-slim.mp4','sidebar-motion.mp4','assistant-motion-poster.jpg','sidebar-motion-slim-poster.jpg','sidebar-motion-poster.jpg'];

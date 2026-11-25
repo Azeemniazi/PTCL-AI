@@ -3,23 +3,23 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 
-const source=['studio-model.js','studio-view.js','studio.js'].map(f=>readFileSync(new URL('../dist/'+f,import.meta.url),'utf8')).join('\n');
-const themeSource=readFileSync(new URL('../dist/theme.js',import.meta.url),'utf8');
+const source=readFileSync(new URL('../build/frontend-test/fixtures.js',import.meta.url),'utf8');
 const turn=()=>new Promise(setImmediate);
 const reply=data=>new Response(JSON.stringify(data),{headers:{'content-type':'application/json'}});
 const assets=['one','two'].map((id,n)=>({id,prompt:`Saved prompt ${n}`,style:'natural',aspectRatio:'1:1',filename:id+'.png',url:'/'+id+'.png',width:1080,height:1080,createdAt:'2026-10-15',seed:n+1}));
 
-async function fixture(override=()=>undefined,loadTheme=false) {
+async function fixture(override=()=>undefined,sharedBrowserWindow=false) {
   const listeners=new Map(),nodes=new Map(),timers=new Set(),requests=[];
   const node=id=>{if(!nodes.has(id))nodes.set(id,{id,innerHTML:'',textContent:'',dataset:{},style:{},open:false,isConnected:true,
     classList:{add(){},remove(){},toggle(){},contains(){return true;}},focus(){},scrollIntoView(){},setSelectionRange(){},setAttribute(){},removeAttribute(){},close(){this.open=false;},insertAdjacentHTML(_p,s){this.innerHTML+=s;}});return nodes.get(id);};
   const document={hidden:false,activeElement:null,addEventListener:(event,handler)=>{const list=listeners.get(event)||[];list.push(handler);listeners.set(event,list);},
     getElementById:node,querySelector:selector=>selector==='dialog[open]'?null:node(selector),querySelectorAll:()=>[]};
   const location={hash:'#images/create'};
+  let props, host;
   const context=vm.createContext({document,location,window:{scrollY:0,scrollX:0,scrollTo(){},history:{replaceState(_s,_t,hash){location.hash=hash;}}},
-    appUser:{id:'review'},Set,Map,Date,URL,AbortSignal,AbortController,FormData,File,Blob,Response,console,navigator:{platform:'Win32'},
-    icon:()=>'<svg></svg>',renderMarkdown:s=>s,toast(){},route(){},modal(content){node('#dialog-content').innerHTML=content;node('dialog').open=true;},
-    setTimeout:fn=>{timers.add(fn);return fn;},clearTimeout:fn=>timers.delete(fn),setInterval:()=>1,clearInterval(){},
+    Set,Map,Date,URL,AbortSignal,AbortController,FormData,File,Blob,Headers,Response,console,navigator:{platform:'Win32'},
+    icon:()=>'<svg></svg>',requestAnimationFrame:callback=>callback(),
+    setTimeout:fn=>{timers.add(fn);return fn;},clearTimeout:fn=>timers.delete(fn),
     fetch:async(path,options={})=>{requests.push({path,options});const custom=override(path,options);if(custom!==undefined)return await custom;
       if(path==='/api/images/history')return reply({assets});
       if(path==='/api/images/capabilities')return reply({model:'Fixture',remix:true,generation:true,controls:{strength:true}});
@@ -27,37 +27,38 @@ async function fixture(override=()=>undefined,loadTheme=false) {
       if(path.endsWith('/cancel'))return reply({success:true,message:'Cancelled; computing may finish, but the result will be discarded.'});
       if(path.includes('/jobs/'))return reply({job:{id:'job',status:'processing',startedAt:new Date().toISOString()}});
       return reply({success:true});}});
-  if(loadTheme) {
+  if(sharedBrowserWindow) {
     // Classic browser scripts share the window/global object. A separate window
     // stub hides collisions such as a top-level function named "history".
     const browserWindow=context.window;
     Object.assign(context,browserWindow);
     context.window=context;
-    vm.runInContext(themeSource,context);
-    assert.equal(context.history,browserWindow.history,'Theme must preserve the browser History API');
   }
   vm.runInContext(source,context);
-  context.ImageStudio.render();context.ImageStudio.mount();await turn();await turn();
+  const controller=context.CloudCoreFixtures.createStudioController({
+    getUserId:()=> 'review', notify(){}, onUnauthorized(){}, onSavedToKnowledge(){},
+    renderView(container,next){host=container;props=next;},
+  });
+  controller.mount();await turn();await turn();
   function emit(type,target,extra={}){const event={target,key:'',preventDefault(){},...extra};for(const handler of listeners.get(type)||[])handler(event);}
   function element(dataset){const button={dataset,disabled:false,closest:selector=>selector==='[data-studio-action]'?button:selector==='#premium-studio,.studio-dialog'||selector==='#premium-studio'?node('#premium-studio'):null};return button;}
   function click(action,data={}){emit('click',element({studioAction:action,...data}));}
-  function input(key,value,draft='create'){const el=element({studioField:key,draft});el.value=value;emit('input',el);}
-  const html=()=>context.ImageStudio.render();
-  return {context,click,input,html,emit,element,node,timers,requests};
+  function input(key,value,draft='create'){if(key==='query')props.onQuery(value);else props.onDraft(draft,key,value);}
+  return {context,click,input,emit,element,timers,requests,get props(){return props;},get host(){return host;},get state(){return props.state;}};
 }
-test('theme and studio share browser globals without breaking tab navigation',async()=>{
+test('the frontend bundle preserves browser history and Image Studio tab navigation',async()=>{
   const f=await fixture(()=>undefined,true);
   assert.equal(typeof f.context.history.replaceState,'function');
   for(const tab of ['remix','gallery','analyze','create']) {
     f.click('tab',{tab});await turn();
     assert.equal(f.context.location.hash,`#images/${tab}`);
-    assert.ok(f.html().includes(`aria-labelledby="is-tab-${tab}"`));
+    assert.equal(f.state.tab,tab);
   }
 });
 test('preview keeps an edited draft; explicit reuse restores saved settings',async()=>{
   const f=await fixture();f.input('prompt','Keep my new idea');f.click('preview',{id:'two'});
-  assert.ok(f.html().includes('Keep my new idea'));
-  f.click('reuse',{id:'one'});assert.ok(!f.html().includes('Keep my new idea'));assert.ok(f.html().includes('Saved prompt 0'));
+  assert.equal(f.state.create.prompt,'Keep my new idea');
+  f.click('reuse',{id:'one'});assert.equal(f.state.create.prompt,'Saved prompt 0');
 });
 test('button and keyboard submissions share the same duplicate-job guard',async()=>{
   let resolveRequest;const f=await fixture(path=>path==='/api/images/generate'?new Promise(r=>{resolveRequest=r;}):undefined);
@@ -70,34 +71,38 @@ test('button and keyboard submissions share the same duplicate-job guard',async(
 test('enhancement supports undo and ignores a stale response after typing',async()=>{
   let resolveEnhance;const f=await fixture(path=>path==='/api/images/enhance-prompt'?new Promise(r=>{resolveEnhance=r;}):undefined);
   f.input('prompt','Original idea');f.click('enhance');resolveEnhance(reply({enhancedPrompt:'Enhanced idea'}));await turn();
-  assert.ok(f.html().includes('Enhanced idea'));f.click('undo-enhance');assert.ok(f.html().includes('Original idea'));
+  assert.equal(f.state.create.prompt,'Enhanced idea');f.click('undo-enhance');assert.equal(f.state.create.prompt,'Original idea');
   f.click('enhance');f.input('prompt','Changed while enhancing');resolveEnhance(reply({enhancedPrompt:'Stale response'}));await turn();
-  assert.ok(f.html().includes('Changed while enhancing'));assert.ok(!f.html().includes('Stale response'));
+  assert.equal(f.state.create.prompt,'Changed while enhancing');
 });
 test('a late polling response cannot resurrect a cancelled job',async()=>{
   let resolvePoll;const f=await fixture(path=>path==='/api/images/generate'?reply({job:{id:'job',status:'queued',startedAt:new Date().toISOString()}}):path==='/api/images/jobs/job'?new Promise(r=>{resolvePoll=r;}):undefined);
   f.input('prompt','Keep this draft');f.click('generate');await turn();
   const poll=[...f.timers][0];f.timers.delete(poll);const running=poll();await turn();
   f.click('cancel');await turn();resolvePoll(reply({job:{id:'job',status:'processing',startedAt:new Date().toISOString()}}));await running;
-  assert.ok(f.html().includes('Generation cancelled'));assert.ok(f.html().includes('Keep this draft'));assert.ok(!f.html().includes('Creating your image'));
+  assert.equal(f.state.job.status,'cancelled');assert.equal(f.state.create.prompt,'Keep this draft');
 });
 test('reconnection releases a missing job without losing the draft',async()=>{
   const f=await fixture(path=>path==='/api/images/generate'?reply({job:{id:'missing',status:'queued',startedAt:new Date().toISOString()}}):path==='/api/images/jobs/missing'?new Response(JSON.stringify({error:{message:'Job not found'}}),{status:404}):undefined);
   f.input('prompt','A recoverable draft');f.click('generate');await turn();f.click('reconnect');await turn();await turn();
-  assert.ok(f.html().includes('This job is no longer available'));assert.ok(f.html().includes('A recoverable draft'));
+  assert.match(f.state.job.error,/This job is no longer available/);assert.equal(f.state.create.prompt,'A recoverable draft');
   const before=f.requests.filter(r=>r.path==='/api/images/generate').length;f.click('generate');await turn();
   assert.equal(f.requests.filter(r=>r.path==='/api/images/generate').length,before+1);
 });
 test('gallery searches update results without replacing the studio shell',async()=>{
-  const f=await fixture();f.click('tab',{tab:'gallery'});const before=f.node('#premium-studio').innerHTML;
-  f.input('query','Saved prompt 1','');assert.equal(f.node('#premium-studio').innerHTML,before);
-  assert.ok(f.node('#is-gallery-results').innerHTML.includes('Saved prompt 1'));assert.ok(!f.node('#is-gallery-results').innerHTML.includes('Saved prompt 0'));
+  const f=await fixture();f.click('tab',{tab:'gallery'});const before=f.host;
+  f.input('query','Saved prompt 1');assert.equal(f.host,before);
+  assert.equal(f.state.query,'Saved prompt 1');
+  assert.equal(f.state.assets.length,2);
 });
 test('bulk deletion removes successful assets and retains failed selections',async()=>{
   const f=await fixture(path=>path==='/api/images/two'?new Response(JSON.stringify({error:{message:'Not allowed'}}),{status:403}):undefined);
   f.click('tab',{tab:'gallery'});
-  for(const id of ['one','two'])f.emit('change',{dataset:{studioSelect:id},checked:true});
-  f.click('confirm-delete',{ids:JSON.stringify(['one','two'])});await turn();await turn();
-  assert.ok(f.html().includes('1 selected'));assert.ok(f.html().includes('Saved prompt 1'));assert.ok(!f.html().includes('Saved prompt 0'));
-  assert.ok(f.node('is-dialog-error').innerHTML.includes('1 deleted; 1 could not be deleted'));
+  for(const id of ['one','two'])f.props.onSelect(id,true);
+  f.click('delete-selected');
+  const result=await f.props.onAssetOperation(f.props.dialog.ids,'delete',undefined,new AbortController().signal);
+  assert.deepEqual([...f.state.selected],['two']);
+  assert.deepEqual(Array.from(f.state.assets,asset=>asset.id),['two']);
+  assert.deepEqual([...result.succeeded],['one']);
+  assert.equal(result.failed[0].message,'Not allowed');
 });

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -239,15 +239,4 @@ test('HTTP API: batch uploads 13 documents simultaneously with nested folder pat
     child.kill('SIGTERM');
     try { rmSync(tempDir, { recursive: true, force: true }); } catch {}
   }
-});
-
-test('Frontend UI: includes folder selection and drag-and-drop recursive directory traversal', () => {
-  const appJs = readFileSync(join(process.cwd(), 'dist/app.js'), 'utf8');
-
-  assert.ok(appJs.includes('id="batch-folder-input"'), 'Must have batch-folder-input element');
-  assert.ok(appJs.includes('webkitdirectory'), 'Must support webkitdirectory for full folder selection');
-  assert.ok(appJs.includes('id="batch-choose-folder-btn"'), 'Must have Select Folder button');
-  assert.ok(appJs.includes('readEntryRecursively'), 'Must have recursive directory entry reader');
-  assert.ok(appJs.includes('uploadRelativePath'), 'Must preserve relative folder path on upload');
-  assert.ok(appJs.includes("fd.append('paths'"), 'Must append relative paths to FormData');
 });

@@ -1,10 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { config } from './config.js';
 import { hashPassword } from './crypto.js';
+import { runDatabaseMigrations } from './database-migrations.js';
 import { activeStatuses, type Meeting, type MeetingStatus, type Mom, type Participant, type Snapshot, type TranscriptSegment, type User, type UserWithSecret, type Role, type KnowledgeFolder, type KnowledgeDocument, type KnowledgeChunk, type RetrievedChunk, type GeneratedAsset, type ImageJob } from './models.js';
 const { Pool } = pg;
 
@@ -101,6 +99,9 @@ function documentRow(r: any): KnowledgeDocument {
     storagePath: r.storage_path ?? r.storagePath ?? '',
     isShared: Boolean(r.is_shared ?? r.isShared ?? true),
     status: r.status ?? 'ready',
+    indexError: r.index_error ?? r.indexError ?? undefined,
+    filingLocation: r.filing_location ?? r.filingLocation ?? undefined,
+    contentHash: r.content_sha256 ?? r.contentHash ?? undefined,
     extractedText: r.extracted_text ?? r.extractedText,
     tokenCount: Number(r.token_count ?? r.tokenCount ?? 0),
     createdAt: iso(r.created_at ?? r.createdAt)!,
@@ -191,20 +192,8 @@ export class Repository {
   }
 
   async init() {
-    if (this.pool) {
-      const dir = dirname(fileURLToPath(import.meta.url));
-      for (const file of [
-        '001_init.sql',
-        '002_auth_users.sql',
-        '003_scalability_and_indexes.sql',
-        '004_knowledge_hub.sql',
-        '005_trigram_knowledge_search.sql',
-        '006_image_studio.sql',
-        '007_knowledge_rag_chunks.sql',
-        '008_secure_knowledge_rls.sql'
-      ]) {
-        await this.pool.query(await readFile(resolve(dir, '../migrations', file), 'utf8'));
-      }
+    if (this.pool && config.runDatabaseMigrations) {
+      await runDatabaseMigrations(this.pool);
     }
     await this.seedDefaultUsers();
   }
@@ -213,6 +202,39 @@ export class Repository {
     if (!this.pool) return true;
     await this.pool.query('SELECT 1');
     return true;
+  }
+
+  knowledgeImportDatabase() {
+    return this.pool;
+  }
+
+  async ensureSharedFilingFolder(rootId: string, name: string, userId: string): Promise<string> {
+    if (!this.pool) {
+      const existing = [...this.knowledgeFolders.values()].find(folder =>
+        folder.parentId === rootId && folder.isShared && folder.name.toLowerCase() === name.toLowerCase());
+      return existing?.id ?? (await this.createFolder({ name, userId, parentId: rootId, isShared: true })).id;
+    }
+    const db = await this.pool.connect();
+    try {
+      await db.query('BEGIN');
+      // Share the existing folder creation lock with resumable imports.
+      await db.query('SELECT pg_advisory_xact_lock(760081, 1)');
+      const root = await db.query('SELECT id FROM knowledge_folders WHERE id=$1 AND parent_id IS NULL AND is_shared FOR SHARE', [rootId]);
+      if (!root.rowCount) throw new Error('Cloud Contracts is no longer a shared root.');
+      const existing = await db.query(
+        'SELECT id FROM knowledge_folders WHERE parent_id=$1 AND lower(name)=lower($2) AND is_shared ORDER BY created_at,id LIMIT 1',
+        [rootId, name]);
+      const id: string = existing.rows[0]?.id ?? randomUUID();
+      if (!existing.rowCount) {
+        await db.query('INSERT INTO knowledge_folders(id,parent_id,user_id,name,is_shared) VALUES($1,$2,$3,$4,true)',
+          [id, rootId, userId, name]);
+      }
+      await db.query('COMMIT');
+      return id;
+    } catch (error) {
+      await db.query('ROLLBACK');
+      throw error;
+    } finally { db.release(); }
   }
 
   async close() {
@@ -854,12 +876,20 @@ export class Repository {
 
   async createFolder(input: { userId: string; name: string; isShared?: boolean; parentId?: string | null; color?: string }): Promise<KnowledgeFolder> {
     const id = randomUUID();
-    const isShared = input.isShared ?? true;
-    const parentId = input.parentId ?? null;
+    let isShared = input.isShared ?? true;
+    const parentId = (input.parentId && input.parentId.trim() && input.parentId !== 'null') ? input.parentId.trim() : null;
     const color = input.color ?? '#005437';
     const now = new Date().toISOString();
     const user = await this.findUserById(input.userId);
     const creatorName = user?.displayName || 'User';
+
+    if (parentId) {
+      const parent = await this.getFolderById(parentId);
+      if (!parent) throw new Error('Parent folder does not exist.');
+      if (!parent.isShared) {
+        isShared = false;
+      }
+    }
 
     if (!this.pool) {
       const folder: KnowledgeFolder = {
@@ -1020,7 +1050,39 @@ export class Repository {
     return q.rows[0] ? folderRow(q.rows[0]) : undefined;
   }
 
-  async updateFolder(id: string, userId: string, input: { name?: string; isShared?: boolean; color?: string }, isPrivileged = false): Promise<KnowledgeFolder | undefined> {
+  async isFolderDescendant(ancestorId: string, candidateChildId: string): Promise<boolean> {
+    if (ancestorId === candidateChildId) return true;
+    if (!this.pool) {
+      let currentId: string | null | undefined = candidateChildId;
+      const visited = new Set<string>();
+      while (currentId) {
+        if (currentId === ancestorId) return true;
+        if (visited.has(currentId)) break;
+        visited.add(currentId);
+        const f = this.knowledgeFolders.get(currentId);
+        currentId = f?.parentId;
+      }
+      return false;
+    }
+    const q = await this.pool.query(
+      `WITH RECURSIVE descendants AS (
+        SELECT id, parent_id FROM knowledge_folders WHERE id = $2
+        UNION ALL
+        SELECT f.id, f.parent_id FROM knowledge_folders f
+        JOIN descendants d ON f.id = d.parent_id
+      )
+      SELECT 1 FROM descendants WHERE id = $1`,
+      [ancestorId, candidateChildId]
+    );
+    return (q.rowCount ?? 0) > 0;
+  }
+
+  async updateFolder(
+    id: string,
+    userId: string,
+    input: { name?: string; isShared?: boolean; color?: string; parentId?: string | null },
+    isPrivileged = false
+  ): Promise<KnowledgeFolder | undefined> {
     const existing = await this.getFolderById(id);
     if (!existing) return undefined;
     if (existing.userId !== userId && !isPrivileged) throw new Error('Unauthorized to modify this folder.');
@@ -1028,12 +1090,24 @@ export class Repository {
     const name = input.name?.trim() || existing.name;
     const isShared = typeof input.isShared === 'boolean' ? input.isShared : existing.isShared;
     const color = typeof input.color === 'string' && input.color.trim() ? input.color.trim() : existing.color;
+    let parentId = existing.parentId ?? null;
+    if (input.parentId !== undefined) {
+      parentId = (input.parentId && input.parentId.trim() && input.parentId !== 'null') ? input.parentId.trim() : null;
+      if (parentId === id) throw new Error('A folder cannot be its own parent.');
+      if (parentId) {
+        const parent = await this.getFolderById(parentId);
+        if (!parent) throw new Error('Target parent folder does not exist.');
+        const isDescendant = await this.isFolderDescendant(id, parentId);
+        if (isDescendant) throw new Error('Cannot move a folder into one of its subfolders.');
+      }
+    }
     const now = new Date().toISOString();
 
     if (!this.pool) {
       existing.name = name;
       existing.isShared = isShared;
       existing.color = color;
+      existing.parentId = parentId;
       existing.updatedAt = now;
       this.knowledgeFolders.set(id, existing);
       return existing;
@@ -1041,10 +1115,10 @@ export class Repository {
 
     const q = await this.pool.query(
       `UPDATE knowledge_folders
-       SET name = $2, is_shared = $3, color = $4, updated_at = $5
+       SET name = $2, is_shared = $3, color = $4, parent_id = $5, updated_at = $6
        WHERE id = $1
        RETURNING *`,
-      [id, name, isShared, color, now]
+      [id, name, isShared, color, parentId, now]
     );
     return q.rows[0] ? folderRow(q.rows[0]) : undefined;
   }
@@ -1055,8 +1129,8 @@ export class Repository {
     if (existing.userId !== userId && !isPrivileged) throw new Error('Unauthorized to delete this folder.');
 
     if (!this.pool) {
-      const folderIdsToDelete = new Set<string>([id]);
       if (cascade) {
+        const folderIdsToDelete = new Set<string>([id]);
         let added = true;
         while (added) {
           added = false;
@@ -1075,6 +1149,9 @@ export class Repository {
         }
         return true;
       } else {
+        for (const f of this.knowledgeFolders.values()) {
+          if (f.parentId === id) f.parentId = existing.parentId ?? null;
+        }
         for (const doc of this.knowledgeDocuments.values()) {
           if (doc.folderId === id) doc.folderId = null;
         }
@@ -1083,8 +1160,17 @@ export class Repository {
     }
 
     if (cascade) {
-      await this.pool.query('DELETE FROM knowledge_documents WHERE folder_id = $1', [id]);
+      await this.pool.query(
+        `WITH RECURSIVE tree AS (
+          SELECT id FROM knowledge_folders WHERE id = $1
+          UNION ALL
+          SELECT f.id FROM knowledge_folders f JOIN tree t ON f.parent_id = t.id
+        )
+        DELETE FROM knowledge_documents WHERE folder_id IN (SELECT id FROM tree)`,
+        [id]
+      );
     } else {
+      await this.pool.query('UPDATE knowledge_folders SET parent_id = $2 WHERE parent_id = $1', [id, existing.parentId ?? null]);
       await this.pool.query('UPDATE knowledge_documents SET folder_id = NULL WHERE folder_id = $1', [id]);
     }
     const q = await this.pool.query('DELETE FROM knowledge_folders WHERE id = $1', [id]);
@@ -1153,14 +1239,37 @@ export class Repository {
 
   async listDocuments(userId: string, filters?: {
     folderId?: string | null;
+    descendants?: boolean;
     scope?: 'all' | 'shared' | 'personal';
     search?: string;
     type?: string;
+    status?: KnowledgeDocument['status'];
+    namesOnly?: boolean;
+    metadataOnly?: boolean;
   }): Promise<KnowledgeDocument[]> {
+    const branch = new Set<string>();
+    if (filters?.folderId && filters.descendants) {
+      const folders = await this.listFolders(userId);
+      const children = new Map<string, string[]>();
+      for (const folder of folders) {
+        if (!folder.parentId) continue;
+        const ids = children.get(folder.parentId) ?? [];
+        ids.push(folder.id);
+        children.set(folder.parentId, ids);
+      }
+      const pending = folders.some(folder => folder.id === filters.folderId) ? [filters.folderId] : [];
+      while (pending.length) {
+        const id = pending.pop()!;
+        if (branch.has(id)) continue;
+        branch.add(id);
+        pending.push(...(children.get(id) ?? []));
+      }
+    }
     if (!this.pool) {
       const search = filters?.search?.toLowerCase().trim();
       const type = filters?.type?.toLowerCase().trim();
       const docs = [...this.knowledgeDocuments.values()].filter(d => {
+        if (filters?.status && d.status !== filters.status) return false;
         if (filters?.scope === 'shared' && !d.isShared) return false;
         if (filters?.scope === 'personal' && (d.isShared || d.userId !== userId)) return false;
         if (!filters?.scope || filters.scope === 'all') {
@@ -1168,7 +1277,7 @@ export class Repository {
         }
         if (filters?.folderId !== undefined) {
           if (filters.folderId === null && d.folderId !== null && d.folderId !== undefined) return false;
-          if (filters.folderId && d.folderId !== filters.folderId) return false;
+          if (filters.folderId && (filters.descendants ? !branch.has(d.folderId ?? '') : d.folderId !== filters.folderId)) return false;
         }
         if (type && type !== 'all') {
           const ext = d.filename.split('.').pop()?.toLowerCase();
@@ -1176,10 +1285,11 @@ export class Repository {
           if (type === 'word' && !['doc', 'docx'].includes(ext || '')) return false;
           if (type === 'excel' && !['xls', 'xlsx', 'csv'].includes(ext || '')) return false;
           if (type === 'text' && !['txt', 'md', 'json'].includes(ext || '')) return false;
+          if (type === 'archive' && !['zip', 'rar'].includes(ext || '')) return false;
         }
         if (search) {
           const inName = d.filename.toLowerCase().includes(search);
-          const inText = (d.extractedText || '').toLowerCase().includes(search);
+          const inText = !filters?.namesOnly && (d.extractedText || '').toLowerCase().includes(search);
           if (!inName && !inText) return false;
         }
         return true;
@@ -1189,6 +1299,8 @@ export class Repository {
         const f = d.folderId ? this.knowledgeFolders.get(d.folderId) : undefined;
         return {
           ...d,
+          extractedText: filters?.metadataOnly ? undefined : d.extractedText,
+          storagePath: filters?.metadataOnly ? '' : d.storagePath,
           creatorName: u?.displayName || d.creatorName,
           folderName: f?.name || d.folderName
         };
@@ -1211,29 +1323,40 @@ export class Repository {
     if (filters?.folderId !== undefined) {
       if (filters.folderId === null) {
         conditions.push('d.folder_id IS NULL');
+      } else if (filters.descendants) {
+        params.push([...branch]);
+        conditions.push('d.folder_id = ANY($' + params.length + '::uuid[])');
       } else {
         params.push(filters.folderId);
         conditions.push(`d.folder_id = $${params.length}`);
       }
     }
 
-    if (filters?.search) {
-      params.push(`%${filters.search.trim()}%`);
-      const pIdx = params.length;
-      conditions.push(`(d.filename ILIKE $${pIdx} OR d.extracted_text ILIKE $${pIdx})`);
+    if (filters?.status) {
+      params.push(filters.status);
+      conditions.push('d.status = $' + params.length);
     }
-
+    if (filters?.search) {
+      const term = filters.search.trim();
+      params.push('%' + (filters.namesOnly ? term.replace(/[\\%_]/g, '\\$&') : term) + '%');
+      const match = ' ILIKE $' + params.length;
+      conditions.push(filters.namesOnly ? 'd.filename' + match : '(d.filename' + match + ' OR d.extracted_text' + match + ')');
+    }
     if (filters?.type && filters.type !== 'all') {
       const t = filters.type.toLowerCase();
       if (t === 'pdf') conditions.push("d.filename ILIKE '%.pdf'");
       else if (t === 'word') conditions.push("(d.filename ILIKE '%.doc' OR d.filename ILIKE '%.docx')");
       else if (t === 'excel') conditions.push("(d.filename ILIKE '%.xls' OR d.filename ILIKE '%.xlsx' OR d.filename ILIKE '%.csv')");
       else if (t === 'text') conditions.push("(d.filename ILIKE '%.txt' OR d.filename ILIKE '%.md' OR d.filename ILIKE '%.json')");
+      else if (t === 'archive') conditions.push("(d.filename ILIKE '%.zip' OR d.filename ILIKE '%.rar')");
     }
 
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const fields = filters?.metadataOnly
+      ? 'd.id,d.user_id,d.folder_id,d.filename,d.mime_type,d.size_bytes,d.is_shared,d.status,d.index_error,d.filing_location,d.created_at,d.updated_at'
+      : 'd.*';
     const q = await this.pool.query(
-      `SELECT d.*, u.display_name AS creator_name, f.name AS folder_name
+      `SELECT ${fields}, u.display_name AS creator_name, f.name AS folder_name
        FROM knowledge_documents d
        LEFT JOIN users u ON d.user_id = u.id
        LEFT JOIN knowledge_folders f ON d.folder_id = f.id
@@ -1267,9 +1390,36 @@ export class Repository {
     return q.rows[0] ? documentRow(q.rows[0]) : undefined;
   }
 
-  async setDocumentIndexStatus(id: string, status: 'ready'|'indexing'|'failed'): Promise<void> {
-    if(!this.pool){const doc=this.knowledgeDocuments.get(id);if(doc)doc.status=status;return;}
-    await this.pool.query('UPDATE knowledge_documents SET status=$2, updated_at=now() WHERE id=$1',[id,status]);
+  async setDocumentIndexStatus(id: string, status: KnowledgeDocument['status'], indexError?: string): Promise<void> {
+    if (!this.pool) {
+      const doc = this.knowledgeDocuments.get(id);
+      if (doc) Object.assign(doc, { status, indexError });
+      return;
+    }
+    await this.pool.query('UPDATE knowledge_documents SET status=$2, index_error=$3, updated_at=now() WHERE id=$1',
+      [id, status, indexError ?? null]);
+  }
+
+  async claimFailedKnowledgeDocuments(ids: string[], userId: string, privileged: boolean, scope: 'all' | 'shared' | 'personal') {
+    if (!ids.length) return [];
+    const allowed = (doc: KnowledgeDocument) => (doc.userId === userId || privileged && doc.isShared) &&
+      (scope === 'all' || (scope === 'shared' ? doc.isShared : !doc.isShared));
+    if (!this.pool) {
+      const claimed: KnowledgeDocument[] = [];
+      for (const id of ids) {
+        const doc = this.knowledgeDocuments.get(id);
+        if (!doc || doc.status !== 'failed' || !allowed(doc)) continue;
+        Object.assign(doc, { status: 'indexing', indexError: undefined });
+        claimed.push(doc);
+      }
+      return claimed;
+    }
+    const result = await this.pool.query(
+      "UPDATE knowledge_documents SET status='indexing', index_error=NULL, updated_at=now() " +
+      "WHERE id=ANY($1::uuid[]) AND status='failed' AND (user_id=$2 OR ($3 AND is_shared)) " +
+      "AND ($4='all' OR is_shared=($4='shared')) RETURNING *",
+      [ids, userId, privileged, scope]);
+    return result.rows.map(documentRow);
   }
 
   async setDocumentExtractedText(id:string,text:string):Promise<void>{
@@ -1296,7 +1446,9 @@ export class Repository {
     return documents.filter(d=>d.folderId&&ids.has(d.folderId));
   }
 
-  async updateDocument(id: string, userId: string, input: { filename?: string; folderId?: string | null; isShared?: boolean }, isPrivileged = false): Promise<KnowledgeDocument | undefined> {
+  async updateDocument(id: string, userId: string, input: { filename?: string; folderId?: string | null; isShared?: boolean;
+    filing?: { sourceFolderId: string | null; rootId: string; updatedAt: string; location: NonNullable<KnowledgeDocument['filingLocation']> }
+  }, isPrivileged = false): Promise<KnowledgeDocument | undefined> {
     const existing = await this.getDocumentById(id);
     if (!existing) return undefined;
     if (existing.userId !== userId && !isPrivileged) throw new Error('Unauthorized to modify this document.');
@@ -1305,6 +1457,28 @@ export class Repository {
     const folderId = input.folderId !== undefined ? input.folderId : existing.folderId;
     const isShared = typeof input.isShared === 'boolean' ? input.isShared : existing.isShared;
     const now = new Date().toISOString();
+
+    if (input.filing) {
+      const { sourceFolderId, rootId, updatedAt, location } = input.filing;
+      if (!existing.isShared || (existing.folderId ?? null) !== sourceFolderId || existing.updatedAt !== updatedAt || !folderId) return;
+      if (!this.pool) {
+        const target = this.knowledgeFolders.get(folderId);
+        if (!target?.isShared || target.parentId !== rootId) return;
+        Object.assign(existing, { folderId, filingLocation: location, updatedAt: now });
+        this.knowledgeDocuments.set(id, existing);
+        return existing;
+      }
+      const result = await this.pool.query(
+        `WITH destination AS (
+           SELECT f.id FROM knowledge_folders f JOIN knowledge_folders root ON root.id=f.parent_id
+            WHERE f.id=$2 AND root.id=$6 AND f.is_shared AND root.is_shared AND root.parent_id IS NULL FOR SHARE
+         ) UPDATE knowledge_documents d
+           SET folder_id=destination.id, filing_location=$3, updated_at=now()
+           FROM destination WHERE d.id=$1 AND d.is_shared
+             AND d.folder_id IS NOT DISTINCT FROM $4::uuid AND date_trunc('milliseconds',d.updated_at)=$5::timestamptz RETURNING d.*`,
+        [id, folderId, location, sourceFolderId, updatedAt, rootId]);
+      return result.rows[0] ? documentRow(result.rows[0]) : undefined;
+    }
 
     if (!this.pool) {
       existing.filename = filename;

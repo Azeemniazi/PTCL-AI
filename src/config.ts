@@ -15,7 +15,9 @@ export const config = {
     redirectUri: process.env.ENTRA_REDIRECT_URI ?? 'http://127.0.0.1:4173/auth/callback',
     adminObjectIds: new Set((process.env.ENTRA_ADMIN_OBJECT_IDS ?? '').split(',').map(v => v.trim()).filter(Boolean))
   },
-  databaseUrl: process.env.DATABASE_URL ?? '', redisUrl: process.env.REDIS_URL ?? '',
+  databaseUrl: process.env.DATABASE_URL ?? '',
+  runDatabaseMigrations: process.env.DATABASE_RUN_MIGRATIONS !== 'false',
+  redisUrl: process.env.REDIS_URL ?? '',
   trustProxy: process.env.TRUST_PROXY === 'false' ? false : number(process.env.TRUST_PROXY, 1),
   encryptionKey: process.env.MEETING_URL_ENCRYPTION_KEY ?? 'development-meeting-url-key',
   encryptionKeyPrevious: (process.env.MEETING_URL_ENCRYPTION_KEY_PREVIOUS ?? '').split(',').map(v => v.trim()).filter(Boolean),

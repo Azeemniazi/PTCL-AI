@@ -74,6 +74,35 @@ test('Knowledge Hub: folder creation, scope filtering, and permissions', async (
   // Owner can rename
   const updatedByOwner = await repo.updateFolder(sharedFolder.id, regularUser.id, { name: 'RAN & Microwave Specs' }, false);
   assert.equal(updatedByOwner?.name, 'RAN & Microwave Specs');
+
+  // 6. Subfolder creation, scope inheritance, and hierarchy
+  const subfolder = await repo.createFolder({
+    userId: regularUser.id,
+    name: 'Microwave Radios',
+    parentId: sharedFolder.id,
+    isShared: true
+  });
+  assert.equal(subfolder.parentId, sharedFolder.id);
+
+  // Subfolder created in private folder inherits isShared = false
+  const privateSubfolder = await repo.createFolder({
+    userId: regularUser.id,
+    name: 'Confidential Salary Notes',
+    parentId: personalFolder.id,
+    isShared: true // should be overridden to false because parent is private
+  });
+  assert.equal(privateSubfolder.parentId, personalFolder.id);
+  assert.equal(privateSubfolder.isShared, false, 'Subfolder in a private folder must inherit private scope');
+
+  // 7. Circular reference rejection when moving folder
+  await assert.rejects(
+    async () => repo.updateFolder(sharedFolder.id, regularUser.id, { parentId: subfolder.id }, false),
+    /Cannot move a folder into one of its subfolders/
+  );
+  await assert.rejects(
+    async () => repo.updateFolder(sharedFolder.id, regularUser.id, { parentId: sharedFolder.id }, false),
+    /cannot be its own parent/
+  );
 });
 
 test('Knowledge Hub: document lifecycle, batch upload, moving, and cascading deletion', async () => {

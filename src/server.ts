@@ -26,7 +26,10 @@ import { clearMomInFlight, enqueue, isMomInFlight, markMomInFlight, redisConnect
 import { activeStatuses, type Meeting, type MeetingStatus, type User, type Role, type GeneratedAsset, type ImageJob } from './models.js';
 import { repository } from './repository.js';
 import { createMeetingSchema, momSchema, validateTeamsUrl } from './validation.js';
-import { retrieveKnowledgeContext, indexDocumentChunks, backfillUnindexedDocuments, extractDocumentImageOcr, extractPdfOcr, shouldQueryKnowledgeBase } from './rag.js';
+import { retrieveKnowledgeContext, indexDocumentChunks, backfillUnindexedDocuments, extractDocumentImageOcr, shouldQueryKnowledgeBase } from './rag.js';
+import { missingPdfTools } from './knowledge-pdf.js';
+import { knowledgeProcessingMaxBytes, supportsKnowledgeIndex } from './knowledge-formats.js';
+import { workspaceNotifications } from './workspace-notifications.js';
 import { assistantIdentityAnswer, augmentConversationalQuery } from './rag-conversation.js';
 export { augmentConversationalQuery } from './rag-conversation.js';
 import { generateGroundedReply } from './rag-generation.js';
@@ -34,6 +37,8 @@ import type { RetrievalResult } from './rag.js';
 import { sourceTextQuality } from './rag-planning.js';
 import { packEvidence, evidenceMessage } from './rag-evidence.js';
 import {enqueueKnowledgeIngestion,resumeKnowledgeIngestion} from './knowledge-ingestion.js';
+import {cleanKnowledgeImportStaging,knowledgeImports} from './knowledge-imports.js';
+import { buildFilingAudit, contractsRoot, customerKey, manualFilingName } from './knowledge-filing.js';
 
 export function verifyCsrfOrigin(originHeader: string | undefined, hostHeader: string | undefined, customHeader: string | undefined, publicBaseUrl = config.publicBaseUrl): boolean {
   if (customHeader === 'CloudCoreAI') return true;
@@ -76,6 +81,8 @@ const apiLimit = rateLimit({
   message: { error: { code: 'rate_limited', message: 'Too many requests. Please wait a moment and try again.' } }
 });
 app.use('/api', apiLimit);
+app.use('/api/knowledge/imports', requireUser, knowledgeImports(repository.knowledgeImportDatabase(), knowledgeStorageDir));
+app.use('/api/notifications', requireUser, workspaceNotifications(repository.knowledgeImportDatabase()));
 app.get('/healthz',(_req,res)=>res.json({status:'ok'}));
 app.get('/readyz',async(_req,res)=>{try{await repository.healthy();if(redisConnection)await redisConnection.ping();res.json({status:'ready'})}catch{res.status(503).json({status:'not_ready'})}});
 app.get('/api/me',async(req,res)=>{if(!req.session.user)return res.json({authenticated:false,user:null,authMode:config.authMode});return res.json({authenticated:true,user:req.session.user,authMode:config.authMode,capacity:{active:await repository.activeCount(),maximum:config.maxActiveMeetings}})});
@@ -267,6 +274,7 @@ app.post('/api/chat',requireUser,async(req,res)=>{
     if(isExplicitKnowledgeChat){
       beginLiveChat();
       let keepAliveTimer: NodeJS.Timeout | undefined;
+      let streamedRaw = '';
       try{
         if(streamRequested){
           res.setHeader('content-type','text/event-stream; charset=utf-8');
@@ -279,17 +287,36 @@ app.post('/api/chat',requireUser,async(req,res)=>{
           keepAliveTimer = setInterval(() => {
             try { res.write(': keep-alive\n\n'); } catch {}
           }, 5000);
+          if(!retrieved?.directAnswer && retrieved?.sources?.length){
+            res.write(`data: ${JSON.stringify({citations,coverage:retrieved.coverage})}\n\n`);
+          }
         }
-        const reply=retrieved?.directAnswer ? {answer:retrieved.directAnswer,finishReason:'stop',coverage:retrieved.coverage,sourceIds:citations.map(c=>c.sourceId)} : retrieved?.sources?.length ? await generateGroundedReply({
-          url:cleanUrl,headers:buildAiHeaders({'content-type':'application/json'}),model:config.ai.momModel||'qwen-30b',question:cleanMessage,history:contextHistory,sources:retrieved.sources,maxTokens:typeof max_tokens==='number'?max_tokens:1200
-        }) : {answer:retrievalFailed?'I could not retrieve the knowledge-base evidence. Please try again; I cannot verify a factual answer while retrieval is unavailable.':'The accessible knowledge base did not provide readable evidence for this question in the selected scope. I cannot verify the requested facts from these sources.',finishReason:retrievalFailed?'retrieval_failed':'no_evidence',coverage:'none',sourceIds:[]};
+        const reply=retrieved?.directAnswer ? {answer:retrieved.directAnswer,finishReason:'stop',coverage:retrieved.coverage,sourceIds:citations.map(c=>c.sourceId),streamed:false} : retrieved?.sources?.length ? await generateGroundedReply({
+          url:cleanUrl,
+          headers:buildAiHeaders({'content-type':'application/json'}),
+          model:config.ai.momModel||'qwen-30b',
+          question:cleanMessage,
+          history:contextHistory,
+          sources:retrieved.sources,
+          maxTokens:typeof max_tokens==='number'?max_tokens:1200,
+          streamPass1:streamRequested,
+          onDelta:streamRequested?(delta)=>{
+            streamedRaw+=delta;
+            try{res.write(`data: ${JSON.stringify({choices:[{delta:{content:delta}}]})}\n\n`);}catch{}
+          }:undefined
+        }) : {answer:retrievalFailed?'I could not retrieve the knowledge-base evidence. Please try again; I cannot verify a factual answer while retrieval is unavailable.':'The accessible knowledge base did not provide readable evidence for this question in the selected scope. I cannot verify the requested facts from these sources.',finishReason:retrievalFailed?'retrieval_failed':'no_evidence',coverage:'none',sourceIds:[],streamed:false};
         if(keepAliveTimer){ clearInterval(keepAliveTimer); keepAliveTimer = undefined; }
         const usedIds=new Set<string>(reply.sourceIds);
         const used=citations.filter(c=>usedIds.has(c.sourceId));
         if('validationIssues' in reply)logger.warn({issues:reply.validationIssues,documentIds:used.map(c=>c.documentId)},'Grounded answer could not pass verification');
         if(streamRequested){
-          res.write(`data: ${JSON.stringify({citations:used,coverage:reply.coverage})}\n\n`);
-          res.write(`data: ${JSON.stringify({choices:[{delta:{content:reply.answer},finish_reason:reply.finishReason}]})}\n\n`);
+          if(streamedRaw){
+            const needsReplace = !reply.streamed || streamedRaw.trim() !== reply.answer.trim();
+            res.write(`data: ${JSON.stringify({citations:used,coverage:reply.coverage,...(needsReplace?{replace:reply.answer}:{}),choices:[{delta:{},finish_reason:reply.finishReason}]})}\n\n`);
+          }else{
+            res.write(`data: ${JSON.stringify({citations:used,coverage:reply.coverage})}\n\n`);
+            res.write(`data: ${JSON.stringify({choices:[{delta:{content:reply.answer},finish_reason:reply.finishReason}]})}\n\n`);
+          }
           res.write('data: [DONE]\n\n');res.end();return;
         }
         return res.json({answer:reply.answer,model:config.ai.momModel,citations:used,finishReason:reply.finishReason,coverage:reply.coverage});
@@ -521,8 +548,19 @@ app.post('/api/knowledge/folders', requireUser, async (req, res) => {
       return res.status(400).json({ error: { code: 'invalid_name', message: 'Folder name must be between 1 and 120 characters.' } });
     }
     const isShared = req.body?.isShared !== false;
-    const parentId = typeof req.body?.parentId === 'string' && req.body.parentId.trim() ? req.body.parentId.trim() : null;
+    const parentId = typeof req.body?.parentId === 'string' && req.body.parentId.trim() && req.body.parentId !== 'null' ? req.body.parentId.trim() : null;
     const color = typeof req.body?.color === 'string' ? req.body.color : '#005437';
+
+    if (parentId) {
+      const parent = await repository.getFolderById(parentId);
+      if (!parent) {
+        return res.status(404).json({ error: { code: 'parent_not_found', message: 'Parent folder does not exist.' } });
+      }
+      const isPrivileged = ['dev', 'admin'].includes(req.session.user!.role);
+      if (!parent.isShared && parent.userId !== req.session.user!.id && !isPrivileged) {
+        return res.status(403).json({ error: { code: 'forbidden', message: 'Cannot create subfolder in a private folder owned by another user.' } });
+      }
+    }
 
     const folder = await repository.createFolder({
       userId: req.session.user!.id,
@@ -532,9 +570,9 @@ app.post('/api/knowledge/folders', requireUser, async (req, res) => {
       color
     });
     return res.status(201).json({ folder });
-  } catch (err) {
+  } catch (err: any) {
     logger.warn({ error: err instanceof Error ? err.message : String(err) }, 'Failed to create knowledge folder');
-    return res.status(500).json({ error: { code: 'server_error', message: 'Failed to create folder.' } });
+    return res.status(500).json({ error: { code: 'server_error', message: err?.message || 'Failed to create folder.' } });
   }
 });
 
@@ -542,7 +580,7 @@ app.patch('/api/knowledge/folders/:id', requireUser, async (req, res) => {
   try {
     const id = String(req.params.id);
     const isPrivileged = ['dev', 'admin'].includes(req.session.user!.role);
-    const updates: { name?: string; isShared?: boolean; color?: string } = {};
+    const updates: { name?: string; isShared?: boolean; color?: string; parentId?: string | null } = {};
     if (typeof req.body?.name === 'string') {
       const n = req.body.name.trim();
       if (!n || n.length > 120) return res.status(400).json({ error: { code: 'invalid_name', message: 'Folder name must be between 1 and 120 characters.' } });
@@ -554,12 +592,22 @@ app.patch('/api/knowledge/folders/:id', requireUser, async (req, res) => {
     if (typeof req.body?.color === 'string' && req.body.color.trim()) {
       updates.color = req.body.color.trim();
     }
+    if (req.body?.parentId !== undefined) {
+      const p = (req.body.parentId === null || req.body.parentId === '' || req.body.parentId === 'null') ? null : String(req.body.parentId).trim();
+      if (p === id) {
+        return res.status(400).json({ error: { code: 'invalid_parent', message: 'A folder cannot be its own parent.' } });
+      }
+      updates.parentId = p;
+    }
     const folder = await repository.updateFolder(id, req.session.user!.id, updates, isPrivileged);
     if (!folder) return res.status(404).json({ error: { code: 'not_found', message: 'Folder not found.' } });
     return res.json({ folder });
   } catch (err: any) {
     if (err.message?.includes('Unauthorized')) return res.status(403).json({ error: { code: 'forbidden', message: err.message } });
-    return res.status(500).json({ error: { code: 'server_error', message: 'Failed to update folder.' } });
+    if (err.message?.includes('Cannot move a folder into one of its subfolders') || err.message?.includes('cannot be its own parent') || err.message?.includes('Target parent folder does not exist')) {
+      return res.status(400).json({ error: { code: 'invalid_parent', message: err.message } });
+    }
+    return res.status(500).json({ error: { code: 'server_error', message: err?.message || 'Failed to update folder.' } });
   }
 });
 
@@ -602,12 +650,101 @@ app.get('/api/knowledge/documents', requireUser, async (req, res) => {
       folderId,
       scope,
       search,
-      type
+      type,
+      descendants: req.query.descendants === 'true',
+      namesOnly: req.query.namesOnly === 'true',
+      metadataOnly: req.query.metadataOnly === 'true'
     });
     return res.json({ documents });
   } catch (err) {
     logger.warn({ error: err instanceof Error ? err.message : String(err) }, 'Failed to list knowledge documents');
     return res.status(500).json({ error: { code: 'server_error', message: 'Failed to list documents.' } });
+  }
+});
+
+app.get('/api/knowledge/coverage', requireUser, async (req, res) => {
+  const folderId = typeof req.query.folderId === 'string' ? req.query.folderId : undefined;
+  if (folderId && !UUID_REGEX.test(folderId)) return res.status(400).json({ error: { message: 'Invalid folder.' } });
+  const documents = await repository.listDocuments(req.session.user!.id, { folderId, descendants: true, metadataOnly: true });
+  const coverage = { ready: 0, indexing: 0, failed: 0 };
+  for (const doc of documents) coverage[doc.status]++;
+  return res.json(coverage);
+});
+
+async function loadFilingAudit(userId: string) {
+  const folders = await repository.listFolders(userId, 'shared');
+  const root = contractsRoot(folders);
+  if (!root) return;
+  const [branch, loose] = await Promise.all([
+    repository.listDocuments(userId, { folderId: root.id, descendants: true, scope: 'shared' }),
+    repository.listDocuments(userId, { folderId: null, scope: 'shared' }),
+  ]);
+  const documents = [...branch, ...loose];
+  return { root, documents, audit: buildFilingAudit(root, folders, documents) };
+}
+
+app.get('/api/knowledge/filing', requireRole(['dev', 'admin']), async (req, res) => {
+  try {
+    const result = await loadFilingAudit(req.session.user!.id);
+    return res.json(result?.audit ?? { entries: [], customers: [] });
+  } catch (error) {
+    logger.warn({ err: error }, 'Knowledge filing review failed');
+    return res.status(500).json({ error: { message: 'Could not load the filing review.' } });
+  }
+});
+
+app.post('/api/knowledge/filing', requireRole(['dev', 'admin']), async (req, res) => {
+  const approvals: unknown = req.body?.approvals;
+  if (!Array.isArray(approvals) || !approvals.length || approvals.length > 100 ||
+      approvals.some(item => typeof item?.id !== 'string' || !UUID_REGEX.test(item.id) ||
+        typeof item.destination !== 'string' || item.destination.length > 120 ||
+        typeof item.revision !== 'string' || item.revision.length > 30 ||
+        (item.confirmed !== undefined && item.confirmed !== true) ||
+        (item.manual !== undefined && (item.manual !== true || item.confirmed !== true)))) {
+    return res.status(400).json({ error: { message: 'Select up to 100 filing suggestions to approve.' } });
+  }
+  const userId = req.session.user!.id;
+  const movedIds: string[] = [];
+  try {
+    const result = await loadFilingAudit(userId);
+    if (!result) return res.status(409).json({ error: { message: 'The shared Cloud Contracts folder is unavailable.' } });
+    const entries = new Map(result.audit.entries.map(entry => [entry.id, entry]));
+    const documents = new Map(result.documents.map(doc => [doc.id, doc]));
+    const created = new Map<string, string>();
+    const staleIds: string[] = [];
+    const unique = new Map(approvals.map(item => [String(item.id), {
+      name: String(item.destination), revision: item.revision, confirmed: item.confirmed === true, manual: item.manual === true,
+    }]));
+    for (const [id, approval] of unique) {
+      const entry = entries.get(id);
+      const doc = documents.get(id);
+      const manual = approval.manual && entry?.canFileManually && approval.confirmed;
+      const manualName = manual ? manualFilingName(approval.name) : undefined;
+      const existing = manualName ? result.audit.customers.find(customer =>
+        [customer.name, ...customer.aliases, ...customer.confirmedAliases].some(alias => customerKey(alias) === customerKey(manualName))) : undefined;
+      const name = manual ? (existing?.path.length === 2 ? existing.path[1] : existing?.name) ?? manualName : entry?.destination?.[1];
+      if (!entry || !doc || !name || entry.revision !== approval.revision || (approval.manual ? !manual :
+        (name !== approval.name || (entry.action !== 'move' && !entry.canConsolidate && !(entry.canConfirm && approval.confirmed))))) {
+        staleIds.push(id);
+        continue;
+      }
+      let target = (manual ? (existing?.path.length === 2 ? existing.id : undefined) : entry.destinationId) ?? created.get(name);
+      if (!target) {
+        target = await repository.ensureSharedFilingFolder(result.root.id, name, userId);
+        created.set(name, target);
+      }
+      const moved = await repository.updateDocument(id, userId, { folderId: target, filing: {
+        sourceFolderId: doc.folderId ?? null, rootId: result.root.id, updatedAt: doc.updatedAt,
+        location: { region: entry.region, site: entry.site, verifiedFolderId: target,
+          aliases: entry.alias && customerKey(entry.customer ?? '') === customerKey(name) ? [entry.alias] : undefined },
+      } }, true);
+      (moved ? movedIds : staleIds).push(id);
+    }
+    return res.json({ movedIds, staleIds });
+  } catch (error) {
+    logger.warn({ err: error }, 'Knowledge filing approvals could not all be saved');
+    if (movedIds.length) return res.json({ movedIds, staleIds: approvals.map(item => item.id).filter(id => !movedIds.includes(id)) });
+    return res.status(500).json({ error: { message: 'Could not apply the filing approvals.' } });
   }
 });
 
@@ -751,9 +888,46 @@ app.post('/api/knowledge/documents/:id/reindex',requireUser,async(req,res)=>{
   const doc=await repository.getDocumentById(String(req.params.id));
   if(!doc)return res.status(404).json({error:{code:'not_found',message:'Document not found.'}});
   if(doc.userId!==req.session.user!.id&&!['dev','admin'].includes(req.session.user!.role))return res.status(403).json({error:{code:'forbidden',message:'Only the owner or an administrator can retry indexing.'}});
+  if(doc.sizeBytes>knowledgeProcessingMaxBytes)return res.status(413).json({error:{code:'file_too_large_to_index',message:'This original is available for download. Search indexing supports files up to 250 MiB.'}});
   await repository.setDocumentIndexStatus(doc.id,'indexing');
   setImmediate(()=>enqueueKnowledgeIngestion(doc,knowledgeStorageDir));
   return res.status(202).json({documentId:doc.id,status:'indexing'});
+});
+
+app.post('/api/knowledge/retry-pdfs', requireUser, async (req, res) => {
+  const user = req.session.user!;
+  const { folderId = null, scope = 'all' } = req.body ?? {};
+  if (folderId !== null && (typeof folderId !== 'string' || !UUID_REGEX.test(folderId)) ||
+      !['shared', 'personal', 'all'].includes(scope)) {
+    return res.status(400).json({ error: { message: 'Choose a valid folder and scope.' } });
+  }
+  const failed = await repository.listDocuments(user.id, { folderId, scope, type: 'pdf', status: 'failed' });
+  const eligible = failed.filter(doc => doc.sizeBytes <= knowledgeProcessingMaxBytes &&
+    (doc.userId === user.id || ['dev', 'admin'].includes(user.role)));
+  const batch = eligible.slice(0, 50);
+  for (const doc of batch) {
+    await repository.setDocumentIndexStatus(doc.id, 'indexing');
+    void enqueueKnowledgeIngestion(doc, knowledgeStorageDir);
+  }
+  return res.status(202).json({ queued: batch.length, remaining: eligible.length - batch.length });
+});
+
+app.post('/api/knowledge/retry-indexing', requireUser, async (req, res) => {
+  const user = req.session.user!;
+  const { folderId = null, scope = 'all' } = req.body ?? {};
+  if ((folderId !== null && (typeof folderId !== 'string' || !UUID_REGEX.test(folderId))) ||
+      !['shared', 'personal', 'all'].includes(scope)) {
+    return res.status(400).json({ error: { message: 'Choose a valid folder and scope.' } });
+  }
+  const privileged = ['dev', 'admin'].includes(user.role);
+  const failed = await repository.listDocuments(user.id, {
+    folderId: folderId ?? undefined, descendants: true, scope, status: 'failed', metadataOnly: true,
+  });
+  const ids = failed.filter(doc => supportsKnowledgeIndex(doc.filename, doc.sizeBytes) &&
+    (doc.userId === user.id || privileged)).map(doc => doc.id);
+  const queued = await repository.claimFailedKnowledgeDocuments(ids, user.id, privileged, scope);
+  for (const doc of queued) void enqueueKnowledgeIngestion(doc, knowledgeStorageDir);
+  return res.status(202).json({ queued: queued.length });
 });
 
 app.get('/api/knowledge/documents/:id/download', requireUser, async (req, res) => {
@@ -832,6 +1006,9 @@ app.get('/api/knowledge/documents/:id/sheet-data', requireUser, async (req, res)
     if (!doc) return res.status(404).json({ error: { code: 'not_found', message: 'Document not found.' } });
     if (!doc.isShared && doc.userId !== req.session.user!.id && !['dev', 'admin'].includes(req.session.user!.role)) {
       return res.status(403).json({ error: { code: 'forbidden', message: 'Access denied.' } });
+    }
+    if (doc.sizeBytes > knowledgeProcessingMaxBytes) {
+      return res.status(413).json({ error: { code: 'preview_too_large', message: 'Download this file to view it. Spreadsheet previews support files up to 250 MiB.' } });
     }
     const fullPath = isAbsolute(doc.storagePath) ? doc.storagePath : resolve(knowledgeStorageDir, doc.storagePath);
     if (!existsSync(fullPath)) {
@@ -2177,8 +2354,13 @@ app.use(express.static(root,{
   }
 }));
 app.use((error:any,_req:express.Request,res:express.Response,_next:express.NextFunction)=>{logger.error({error:error?.message,stack:error?.stack},'request failed');if(error?.name==='ZodError')return res.status(400).json({error:{code:'invalid_request',message:'Check the submitted meeting details.'}});res.status(error?.message?.includes('Teams')?400:500).json({error:{code:'request_failed',message:error instanceof Error?error.message:'Unexpected server error.'}})});
-const server=app.listen(config.port,'0.0.0.0',()=>logger.info({port:config.port,authMode:config.authMode},'CloudCore AI started'));
+const server=app.listen(config.port,process.env.APP_BIND_HOST||'0.0.0.0',()=>logger.info({port:config.port,authMode:config.authMode},'CloudCore AI started'));
+server.requestTimeout = 60 * 60 * 1000; // Streaming imports retain their separate one-minute idle timeout.
 setImmediate(()=>processImageQueue().catch(error=>logger.warn({error:String(error)},'resuming image queue failed')));
 setImmediate(()=>resumeKnowledgeIngestion(knowledgeStorageDir).then(()=>backfillUnindexedDocuments()).catch(error=>logger.warn({error:String(error)},'Knowledge Hub ingestion recovery failed')));
+void missingPdfTools().then(missing => {
+  if (missing.length) logger.warn({ missing }, 'Knowledge Hub PDF processing requires Poppler on the application PATH');
+});
+setImmediate(()=>cleanKnowledgeImportStaging(knowledgeStorageDir).catch(()=>logger.warn('Knowledge import staging cleanup failed')));
 let synchronizing=false;const syncTimer=setInterval(async()=>{if(synchronizing)return;synchronizing=true;try{for(const meeting of await repository.listActiveMeetings())await synchronizeMeeting(meeting).catch(error=>logger.warn({meetingId:meeting.id,error:error instanceof Error?error.message:String(error)},'meeting synchronization failed'))}catch(error){logger.warn({error:error instanceof Error?error.message:String(error)},'active meeting poll failed')}finally{synchronizing=false}},5_000);syncTimer.unref();
 for(const signal of ['SIGTERM','SIGINT'] as const)process.on(signal,()=>{clearInterval(syncTimer);server.close(async()=>{await repository.close();await redisConnection?.quit();process.exit(0)})});
